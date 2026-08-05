@@ -15,7 +15,31 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <javafx.version>21.0.2</javafx.version>
+        <junit.version>5.10.2</junit.version>
+        <!-- jpackage requires a numeric X[.Y[.Z]] version; "1.0-SNAPSHOT"
+             (the Maven version above) isn't valid input for it. -->
+        <app.version>1.0.0</app.version>
+        <!-- Points at an extracted javafx-jmods-<version> directory (the
+             JMODS SDK distribution — NOT the Maven javafx-*.jar artifacts
+             used everywhere else in this build). jpackage needs these to
+             link JavaFX into the bundled runtime image as real JPMS
+             modules; without them a classpath-only launch of a
+             javafx.application.Application fails at startup with "JavaFX
+             runtime components are missing" — confirmed by an actual
+             failed launch during this build's setup, not assumed. See
+             README.md's jpackage section for the download link and why
+             this can't just be bundled in the repo (it's a ~200MB,
+             platform-specific SDK). Override on the command line:
+             mvn package jpackage:jpackage -Djavafx.jmods.path=/path/to/javafx-jmods-21.0.2 -->
+        <javafx.jmods.path>CHANGE_ME_TO_YOUR_JAVAFX_JMODS_DIRECTORY</javafx.jmods.path>
     </properties>
+
+    <!--
+        Standard Maven layout (src/main/java, src/main/resources, src/test/java).
+        The previous <sourceDirectory>src</sourceDirectory> override is gone —
+        this is what makes `src/test/java` picked up automatically and what
+        every IDE / Scene Builder integration expects out of the box.
+    -->
 
     <dependencies>
         <dependency>
@@ -33,10 +57,22 @@
             <artifactId>javafx-base</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-fxml</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+
+        <!-- Test scaffolding — the Phase 3 physics test suite lands in src/test/java -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
-        <sourceDirectory>src</sourceDirectory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -48,11 +84,126 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+            <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>Main</mainClass>
+                    <mainClass>app.Main</mainClass>
+                </configuration>
+            </plugin>
+
+            <!-- Copies the four JavaFX jars into their own subdirectory,
+                 not jpackage-input/ directly. Reason, found by an actual
+                 failed launch rather than assumed: JavaFX's own bootstrap
+                 refuses to start ("JavaFX runtime components are missing")
+                 when its classes are loaded purely off the classpath — it
+                 specifically requires them resolved as named modules via a
+                 module path. Keeping them in mods/ means jpackage's
+                 auto-generated classpath (built from whatever sits directly
+                 in the input directory) never includes them, so the
+                 module-path javaOption below is the only place they're
+                 resolved from — no split-package conflict from being on
+                 both paths at once. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies-for-jpackage</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-dependencies</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/jpackage-input/mods</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- The app jar itself, copied alongside those dependencies —
+                 jpackage's input directory must hold the whole classpath
+                 together, flat, in one place. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-app-jar-for-jpackage</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-resources</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/jpackage-input</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes><include>${project.build.finalName}.jar</include></includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Native installer: `mvn package jpackage:jpackage` produces a
+                 double-clickable app image under target/installer — "here's
+                 an installer" instead of "clone the repo and set up Maven
+                 first". APP_IMAGE rather than a signed .dmg/.msi/.deb: those
+                 need per-OS signing credentials this project has no reason
+                 to hold; an app image is the honest, portable deliverable
+                 achievable without them. -->
+            <plugin>
+                <groupId>org.panteleyev</groupId>
+                <artifactId>jpackage-maven-plugin</artifactId>
+                <version>1.6.0</version>
+                <configuration>
+                    <name>Dynamics Engine</name>
+                    <appVersion>${app.version}</appVersion>
+                    <vendor>CSE4402 — Dynamics Engine</vendor>
+                    <destination>${project.build.directory}/installer</destination>
+                    <input>${project.build.directory}/jpackage-input</input>
+                    <mainJar>${project.build.finalName}.jar</mainJar>
+                    <mainClass>app.Main</mainClass>
+                    <type>APP_IMAGE</type>
+                    <!-- javafx.jmods.path (see its property javadoc above)
+                         is what actually links JavaFX into the bundled
+                         runtime image as real JPMS modules — without this,
+                         the packaged app fails at launch with "JavaFX
+                         runtime components are missing" (confirmed by an
+                         actual failed launch, not assumed). java.prefs is
+                         needed because theme.ThemeManager persists settings
+                         via java.util.prefs.Preferences. -->
+                    <modulePath>${javafx.jmods.path}</modulePath>
+                    <modules>
+                        <module>java.base</module>
+                        <module>java.desktop</module>
+                        <module>java.logging</module>
+                        <module>java.prefs</module>
+                        <module>java.xml</module>
+                        <module>jdk.unsupported</module>
+                        <module>javafx.controls</module>
+                        <module>javafx.fxml</module>
+                    </modules>
+                    <!-- $APPDIR is a jpackage runtime substitution for the
+                         installed app's own directory — resolving the
+                         JavaFX jars in mods/ (see the dependency-plugin
+                         comment above) as real modules for THIS specific
+                         launch, not just linking them into the bundled
+                         runtime image (confirmed by testing to not be
+                         sufficient on its own). -->
+                    <javaOptions>
+                        <option>--enable-native-access=ALL-UNNAMED</option>
+                        <option>--module-path</option>
+                        <option>$APPDIR/mods</option>
+                        <option>--add-modules</option>
+                        <option>javafx.controls,javafx.fxml</option>
+                    </javaOptions>
                 </configuration>
             </plugin>
         </plugins>

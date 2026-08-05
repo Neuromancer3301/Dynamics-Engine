@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane fx:id="root" styleClass="main-menu-root"
+            xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
+            fx:controller="controller.MainMenuController">
+
+    <top>
+        <VBox styleClass="menu-header" spacing="6.0">
+            <padding>
+                <Insets top="56" right="64" bottom="24" left="64"/>
+            </padding>
+            <Label styleClass="eyebrow" text="JAVAFX · RK4 · LAGRANGIAN MECHANICS"/>
+            <Label styleClass="app-title" text="Dynamics Engine"/>
+            <Label styleClass="app-tagline"
+                   text="An instrument for exploring chaotic multi-pendulum motion in real time."/>
+        </VBox>
+    </top>
+
+    <center>
+        <HBox styleClass="cards-row" spacing="24.0" alignment="CENTER">
+            <padding>
+                <Insets top="0" right="64" bottom="56" left="64"/>
+            </padding>
+
+            <fx:include fx:id="cardSimulation" source="component/NavCard.fxml"/>
+            <fx:include fx:id="cardSettings" source="component/NavCard.fxml"/>
+            <fx:include fx:id="cardAbout" source="component/NavCard.fxml"/>
+        </HBox>
+    </center>
+
+    <bottom>
+        <Label fx:id="versionLabel" styleClass="footer-text" text="v1.0.0"
+               BorderPane.alignment="CENTER">
+            <BorderPane.margin>
+                <Insets bottom="16"/>
+            </BorderPane.margin>
+        </Label>
+    </bottom>
+
+</BorderPane>

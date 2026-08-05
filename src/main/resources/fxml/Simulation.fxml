@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane fx:id="root" styleClass="simulation-root"
+            xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
+            fx:controller="controller.SimulationController">
+
+    <top>
+        <HBox styleClass="sim-title-bar" alignment="CENTER_LEFT" spacing="12.0">
+            <padding>
+                <Insets top="6" right="12" bottom="6" left="6"/>
+            </padding>
+            <Button fx:id="btnBack" styleClass="back-button" text="← Menu" onAction="#handleBack"/>
+            <Label fx:id="titleLabel" styleClass="sim-title" text="N-Pendulum Chain Simulator"/>
+        </HBox>
+    </top>
+
+    <center>
+        <HBox spacing="0" BorderPane.alignment="CENTER">
+            <!--
+                minWidth/prefWidth are pinned to 0 rather than left to the
+                default "size to children" computation. The host contains an
+                unmanaged Canvas (see SimulationController) specifically so
+                it can never contribute to this number, but pinning it here
+                too means a future child added to either host can't silently
+                reintroduce the same overflow-off-screen failure mode.
+            -->
+            <StackPane fx:id="canvasHost" styleClass="canvas-host"
+                       minWidth="0.0" prefWidth="0.0" HBox.hgrow="ALWAYS"/>
+            <StackPane fx:id="graphHost" styleClass="canvas-host"
+                       minWidth="0.0" prefWidth="0.0" HBox.hgrow="ALWAYS"/>
+        </HBox>
+    </center>
+
+    <right>
+        <!--
+            ControlPanel and LinkEditorPanel are both plain-Java Regions
+            (see controller.SimulationController) stacked inside this VBox;
+            the ScrollPane exists because the link editor's row count is
+            unbounded — without it, editing a 20-link chain would push
+            content below the window with no way to reach it.
+        -->
+        <ScrollPane styleClass="sidebar-scroll" fitToWidth="true" hbarPolicy="NEVER">
+            <content>
+                <VBox fx:id="controlHost"/>
+            </content>
+        </ScrollPane>
+    </right>
+
+</BorderPane>

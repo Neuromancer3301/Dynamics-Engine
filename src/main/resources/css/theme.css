@@ -1,0 +1,301 @@
+/* ==========================================================================
+   theme.css — centralized design tokens and shared component styles.
+   ==========================================================================
+   JavaFX CSS supports "looked-up colors": a custom property defined on a
+   node (e.g. -bg-base below) is visible by name to that node and every
+   descendant, the same way modena.css defines -fx-accent once and every
+   built-in control consumes it. That mechanism stands in for CSS variables
+   here — the palette is defined once per theme class, every rule below
+   reads from it, and no rule ever hardcodes a hex value.
+
+   Extension point: to add a theme, add a token block below (".theme-sepia"
+   or similar) and a matching theme.Theme enum constant. Nothing else in the
+   codebase references a color by name.
+   ========================================================================== */
+
+.theme-dark {
+    -bg-base:     #0D0D1F;
+    -bg-surface:  #14142C;
+    -line:        #25255A;
+    -line-soft:   #1E1E4A;
+    -ink:         #E6E6F4;
+    -ink-2:       #A6A6C8;
+    -ink-3:       #8888BB;
+    -accent:      #6C63FF;
+    -accent-soft: #22225A;
+    -danger:      #FF6B6B;
+    -success:     #55EFC4;
+}
+
+.theme-light {
+    -bg-base:     #F6F6FB;
+    -bg-surface:  #FFFFFF;
+    -line:        #D8D8E8;
+    -line-soft:   #E4E4F0;
+    -ink:         #16162B;
+    -ink-2:       #46466A;
+    -ink-3:       #62628C;
+    -accent:      #5A50E0;
+    -accent-soft: #ECEAFE;
+    -danger:      #D8483F;
+    -success:     #1B9E77;
+}
+
+/* ---------- Screen roots — each declares its own background + font so no
+   rule here depends on JavaFX's implicit ".root" style class ---------- */
+
+.main-menu-root, .simulation-root, .stub-screen {
+    -fx-background-color: -bg-base;
+    -fx-font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------- Main menu ---------- */
+
+.eyebrow {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -accent;
+}
+
+.app-title {
+    -fx-font-size: 34px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+
+.app-tagline {
+    -fx-font-size: 14px;
+    -fx-text-fill: -ink-2;
+}
+
+.footer-text {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 10px;
+    -fx-text-fill: -ink-3;
+}
+
+/* ---------- Nav card (component/NavCard.fxml) ---------- */
+
+.nav-card {
+    -fx-background-color: -bg-surface;
+    -fx-background-radius: 10px;
+    -fx-border-color: -line;
+    -fx-border-radius: 10px;
+    -fx-border-width: 1px;
+    -fx-padding: 22px;
+    -fx-pref-width: 240px;
+    -fx-min-height: 160px;
+    -fx-cursor: hand;
+}
+
+.nav-card:hover, .nav-card:focused {
+    -fx-border-color: -accent;
+    -fx-effect: dropshadow(gaussian, rgba(108, 99, 255, 0.35), 18, 0.15, 0, 4);
+}
+
+.nav-card-icon {
+    -fx-font-size: 26px;
+    -fx-text-fill: -accent;
+}
+
+.nav-card-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+
+.nav-card-desc {
+    -fx-font-size: 12px;
+    -fx-text-fill: -ink-2;
+    -fx-max-width: 200px;
+}
+
+/* ---------- Simulation shell ---------- */
+
+.sim-title-bar {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 0 0 1 0;
+}
+
+.sim-title {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink-3;
+}
+
+.canvas-host {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -line-soft;
+    -fx-border-width: 0 1 0 0;
+}
+
+/* ScrollPane's default Modena skin paints an opaque white viewport —
+   without this override it would show through as a bright rectangle
+   behind ControlPanel/LinkEditorPanel's own dark backgrounds. */
+.sidebar-scroll, .sidebar-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+
+/* ComboBox (LinkEditorPanel's preset picker, ControlPanel's integrator
+   picker). A ComboBox's dropdown popup is a separate PopupControl that
+   inline setStyle() genuinely cannot reach — it needs a real stylesheet
+   rule regardless of anything else. Written unscoped (not behind a style
+   class) because every ComboBox in the app wants the same look; scope by
+   class if that ever stops being true. */
+.combo-box {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -line;
+    -fx-border-radius: 3px;
+    -fx-background-radius: 3px;
+}
+.combo-box .list-cell {
+    -fx-text-fill: -ink;
+    -fx-background-color: transparent;
+}
+.combo-box-popup .list-view {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -line;
+}
+.combo-box-popup .list-view .list-cell:filled:hover,
+.combo-box-popup .list-view .list-cell:filled:selected {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -ink;
+}
+
+/* ---------- Sidebar (ui/ControlPanel.java, ui/LinkEditorPanel.java) ----------
+   Both are plain-Java Regions, not FXML, but a style class works on any
+   node regardless of how it was constructed — position in the scene graph
+   is all CSS cares about. This is what lets the sidebar follow the same
+   light/dark toggle as the rest of the chrome (it's ordinary JavaFX
+   controls); the pendulum/graph canvases remain outside this system since
+   they're raw pixels on a Canvas, not styleable nodes — that split (UI
+   chrome themed, rendered physics not) is the actual boundary, not an
+   oversight. */
+
+.sidebar-panel {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 0 0 0 1;
+}
+
+.sidebar-header {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -accent;
+}
+
+.sidebar-section-label {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink-2;
+}
+
+.sidebar-value-label {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 11px;
+    -fx-text-fill: -ink-2;
+}
+
+.sidebar-status-label {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 11px;
+    -fx-text-fill: -ink;
+}
+
+.sidebar-status-box {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+}
+
+.sidebar-hint {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 9px;
+    -fx-text-fill: -ink-3;
+}
+
+.sidebar-button {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -ink;
+    -fx-font-size: 11px;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-cursor: hand;
+}
+.sidebar-button:hover { -fx-border-color: -accent; }
+
+.sidebar-slider { -fx-accent: -accent; }
+
+.sidebar-separator { -fx-background-color: -line-soft; -fx-padding: 2 0; }
+
+.sidebar-numeric-field {
+    -fx-background-color: -bg-base;
+    -fx-text-fill: -ink;
+    -fx-font-size: 10px;
+    -fx-border-color: -line;
+    -fx-border-radius: 3px;
+    -fx-background-radius: 3px;
+}
+
+.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 10px; }
+.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 10px; }
+
+.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 11px; }
+
+.link-delete-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -danger;
+    -fx-font-size: 10px;
+    -fx-cursor: hand;
+}
+
+/* ---------- Shared buttons ---------- */
+
+.back-button, .primary-button {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -ink;
+    -fx-font-size: 11px;
+    -fx-background-radius: 4px;
+    -fx-border-color: -line;
+    -fx-border-radius: 4px;
+    -fx-padding: 6px 12px;
+    -fx-cursor: hand;
+}
+
+.back-button:hover, .primary-button:hover {
+    -fx-border-color: -accent;
+}
+
+.primary-button {
+    -fx-background-color: -accent;
+    -fx-text-fill: white;
+    -fx-border-color: transparent;
+}
+
+/* ---------- Stub screens (Settings / About) ---------- */
+
+.stub-title {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+
+.stub-body {
+    -fx-font-size: 13px;
+    -fx-text-fill: -ink-2;
+    -fx-wrap-text: true;
+    -fx-max-width: 480px;
+}
+
+/* ---------- Focus visibility (accessibility) ---------- */
+
+.button:focused {
+    -fx-effect: dropshadow(gaussian, -accent, 10, 0.6, 0, 0);
+}
