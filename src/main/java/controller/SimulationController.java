@@ -1,6 +1,8 @@
 package controller;
 
+import audio.Sonifier;
 import javafx.animation.AnimationTimer;
+import javafx.concurrent.Task;
 import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -14,6 +16,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import navigation.Navigable;
 import navigation.SceneRouter;
+import physics.BifurcationSweep;
 import physics.PendulumConfig;
 import physics.PhysicsEngine;
 import physics.SimState;
@@ -33,6 +36,8 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ResourceBundle;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Hosts the existing Canvas-based simulation view inside the FXML shell.
@@ -88,6 +93,8 @@ import java.util.ResourceBundle;
  */
 public final class SimulationController implements Initializable, Navigable {
 
+    private static final Logger LOG = Logger.getLogger(SimulationController.class.getName());
+
     // 50 members, 1e-7 rad apart: small enough to be an imperceptible
     // cluster at spawn, large enough to be well above floating-point noise
     // (~1e-16) so the eventual divergence is a real chaos signal, not an
@@ -108,6 +115,18 @@ public final class SimulationController implements Initializable, Navigable {
     // instantly given this engine's measured throughput.
     private static final double COMPARISON_DURATION_SECONDS = 10.0;
     private static final double COMPARISON_DT = 0.002;
+
+    // Bifurcation sweep parameters — see physics.BifurcationSweep. Kept
+    // modest (rather than the hundreds of columns/tens of settle-seconds a
+    // textbook figure might use) specifically so this stays a "background
+    // task that finishes in a reasonable time on typical hardware," not a
+    // multi-minute wait — the tradeoff is a coarser-looking diagram, an
+    // acceptable one for a demonstration feature.
+    private static final double BIFURCATION_PARAM_MIN      = 0.1;
+    private static final double BIFURCATION_PARAM_MAX      = Math.PI - 0.05;
+    private static final int    BIFURCATION_COLUMNS        = 90;
+    private static final double BIFURCATION_SETTLE_SECONDS = 6.0;
+    private static final double BIFURCATION_SAMPLE_SECONDS = 5.0;
 
     @FXML private Button btnBack;
     @FXML private Label titleLabel;
@@ -136,6 +155,13 @@ public final class SimulationController implements Initializable, Navigable {
     // IntegratorType's javadoc for the full reasoning.
     private IntegratorType selectedIntegratorType = IntegratorType.RK4;
 
+    // Mirrors PhysicsEngine's own gravityAngle — kept here for the same
+    // reason selectedIntegratorType is: a structural rebuild (see
+    // applyStructuralEdit) replaces the engine with a fresh one that
+    // defaults back to 0 (straight down), so whatever the user last painted
+    // needs re-applying rather than silently reverting.
+    private double currentGravityAngle = 0.0;
+
     private Double initialEnergy;
     private long graphFrameCount;
 
@@ -150,6 +176,17 @@ public final class SimulationController implements Initializable, Navigable {
     // lambda = ln(separation / epsilon) / elapsed. Null when no ensemble
     // is active. See buildRenderTimer for the actual computation.
     private Double ensembleStartSimTime;
+
+    // Off by default — an unrequested tone playing on launch would be an
+    // unpleasant surprise. See buildRenderTimer for the per-frame frequency
+    // update and audio.Sonifier's javadoc for why this can never throw even
+    // on a machine with no audio output.
+    private final Sonifier sonifier = new Sonifier();
+    private boolean sonifyActive = false;
+
+    // Non-null only while a sweep is in flight — see generateBifurcationMap
+    // and onHide (which cancels it if the user navigates away mid-sweep).
+    private Task<BifurcationSweep.Result> bifurcationTask;
 
     // Added on onShow() / removed on onHide() — see those methods. The
     // Scene object is reused across navigations (SceneRouter only swaps its
@@ -208,6 +245,11 @@ public final class SimulationController implements Initializable, Navigable {
             }
         });
 
+        pendulumCanvas.setGravityListener(angle -> {
+            currentGravityAngle = angle;
+            simLoop.setGravityAngle(angle);
+        });
+
         controlPanel = new ControlPanel();
         controlPanel.setOnResetCallback(() -> {
             initialEnergy = null;
@@ -215,6 +257,14 @@ public final class SimulationController implements Initializable, Navigable {
             scrubbing = false;
         });
         controlPanel.setOnEnsembleToggle(this::setEnsembleActive);
+        controlPanel.setOnSonifyToggle(this::setSonifyActive);
+        controlPanel.setOnGenerateBifurcation(this::generateBifurcationMap);
+        controlPanel.setOnCompareToggle(this::setCompareActive);
+        controlPanel.setOnResetGravityDirection(() -> {
+            currentGravityAngle = 0.0;
+            simLoop.setGravityAngle(0.0);
+            pendulumCanvas.setGravityAngleVisual(0.0);
+        });
         controlPanel.setOnIntegratorChange(this::setIntegratorType);
         controlPanel.setOnCompareIntegrators(this::compareIntegrators);
         controlPanel.setOnScrubStart(() -> scrubbing = true);
@@ -249,12 +299,18 @@ public final class SimulationController implements Initializable, Navigable {
         // re-apply whatever the user actually had selected, sized for the
         // new N. See selectedIntegratorType's javadoc.
         simLoop.setIntegrator(selectedIntegratorType.create(2 * newConfig.getN()));
+        simLoop.setGravityAngle(currentGravityAngle);
+        pendulumCanvas.setGravityAngleVisual(currentGravityAngle);
 
         // An active ensemble was built from the old N/lengths/masses — it's
         // not just stale, it no longer corresponds to what the primary chain
         // even looks like, so drop it rather than confuse the demo.
         simLoop.setEnsemble(null);
         controlPanel.setEnsembleVisual(false);
+
+        // Same reasoning for an active A/B compare "B" engine.
+        simLoop.setCompareEngine(null);
+        controlPanel.setCompareVisual(false);
 
         pendulumCanvas.setTotalLength(newConfig.getTotalLength());
         pendulumCanvas.clearTrail();
@@ -297,6 +353,86 @@ public final class SimulationController implements Initializable, Navigable {
     }
 
     /**
+     * Activates or deactivates A/B compare: a single "B" engine, structurally
+     * identical to the primary but with link 0's initial angle offset by
+     * {@code deltaTheta1Radians}, spawned from the primary's exact current
+     * state (mirroring {@link #setEnsembleActive}'s own "from right now, not
+     * from a reset" reasoning) and stepped alongside it thereafter. Unlike
+     * the ensemble, this is one deliberately, visibly different scenario —
+     * see {@code ui.PendulumCanvas#drawCompareChain}.
+     */
+    private void setCompareActive(boolean active, double deltaTheta1Radians) {
+        if (!active) {
+            simLoop.setCompareEngine(null);
+            return;
+        }
+        SimState current = stateBuffer.read();
+        if (current == null) return; // physics thread hasn't published a first state yet
+
+        PhysicsEngine compareEngine = new PhysicsEngine(currentConfig);
+        for (int i = 0; i < current.getN(); i++) {
+            double offset = (i == 0) ? deltaTheta1Radians : 0.0;
+            compareEngine.setLinkState(i, current.angles[i] + offset, current.angularVelocities[i]);
+        }
+        simLoop.setCompareEngine(compareEngine);
+    }
+
+    private void setSonifyActive(boolean active) {
+        sonifyActive = active;
+        if (active) sonifier.start();
+        else        sonifier.stop();
+    }
+
+    /**
+     * Runs {@link BifurcationSweep} on a background thread — see its own
+     * javadoc for what it computes and why this can't run on the JavaFX
+     * thread directly. {@code currentConfig} is captured once up front
+     * (deliberately not read live from mid-sweep): the sweep already takes
+     * a while, and racing it against the user editing links while it runs
+     * would make "what does this diagram describe" ambiguous.
+     */
+    private void generateBifurcationMap() {
+        if (bifurcationTask != null && bifurcationTask.isRunning()) return;
+
+        PendulumConfig base = currentConfig;
+        controlPanel.setBifurcationRunning(true);
+
+        Task<BifurcationSweep.Result> task = new Task<>() {
+            @Override
+            protected BifurcationSweep.Result call() {
+                return BifurcationSweep.sweep(base,
+                        BIFURCATION_PARAM_MIN, BIFURCATION_PARAM_MAX, BIFURCATION_COLUMNS,
+                        BIFURCATION_SETTLE_SECONDS, BIFURCATION_SAMPLE_SECONDS,
+                        frac -> updateProgress(frac, 1.0), this::isCancelled);
+            }
+        };
+        task.progressProperty().addListener((obs, oldVal, newVal) ->
+                controlPanel.setBifurcationProgress(newVal.doubleValue()));
+        task.setOnSucceeded(e -> {
+            BifurcationSweep.Result result = task.getValue();
+            graphPanel.setBifurcationData(result.paramValues(), result.samples());
+            graphPanel.setMode(GraphPanel.Mode.BIFURCATION);
+            controlPanel.selectBifurcationMode();
+            controlPanel.setBifurcationRunning(false);
+            bifurcationTask = null;
+        });
+        task.setOnFailed(e -> {
+            LOG.log(Level.WARNING, "Bifurcation sweep failed", task.getException());
+            controlPanel.setBifurcationRunning(false);
+            bifurcationTask = null;
+        });
+        task.setOnCancelled(e -> {
+            controlPanel.setBifurcationRunning(false);
+            bifurcationTask = null;
+        });
+
+        bifurcationTask = task;
+        Thread thread = new Thread(task, "BifurcationSweep");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /**
      * Runs each {@link IntegratorType} from the primary's exact current
      * state for {@link #COMPARISON_DURATION_SECONDS}, using temporary
      * engine instances that never touch the live simulation, and plots the
@@ -306,7 +442,9 @@ public final class SimulationController implements Initializable, Navigable {
         SimState current = stateBuffer.read();
         if (current == null) return;
 
-        Color[] colors = { Color.web("#4ECDC4"), Color.web("#FF6B6B"), Color.web("#FDCB6E") };
+        // Same scope-channel triad as everywhere else in this palette
+        // (magenta/cyan/yellow) — see ui.GraphPanel's own color comment.
+        Color[] colors = { Color.web("#EA3F8C"), Color.web("#3DDCC7"), Color.web("#E8D34A") };
         List<GraphPanel.ComparisonSeries> series = new ArrayList<>();
         int steps = (int) Math.round(COMPARISON_DURATION_SECONDS / COMPARISON_DT);
 
@@ -367,7 +505,22 @@ public final class SimulationController implements Initializable, Navigable {
 
                 Ensemble ensemble = simLoop.getEnsemble();
                 List<SimState> ghosts = (!scrubbing && ensemble != null) ? ensemble.snapshot() : null;
-                pendulumCanvas.render(displayState, ghosts);
+
+                PhysicsEngine compareEngine = simLoop.getCompareEngine();
+                SimState compareState = (!scrubbing && compareEngine != null) ? compareEngine.getState() : null;
+
+                pendulumCanvas.render(displayState, ghosts, compareState);
+
+                if (sonifyActive && liveState != null && liveState.getN() > 0) {
+                    // Tip bob (last link): the one whose speed already
+                    // drives the fastest visual motion, so ear and eye track
+                    // the same thing. Mapped linearly into an audible range
+                    // rather than 1:1 to rad/s, which would mostly sit below
+                    // or above what's pleasant to listen to.
+                    double tipOmega = Math.abs(liveState.angularVelocities[liveState.getN() - 1]);
+                    double hz = 220.0 + Math.min(tipOmega, 10.0) / 10.0 * 660.0;
+                    sonifier.setFrequency(hz);
+                }
 
                 if (graphFrameCount % 2 == 0) {
                     graphPanel.addDataPoint(liveState);
@@ -443,6 +596,18 @@ public final class SimulationController implements Initializable, Navigable {
     public void onHide() {
         renderTimer.stop();
         simLoop.stop();
+
+        // Otherwise a live tone would keep playing after navigating away
+        // from this screen; sonifyActive/the button are reset alongside it
+        // so re-entering the screen doesn't show "Sonify: On" for a
+        // sonifier that isn't actually running anymore.
+        sonifier.stop();
+        sonifyActive = false;
+        controlPanel.setSonifyVisual(false);
+
+        // A sweep left running after navigating away would keep a
+        // background thread alive computing a diagram nobody can see.
+        if (bifurcationTask != null) bifurcationTask.cancel();
 
         Scene scene = btnBack.getScene();
         if (scene != null && keyHandler != null) scene.removeEventFilter(KeyEvent.KEY_PRESSED, keyHandler);

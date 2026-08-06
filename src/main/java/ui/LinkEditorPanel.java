@@ -11,8 +11,10 @@ import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import physics.NaturalLanguageSceneParser;
 import physics.PendulumConfig;
 import physics.PendulumConfigIO;
+import physics.PerformanceCalibrator;
 import physics.Presets;
 
 import java.io.File;
@@ -59,10 +61,11 @@ public final class LinkEditorPanel extends VBox {
     private static final double DEFAULT_NEW_MASS   = 1.0;
     private static final double DEFAULT_NEW_ANGLE  = Math.PI / 2.0; // radians
 
-    // Benchmarked on the project's own hardware: N=64 still ran at 7.5x
-    // real-time, N=96 dropped below 1x. 60 stays comfortably inside that
-    // margin on slower machines too.
-    private static final int MAX_LINKS = 60;
+    // Self-tuned per machine rather than a hardcoded guess — see
+    // PerformanceCalibrator. Triggers a one-time, cached micro-benchmark
+    // (typically well under a second) the first time any LinkEditorPanel is
+    // constructed.
+    private final int maxLinks = PerformanceCalibrator.getMaxLinks();
 
     private final VBox rowsBox = new VBox(6);
     private final Label errorLabel = new Label();
@@ -102,6 +105,20 @@ public final class LinkEditorPanel extends VBox {
         loadButton.setOnAction(e -> handleLoad());
         HBox fileRow = new HBox(6, saveButton, loadButton);
 
+        // ---- Natural-language scenario setup ----
+        // A local keyword/regex heuristic (NaturalLanguageSceneParser), not
+        // an AI/LLM call — see that class's javadoc for why. Labeled as
+        // such here too, so it reads as a shortcut for the form above
+        // rather than something smarter than it is.
+        TextField nlField = new TextField();
+        nlField.setPromptText("e.g. \"5 links, heavy first link, low gravity\"");
+        nlField.setAccessibleText("Describe a scenario in words to fill in the form below");
+        Button nlApplyButton = smallButton("✨ Parse & Apply");
+        nlApplyButton.setOnAction(e -> handleNaturalLanguageApply(nlField.getText()));
+        HBox nlRow = new HBox(6, nlField, nlApplyButton);
+        HBox.setHgrow(nlField, javafx.scene.layout.Priority.ALWAYS);
+        Label nlHint = hintLabel("Keyword parser, not AI — recognizes link count, gravity, angle, and heavy/light/long/short first/last link.");
+
         // ---- Links ----
         Label sectionHeader = sectionLabel("Links");
         Button addButton = smallButton("+ Add");
@@ -132,9 +149,37 @@ public final class LinkEditorPanel extends VBox {
         Label note = hintLabel("Applying resets motion to these initial angles.");
 
         getChildren().addAll(
-            scenarioHeader, presetBox, fileRow, sep(),
+            scenarioHeader, presetBox, fileRow, nlRow, nlHint, sep(),
             headerRow, columnHints, rowsBox, errorLabel, applyButton, note
         );
+    }
+
+    /**
+     * Parses {@code text} against the current form's values (so anything
+     * unmentioned carries over rather than resetting) and, on success,
+     * populates the rows and applies immediately — the same one-path
+     * behavior a preset or a successfully loaded file already takes; see
+     * the class javadoc's note about {@link #onApply} being the sole entry
+     * point for all three.
+     */
+    private void handleNaturalLanguageApply(String text) {
+        if (text == null || text.isBlank()) {
+            showError("Type a description first — e.g. \"3 links, moon gravity, horizontal\".");
+            return;
+        }
+        PendulumConfig current = buildConfigFromRows();
+        if (current == null) return; // buildConfigFromRows already showed the error (some existing row is invalid)
+
+        PendulumConfig parsed;
+        try {
+            parsed = NaturalLanguageSceneParser.parse(text, current, maxLinks);
+        } catch (IllegalArgumentException ex) {
+            showError("Could not build a scenario from that description: " + ex.getMessage());
+            return;
+        }
+        loadFrom(parsed);
+        clearError();
+        if (onApply != null) onApply.accept(parsed);
     }
 
     /** Repopulates every row from {@code config} — called at construction, and again whenever a preset or file is chosen. */
@@ -167,8 +212,8 @@ public final class LinkEditorPanel extends VBox {
     }
 
     private void addRow(double[] initialRadians) {
-        if (rows.size() >= MAX_LINKS) {
-            showError("Maximum of " + MAX_LINKS + " links — this engine's real-time limit on typical hardware.");
+        if (rows.size() >= maxLinks) {
+            showError("Maximum of " + maxLinks + " links — this machine's own measured real-time limit.");
             return;
         }
         LinkRow row = new LinkRow(rows.size() + 1, initialRadians[0], initialRadians[1],
@@ -377,12 +422,30 @@ public final class LinkEditorPanel extends VBox {
 
             deleteButton = new Button("✕");
             deleteButton.getStyleClass().add("link-delete-button");
+            deleteButton.setAccessibleText("Remove link " + index);
 
             container = new HBox(4, indexLabel, this.length, this.mass, this.angle, deleteButton);
             container.setAlignment(Pos.CENTER_LEFT);
+
+            updateAccessibleTexts(index);
         }
 
-        void setIndex(int index) { indexLabel.setText("#" + index); }
+        void setIndex(int index) {
+            indexLabel.setText("#" + index);
+            deleteButton.setAccessibleText("Remove link " + index);
+            updateAccessibleTexts(index);
+        }
+
+        // The three columns are only visually labeled once, by columnHints
+        // above the whole rows list — a screen reader stepping field-by-field
+        // through a row otherwise has no way to tell "length" from "mass"
+        // from "angle" apart from column position, so each field names both
+        // its own role and which link it belongs to.
+        private void updateAccessibleTexts(int index) {
+            length.setAccessibleText("Link " + index + " length");
+            mass.setAccessibleText("Link " + index + " mass");
+            angle.setAccessibleText("Link " + index + " initial angle");
+        }
 
         private static TextField smallField(double value) {
             TextField field = new TextField(formatNumber(value));

@@ -2,8 +2,11 @@ package ui;
 
 import physics.SimState;
 import javafx.scene.Cursor;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.PixelReader;
+import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
@@ -11,6 +14,10 @@ import javafx.scene.paint.Stop;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -71,16 +78,23 @@ public final class PendulumCanvas extends Canvas {
     // time without being individually visible anyway.
     private static final int GRADIENT_THRESHOLD = 20;
 
-    // Default per-bob color palette.
+    // Default per-bob color palette — the "Signal" identity's multi-channel
+    // set: real oscilloscopes distinguish simultaneous channels with a small
+    // set of saturated hues on a dark screen (yellow/cyan/green alongside
+    // magenta), rather than an arbitrary rainbow. Link 0 (the accent
+    // magenta) doubles as the app's one signature hue elsewhere — the
+    // gravity handle, a single-series graph's trace — so a chain's first
+    // link visually reads as "the primary signal" even in ALL_LINKS trail
+    // mode.
     private static final Color[] BOB_COLORS_DEFAULT = {
-        Color.web("#FF6B6B"),   // coral red
-        Color.web("#4ECDC4"),   // teal
-        Color.web("#A29BFE"),   // lavender
-        Color.web("#FDCB6E"),   // gold
-        Color.web("#55EFC4"),   // mint
-        Color.web("#FD79A8"),   // pink
-        Color.web("#74B9FF"),   // sky blue
-        Color.web("#E17055"),   // orange
+        Color.web("#EA3F8C"),   // magenta (accent)
+        Color.web("#3DDCC7"),   // cyan
+        Color.web("#E8D34A"),   // yellow
+        Color.web("#5FE87A"),   // green
+        Color.web("#7B8CFF"),   // periwinkle
+        Color.web("#FF8A3D"),   // orange
+        Color.web("#C77DFF"),   // violet
+        Color.web("#9AA0A6"),   // cool grey
     };
 
     // Okabe-Ito palette: the standard colour-blind-safe qualitative set,
@@ -115,6 +129,12 @@ public final class PendulumCanvas extends Canvas {
         void onRelease(int linkIndex, double angle, double angularVelocity);
     }
 
+    /** Notified as the user drags the gravity-direction handle — "painting" the field. See {@link #drawGravityHandle}. */
+    public interface GravityListener {
+        /** The handle was dragged to a new direction; {@code angle} follows the same convention as a link's {@code theta} (0 = straight down). */
+        void onGravityAngleChanged(double angle);
+    }
+
     // Not final: a structural edit (per-link editor, runtime N) changes the
     // arm's total length after construction. Without a way to update this,
     // the render scale computed in render() would silently go stale — the
@@ -124,8 +144,20 @@ public final class PendulumCanvas extends Canvas {
     // One trail deque per link, sized lazily to the current N in render()
     // (ensureTrailCapacity) since PendulumCanvas isn't otherwise notified
     // when a structural edit changes link count.
-    private final List<Deque<double[]>> trails = new ArrayList<>(); // {screenX, screenY} per link
+    private final List<Deque<double[]>> trails = new ArrayList<>(); // {screenX, screenY, |angularVelocity|} per link
     private TrailMode trailMode = TrailMode.TIP_ONLY;
+
+    // Colours each trail segment by the bob's speed at that instant (blue =
+    // slow, red = fast) instead of a fixed colour — off by default since it
+    // trades away the ALL_LINKS mode's per-link colour coding, which is the
+    // more informative default when N>1.
+    private boolean velocityTint = false;
+
+    // Angular speed (rad/s) that saturates the tint at "fast" (red). Not
+    // measured from data — a fixed reference so the same colour always
+    // means the same physical speed across different runs/scenarios,
+    // otherwise comparing two sessions' trails by eye would be meaningless.
+    private static final double VELOCITY_TINT_MAX = 8.0;
 
     private final Deque<double[]> dragSamples = new ArrayDeque<>(); // {nanos, angle}, most recent FLING_WINDOW_NANOS only
 
@@ -148,6 +180,16 @@ public final class PendulumCanvas extends Canvas {
     private int draggedLink = -1;
     private int hoveredLink = -1; // -1 when the pointer isn't over a bob; drawn as the inspector overlay in render()
 
+    // Gravity-direction handle — a small draggable marker at a fixed pixel
+    // radius from the pivot (not scaled with the chain, unlike everything
+    // else drawn relative to it), independent of any link/bob. 0 = straight
+    // down, matching physics.PhysicsEngine's convention exactly.
+    private static final double GRAVITY_HANDLE_RADIUS = 46;
+    private static final double GRAVITY_HANDLE_HIT_RADIUS = 10;
+    private GravityListener gravityListener;
+    private double gravityAngle = 0.0;
+    private boolean draggingGravity = false;
+
     public PendulumCanvas(double width, double height, double totalLength) {
         super(width, height);
         this.totalLength = totalLength;
@@ -157,6 +199,21 @@ public final class PendulumCanvas extends Canvas {
     /** Registers the listener notified of grab/drag/release. {@code null} disables interaction. */
     public void setDragListener(DragListener listener) {
         this.dragListener = listener;
+    }
+
+    /** Registers the listener notified when the gravity handle is dragged. {@code null} disables that interaction. */
+    public void setGravityListener(GravityListener listener) {
+        this.gravityListener = listener;
+    }
+
+    /**
+     * Updates where the handle is drawn without implying a drag happened —
+     * for keeping the visual in sync after an external change (a structural
+     * rebuild re-applying the previous angle; see
+     * controller.SimulationController#applyStructuralEdit).
+     */
+    public void setGravityAngleVisual(double angle) {
+        this.gravityAngle = angle;
     }
 
     /** Updates the arm length used to compute the render scale. Call after any structural rebuild. */
@@ -176,6 +233,9 @@ public final class PendulumCanvas extends Canvas {
 
     public TrailMode getTrailMode() { return trailMode; }
 
+    public void setVelocityTint(boolean on) { this.velocityTint = on; }
+    public boolean isVelocityTint() { return velocityTint; }
+
     /** Swaps the per-bob color palette. See {@link #BOB_COLORS_COLORBLIND_SAFE}'s javadoc for why this replaces the whole set. */
     public void setColorBlindSafe(boolean colorBlindSafe) {
         this.bobColors = colorBlindSafe ? BOB_COLORS_COLORBLIND_SAFE : BOB_COLORS_DEFAULT;
@@ -187,17 +247,25 @@ public final class PendulumCanvas extends Canvas {
         if (reducedMotion) clearTrail();
     }
 
-    /** Full render call with no ensemble — invoked every frame from the AnimationTimer when the butterfly effect is off. */
+    /** Full render call with no ensemble or A/B compare — invoked every frame from the AnimationTimer when neither is active. */
     public void render(SimState state) {
-        render(state, null);
+        render(state, null, null);
+    }
+
+    /** Full render call, optionally drawing a butterfly-effect ensemble, with no A/B compare chain. */
+    public void render(SimState state, List<SimState> ensembleStates) {
+        render(state, ensembleStates, null);
     }
 
     /**
      * Full render call, optionally drawing a butterfly-effect ensemble as
-     * faint ghost chains behind the primary. {@code ensembleStates} may be
-     * {@code null} or empty when the ensemble isn't active.
+     * faint ghost chains behind the primary, and/or a single bold "B"
+     * chain for A/B compare (see {@link #drawCompareChain}).
+     * {@code ensembleStates} may be {@code null} or empty when the ensemble
+     * isn't active; {@code compareState} is {@code null} when A/B compare
+     * isn't active.
      */
-    public void render(SimState state, List<SimState> ensembleStates) {
+    public void render(SimState state, List<SimState> ensembleStates, SimState compareState) {
         GraphicsContext gc = getGraphicsContext2D();
         double W = getWidth();
         double H = getHeight();
@@ -228,7 +296,14 @@ public final class PendulumCanvas extends Canvas {
             for (SimState ghost : ensembleStates) drawGhostChain(gc, ghost, scale, pivotX, pivotY);
         }
 
+        // Drawn after the ghosts but before the primary chain, so a
+        // deliberately-different B chain reads as "alongside" the primary
+        // rather than buried under either it or the faint ensemble ghosts.
+        if (compareState != null) drawCompareChain(gc, compareState, scale, pivotX, pivotY);
+
         drawPivot(gc, pivotX, pivotY);
+        drawScaleIndicator(gc, pivotX, pivotY, scale);
+        drawGravityHandle(gc, pivotX, pivotY);
         drawChain(gc, state, scale, pivotX, pivotY);
         drawInfoOverlay(gc, state, W);
 
@@ -240,6 +315,33 @@ public final class PendulumCanvas extends Canvas {
     }
 
     public void clearTrail() { trails.forEach(Deque::clear); }
+
+    /**
+     * Saves the current frame — pendulum, trails, ghosts, everything already
+     * drawn on this canvas — as a PNG. "Trace art": running with a long
+     * trail (see {@link #cycleTrailMode}) for a while and exporting captures
+     * exactly the kind of chaotic-attractor-shaped image this class already
+     * renders live, with no separate rendering path to keep in sync.
+     *
+     * <p>Converts pixel-by-pixel through {@link PixelReader} rather than
+     * pulling in the {@code javafx.swing} module's {@code SwingFXUtils} —
+     * one extra module and Maven dependency this project doesn't otherwise
+     * need, just to avoid what's a handful of lines here (and {@code
+     * java.desktop}, needed for {@link ImageIO} either way, is already in
+     * the jpackage module list).
+     */
+    public void exportSnapshot(Path path) throws IOException {
+        WritableImage image = this.snapshot(new SnapshotParameters(), null);
+        int w = (int) image.getWidth(), h = (int) image.getHeight();
+        BufferedImage buffered = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        PixelReader reader = image.getPixelReader();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                buffered.setRGB(x, y, reader.getArgb(x, y));
+            }
+        }
+        ImageIO.write(buffered, "png", path.toFile());
+    }
 
     /** Grows {@link #trails} to match N — never shrinks, so re-adding a link after removing one doesn't need special-casing. */
     private void ensureTrailCapacity(int n) {
@@ -260,7 +362,7 @@ public final class PendulumCanvas extends Canvas {
         double tx = pivotX + state.bobX[link] * scale;
         double ty = pivotY - state.bobY[link] * scale; // flip Y (screen Y down)
         Deque<double[]> t = trails.get(link);
-        t.addLast(new double[]{tx, ty});
+        t.addLast(new double[]{tx, ty, Math.abs(state.angularVelocities[link])});
         while (t.size() > TRAIL_MAX) t.removeFirst();
     }
 
@@ -272,7 +374,8 @@ public final class PendulumCanvas extends Canvas {
         setOnMouseMoved(e -> {
             if (dragListener == null) return;
             hoveredLink = hitTestBob(e.getX(), e.getY());
-            setCursor(hoveredLink >= 0 ? Cursor.HAND : Cursor.DEFAULT);
+            boolean overGravityHandle = hoveredLink < 0 && hitTestGravityHandle(e.getX(), e.getY());
+            setCursor((hoveredLink >= 0 || overGravityHandle) ? Cursor.HAND : Cursor.DEFAULT);
         });
 
         setOnMouseExited(e -> {
@@ -281,17 +384,31 @@ public final class PendulumCanvas extends Canvas {
         });
 
         setOnMousePressed(e -> {
-            if (dragListener == null) return;
+            // Bob grabs take priority: the handle sits GRAVITY_HANDLE_RADIUS
+            // (46px) from the pivot, close enough to a small/low-N chain's
+            // first bob that treating the handle as a fallback rather than
+            // checking it first avoids ever stealing a legitimate bob grab.
             int hit = hitTestBob(e.getX(), e.getY());
-            if (hit < 0) return;
-            if (dragListener.onGrab(hit)) {
-                draggedLink = hit;
-                dragSamples.clear();
-                recordDragSample(angleFromScreen(hit, e.getX(), e.getY()));
+            if (hit >= 0) {
+                if (dragListener == null) return;
+                if (dragListener.onGrab(hit)) {
+                    draggedLink = hit;
+                    dragSamples.clear();
+                    recordDragSample(angleFromScreen(hit, e.getX(), e.getY()));
+                }
+                return;
+            }
+            if (gravityListener != null && hitTestGravityHandle(e.getX(), e.getY())) {
+                draggingGravity = true;
             }
         });
 
         setOnMouseDragged(e -> {
+            if (draggingGravity) {
+                gravityAngle = gravityAngleFromScreen(e.getX(), e.getY());
+                gravityListener.onGravityAngleChanged(gravityAngle);
+                return;
+            }
             if (draggedLink < 0) return;
             double angle = angleFromScreen(draggedLink, e.getX(), e.getY());
             recordDragSample(angle);
@@ -299,6 +416,10 @@ public final class PendulumCanvas extends Canvas {
         });
 
         setOnMouseReleased(e -> {
+            if (draggingGravity) {
+                draggingGravity = false;
+                return;
+            }
             if (draggedLink < 0) return;
             double angle = angleFromScreen(draggedLink, e.getX(), e.getY());
             double angularVelocity = estimateAngularVelocity();
@@ -308,6 +429,17 @@ public final class PendulumCanvas extends Canvas {
             hoveredLink = hitTestBob(e.getX(), e.getY());
             setCursor(hoveredLink >= 0 ? Cursor.HAND : Cursor.DEFAULT);
         });
+    }
+
+    private boolean hitTestGravityHandle(double screenX, double screenY) {
+        double dx = screenX - gravityHandleX(pivotX), dy = screenY - gravityHandleY(pivotY);
+        double r = GRAVITY_HANDLE_HIT_RADIUS;
+        return dx * dx + dy * dy <= r * r;
+    }
+
+    /** Same (sin, cos) convention as {@link #gravityHandleX}/{@link #gravityHandleY}, inverted: screen point relative to the pivot -> angle. */
+    private double gravityAngleFromScreen(double screenX, double screenY) {
+        return Math.atan2(screenX - pivotX, screenY - pivotY);
     }
 
     /** Returns the topmost bob under the given screen point, or -1. Later-drawn (higher-index) bobs win on overlap. */
@@ -386,18 +518,21 @@ public final class PendulumCanvas extends Canvas {
     // -------------------------------------------------------------------------
 
     private void drawBackground(GraphicsContext gc, double W, double H) {
-        gc.setFill(Color.web("#0D0D1F"));
+        // Near-void, neutral grey grid — no blue/violet tint, so the one
+        // accent hue (magenta) never has to compete with a second hue baked
+        // into the chrome itself. See theme.css's "Signal" note.
+        gc.setFill(Color.web("#08080B"));
         gc.fillRect(0, 0, W, H);
 
         // Subtle grid
-        gc.setStroke(Color.web("#1A1A3A", 0.6));
+        gc.setStroke(Color.web("#1C1C22", 0.7));
         gc.setLineWidth(0.5);
         for (double x = 0; x < W; x += 45) gc.strokeLine(x, 0, x, H);
         for (double y = 0; y < H; y += 45) gc.strokeLine(0, y, W, y);
 
         // Horizontal centre line (helps perceive swing amplitude)
         double cx = W / 2.0;
-        gc.setStroke(Color.web("#2A2A5A", 0.5));
+        gc.setStroke(Color.web("#2E2E36", 0.6));
         gc.setLineWidth(1.0);
         gc.strokeLine(cx, 0, cx, H);
     }
@@ -409,8 +544,11 @@ public final class PendulumCanvas extends Canvas {
      * #drawChain} spends on making the single primary chain look good.
      */
     private void drawGhostChain(GraphicsContext gc, SimState state, double scale, double pivotX, double pivotY) {
+        // Faint copies of the same signal, not a second color story: each
+        // ghost is the accent magenta at very low alpha, so 50 of them read
+        // as "the live trace, echoed" rather than introducing a competing hue.
         double prevX = pivotX, prevY = pivotY;
-        gc.setStroke(Color.web("#6C63FF", 0.14));
+        gc.setStroke(Color.web("#EA3F8C", 0.12));
         gc.setLineWidth(1.0);
 
         for (int i = 0; i < state.getN(); i++) {
@@ -421,16 +559,56 @@ public final class PendulumCanvas extends Canvas {
             prevY = by;
         }
 
-        gc.setFill(Color.web("#6C63FF", 0.4));
+        gc.setFill(Color.web("#EA3F8C", 0.35));
         double r = 2.5;
         gc.fillOval(prevX - r, prevY - r, r * 2, r * 2);
+    }
+
+    /**
+     * A/B compare's "B" chain — one deliberately-different scenario run
+     * alongside the primary. Bold and clearly distinguished by color (not
+     * a partial-alpha ghost the way the ensemble's 50 near-identical copies
+     * are): this is meant to be read at a glance as "the other one," not
+     * discovered by squinting.
+     */
+    private void drawCompareChain(GraphicsContext gc, SimState state, double scale, double pivotX, double pivotY) {
+        double prevX = pivotX, prevY = pivotY;
+        // Cyan — the "second channel" color everywhere else in this palette
+        // (bob #2, the energy graph's KE trace): a two-channel scope reads
+        // as "CH1 vs CH2," and this is deliberately that same pairing
+        // against the magenta primary chain, not an arbitrary third hue.
+        Color compareColor = Color.web("#3DDCC7");
+        gc.setStroke(compareColor.deriveColor(0, 1, 1, 0.8));
+        gc.setLineWidth(2.0);
+
+        for (int i = 0; i < state.getN(); i++) {
+            double bx = pivotX + state.bobX[i] * scale;
+            double by = pivotY - state.bobY[i] * scale;
+            gc.strokeLine(prevX, prevY, bx, by);
+            prevX = bx;
+            prevY = by;
+        }
+
+        gc.setFill(compareColor);
+        double r = bobBaseRadius * 0.7;
+        gc.fillOval(prevX - r, prevY - r, r * 2, r * 2);
+        gc.setStroke(Color.web("#1B6E63"));
+        gc.setLineWidth(1.0);
+        gc.strokeOval(prevX - r, prevY - r, r * 2, r * 2);
+
+        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, 9));
+        gc.setFill(compareColor);
+        gc.fillText("B", prevX + r + 3, prevY + 3);
     }
 
     private void drawTrails(GraphicsContext gc, int n) {
         if (trailMode == TrailMode.OFF) return;
 
         if (trailMode == TrailMode.TIP_ONLY) {
-            if (n > 0) drawOneTrail(gc, trails.get(n - 1), Color.web("#FF6B6B"));
+            // The tip trail is the single clearest "live signal" reading on
+            // this whole canvas — it gets the accent, same as the gravity
+            // handle and every other primary/live element.
+            if (n > 0) drawOneTrail(gc, trails.get(n - 1), Color.web("#EA3F8C"));
         } else { // ALL_LINKS — each in its own bob color, so overlapping trails stay distinguishable
             for (int i = 0; i < n; i++) drawOneTrail(gc, trails.get(i), bobColors[i % bobColors.length]);
         }
@@ -447,7 +625,8 @@ public final class PendulumCanvas extends Canvas {
             if (prev != null) {
                 double alpha = 0.05 + 0.65 * ((double) idx / total);
                 double width = 0.5 + 2.0 * ((double) idx / total);
-                gc.setStroke(color.deriveColor(0, 1, 1, alpha));
+                Color segmentColor = velocityTint ? velocityColor(pt[2]) : color;
+                gc.setStroke(segmentColor.deriveColor(0, 1, 1, alpha));
                 gc.setLineWidth(width);
                 gc.strokeLine(prev[0], prev[1], pt[0], pt[1]);
             }
@@ -456,16 +635,122 @@ public final class PendulumCanvas extends Canvas {
         }
     }
 
+    /**
+     * Maps an angular speed to a blue (slow) → magenta (fast, at/above
+     * {@link #VELOCITY_TINT_MAX}) hue ramp — a short sweep through the cool
+     * side of the wheel into the app's own accent hue, rather than the full
+     * rainbow a blue-to-red ramp would cross. "Fast" lands on the same
+     * magenta used for the accent/gravity handle/primary trace everywhere
+     * else, so the tint's hottest color always means the same thing this
+     * whole palette already uses it for.
+     */
+    private static Color velocityColor(double angularSpeed) {
+        double t = Math.max(0.0, Math.min(1.0, angularSpeed / VELOCITY_TINT_MAX));
+        double hue = 220.0 + t * 110.0; // 220=blue at t=0, up to 330=magenta at t=1
+        return Color.hsb(hue, 0.85, 1.0);
+    }
+
+    // Candidate reference lengths for the scale bar, in the same world
+    // units as PendulumConfig's lengths (meters, per the g=9.81 default).
+    // "Nice" values, map-legend style, so the bar reads as a round number
+    // rather than something like "0.73 m".
+    private static final double[] SCALE_BAR_NICE_LENGTHS =
+            {0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500};
+    private static final double SCALE_BAR_TARGET_PX = 70;
+
+    /**
+     * A pivot-anchored ruler showing what one world-length unit looks like
+     * at the current auto-fit {@code scale}. Necessary because {@code scale}
+     * itself changes with N/link lengths (see {@link #render}'s coordinate
+     * mapping comment) specifically so the whole chain always fits on
+     * screen — without this, a longer chain silently redraws at a smaller
+     * scale with no visual cue that "smaller" happened, and a viewer has no
+     * way to compare apparent sizes across two different configurations.
+     */
+    private void drawScaleIndicator(GraphicsContext gc, double pivotX, double pivotY, double scale) {
+        double referenceLength = pickScaleBarLength(scale);
+        double barPx = referenceLength * scale;
+        double barX  = pivotX + PIVOT_RADIUS + 24;
+        double barY  = pivotY;
+
+        gc.setStroke(Color.web("#8A8A94", 0.85));
+        gc.setLineWidth(1.5);
+        gc.strokeLine(barX, barY, barX + barPx, barY);
+        gc.strokeLine(barX, barY - 4, barX, barY + 4);
+        gc.strokeLine(barX + barPx, barY - 4, barX + barPx, barY + 4);
+
+        gc.setFill(Color.web("#8A8A94"));
+        gc.setFont(Font.font("Monospaced", 9));
+        gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
+        String label = (referenceLength == Math.floor(referenceLength))
+                ? String.format("%d m", (int) referenceLength)
+                : String.format("%s m", referenceLength);
+        gc.fillText(label, barX + barPx / 2.0, barY - 8);
+        gc.setTextAlign(javafx.scene.text.TextAlignment.LEFT); // restore default for every other fillText in this class
+    }
+
+    /** Handle position for the current {@link #gravityAngle} — same (sin, cos) convention {@code render()} uses for every bob, at a fixed pixel radius instead of a scaled world length. */
+    private double gravityHandleX(double pivotX) { return pivotX + GRAVITY_HANDLE_RADIUS * Math.sin(gravityAngle); }
+    private double gravityHandleY(double pivotY) { return pivotY + GRAVITY_HANDLE_RADIUS * Math.cos(gravityAngle); }
+
+    /**
+     * Draggable indicator for {@link PhysicsEngine#getGravityAngle}
+     * ("painting" the gravity field, per the project's nice-to-have review):
+     * a short line from the pivot to a small handle in the current gravity
+     * direction. Grabbing and dragging the handle rotates it — see {@link
+     * #wireInteraction}. Always drawn (not gated by trail mode or reduced
+     * motion): it's a static control, not an animated flourish.
+     */
+    private void drawGravityHandle(GraphicsContext gc, double pivotX, double pivotY) {
+        double hx = gravityHandleX(pivotX), hy = gravityHandleY(pivotY);
+
+        // The accent, not a fourth color: this is the one thing on the
+        // whole canvas the user directly manipulates, and "what's
+        // interactive looks interactive" here means it shares the same
+        // magenta as every other live/active element rather than
+        // introducing its own hue.
+        gc.setStroke(Color.web("#EA3F8C", 0.75));
+        gc.setLineWidth(1.5);
+        gc.strokeLine(pivotX, pivotY, hx, hy);
+
+        gc.setFill(draggingGravity ? Color.web("#EA3F8C") : Color.web("#EA3F8C", 0.85));
+        gc.fillOval(hx - 5, hy - 5, 10, 10);
+        gc.setStroke(Color.web("#7A2148"));
+        gc.setLineWidth(1.0);
+        gc.strokeOval(hx - 5, hy - 5, 10, 10);
+
+        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFill(Color.web("#EA3F8C"));
+        gc.fillText("g", hx + 8, hy + 3);
+    }
+
+    /** Picks the nice reference length whose pixel length lands closest to {@link #SCALE_BAR_TARGET_PX}. */
+    private static double pickScaleBarLength(double scale) {
+        double best = SCALE_BAR_NICE_LENGTHS[0];
+        double bestDiff = Double.MAX_VALUE;
+        for (double candidate : SCALE_BAR_NICE_LENGTHS) {
+            double diff = Math.abs(candidate * scale - SCALE_BAR_TARGET_PX);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
     private void drawPivot(GraphicsContext gc, double px, double py) {
+        // Neutral, not accent: the pivot is structural (it never moves,
+        // never carries live data), so it stays plain grey — the accent is
+        // reserved for what's actually live or interactive on this canvas.
         // Shadow
         gc.setFill(Color.web("#000000", 0.4));
         gc.fillOval(px - PIVOT_RADIUS + 2, py - PIVOT_RADIUS + 2,
                     PIVOT_RADIUS * 2, PIVOT_RADIUS * 2);
         // Body
-        gc.setFill(Color.web("#CCCCDD"));
+        gc.setFill(Color.web("#D6D6DC"));
         gc.fillOval(px - PIVOT_RADIUS, py - PIVOT_RADIUS, PIVOT_RADIUS * 2, PIVOT_RADIUS * 2);
         // Cross mark
-        gc.setStroke(Color.web("#888899"));
+        gc.setStroke(Color.web("#6B6B74"));
         gc.setLineWidth(1.5);
         gc.strokeLine(px - 4, py, px + 4, py);
         gc.strokeLine(px, py - 4, px, py + 4);
@@ -486,7 +771,7 @@ public final class PendulumCanvas extends Canvas {
             gc.strokeLine(prevX + 1.5, prevY + 1.5, bx + 1.5, by + 1.5);
 
             // Rod
-            gc.setStroke(Color.web("#9A9ABB"));
+            gc.setStroke(Color.web("#C7C7D1"));
             gc.setLineWidth(ROD_WIDTH);
             gc.strokeLine(prevX, prevY, bx, by);
 
@@ -561,14 +846,14 @@ public final class PendulumCanvas extends Canvas {
         double boxY = Math.max(by - boxH - 14, 4);
 
         gc.setFill(Color.web("#000000", 0.6));
-        gc.fillRoundRect(boxX, boxY, boxW, boxH, 6, 6);
-        gc.setStroke(Color.web("#6C63FF", 0.7));
+        gc.fillRoundRect(boxX, boxY, boxW, boxH, 3, 3);
+        gc.setStroke(Color.web("#EA3F8C", 0.7));
         gc.setLineWidth(1.0);
-        gc.strokeRoundRect(boxX, boxY, boxW, boxH, 6, 6);
+        gc.strokeRoundRect(boxX, boxY, boxW, boxH, 3, 3);
 
         gc.setFill(Color.web("#FFFFFF"));
         gc.fillText("Link #" + (link + 1), boxX + 8, boxY + 15);
-        gc.setFill(Color.web("#CCCCEE"));
+        gc.setFill(Color.web("#C7C7D1"));
         gc.fillText(String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[link], state.angularVelocities[link]),
                 boxX + 8, boxY + 30);
         gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 8, boxY + 44);
@@ -579,9 +864,12 @@ public final class PendulumCanvas extends Canvas {
 
         // Semi-transparent pill background
         gc.setFill(Color.web("#000000", 0.45));
-        gc.fillRoundRect(8, 8, 190, 46, 8, 8);
+        gc.fillRoundRect(8, 8, 190, 46, 3, 3);
 
-        gc.setFill(Color.web("#A0A0CC"));
+        // Live telemetry gets the accent — the same "one hue for anything
+        // actively reporting a current value" rule as the tip trail and the
+        // gravity handle.
+        gc.setFill(Color.web("#EA3F8C"));
         gc.fillText(String.format("t  = %7.2f s",   state.time),         14, 23);
         gc.fillText(String.format("E  = %7.3f J",   state.totalEnergy),  14, 37);
         gc.fillText(String.format("KE = %6.3f  PE = %7.3f",
@@ -589,7 +877,7 @@ public final class PendulumCanvas extends Canvas {
     }
 
     private void drawWaitingMessage(GraphicsContext gc, double W, double H) {
-        gc.setFill(Color.web("#4A4A8A", 0.7));
+        gc.setFill(Color.web("#5C5C66", 0.85));
         gc.setFont(Font.font("System", FontWeight.NORMAL, 14));
         gc.fillText("Initialising physics engine...", W / 2 - 100, H / 2);
     }

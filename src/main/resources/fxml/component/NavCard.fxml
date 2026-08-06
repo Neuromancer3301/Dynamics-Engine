@@ -6,6 +6,7 @@
 <VBox fx:id="root" styleClass="nav-card" alignment="TOP_LEFT" spacing="8.0"
       xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
       fx:controller="component.NavCardController">
+    <Label fx:id="indexLabel" styleClass="nav-card-index" text="01"/>
     <Label fx:id="iconLabel" styleClass="nav-card-icon" text="⚛"/>
     <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title"/>
     <Label fx:id="descriptionLabel" styleClass="nav-card-desc" text="Description" wrapText="true"/>

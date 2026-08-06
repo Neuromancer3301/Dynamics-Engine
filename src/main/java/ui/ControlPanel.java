@@ -11,8 +11,14 @@ import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.stage.FileChooser;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Control panel — left sidebar with parameter sliders, graph-mode selector,
@@ -27,6 +33,8 @@ import java.util.function.Consumer;
  */
 public final class ControlPanel extends VBox {
 
+    private static final Logger LOG = Logger.getLogger(ControlPanel.class.getName());
+
     // Small enough to be imperceptible against typical swing speeds
     // (order 1-3 rad/s), large enough to seed a real chaotic divergence —
     // the same reasoning as the butterfly ensemble's epsilon, applied
@@ -38,6 +46,14 @@ public final class ControlPanel extends VBox {
     private final Label lblEnergy    = styledLabel("E  = ---");
     private final Label lblDrift     = styledLabel("Drift = ---");
     private final Label lblLyapunov  = styledLabel("λ  = ---");
+
+    // Instability banner: the drift number above is easy to miss buried in a
+    // sidebar, so once drift crosses a "this run is no longer trustworthy"
+    // threshold (or a NaN/Infinity slips through — see updateStatus), this
+    // surfaces the same fact as an impossible-to-miss banner instead.
+    private static final double INSTABILITY_DRIFT_THRESHOLD_PERCENT = 5.0;
+    private final Label lblInstabilityWarning = new Label(
+            "⚠ Simulation is numerically unstable — try Reset or a smaller speed multiplier.");
 
     // Kept as a field so the render loop can move it (auto-tracking "now")
     // without disturbing an in-progress user drag — see setHistoryPositionLive.
@@ -60,13 +76,36 @@ public final class ControlPanel extends VBox {
     // know it's a ToggleButton.
     private final ToggleButton btnEnsemble = new ToggleButton("🦋  Butterfly Effect");
 
+    // Kept as a field so controller.SimulationController#applyStructuralEdit
+    // can reset this button's visual state when a structural edit drops an
+    // active A/B compare — same reasoning as btnEnsemble above.
+    private final ToggleButton btnCompare2 = new ToggleButton("🆚  A/B Compare");
+
     // Kept as a field so PendulumCanvas.cycleTrailMode()'s new state can be
     // reflected in this button's label after each click.
     private final Button btnTrailMode = new Button();
 
+    // Kept as a field so controller.SimulationController#onHide can force
+    // this off (and reflect that in the button) when leaving the screen —
+    // audio.Sonifier stops there regardless of what this button shows, so
+    // leaving it visually "on" would be a lie.
+    private final ToggleButton btnSonify = new ToggleButton("🔊  Sonify: Off");
+
+    // Assigned during build() (they're constructed alongside the rest of
+    // the Graph Mode section) but read/written afterward by
+    // controller.SimulationController while a bifurcation sweep runs on a
+    // background Task — see setBifurcationProgress/setBifurcationRunning.
+    private ProgressBar bifurcationProgressBar;
+    private Button bifurcationButton;
+    private RadioButton bifurcationRadio;
+
     // Callbacks wired in controller.SimulationController
     private Runnable onReset;
     private Consumer<Boolean> onEnsembleToggle;
+    private Consumer<Boolean> onSonifyToggle;
+    private Runnable onGenerateBifurcation;
+    private Runnable onResetGravityDirection;
+    private BiConsumer<Boolean, Double> onCompareToggle;
     private Consumer<IntegratorType> onIntegratorChange;
     private Runnable onCompareIntegrators;
     private Runnable onScrubStart;
@@ -79,6 +118,11 @@ public final class ControlPanel extends VBox {
         getStyleClass().add("sidebar-panel");
         setMinWidth(210);
         setMaxWidth(230);
+
+        lblInstabilityWarning.getStyleClass().add("sidebar-warning-banner");
+        lblInstabilityWarning.setWrapText(true);
+        lblInstabilityWarning.setVisible(false);
+        lblInstabilityWarning.setManaged(false);
     }
 
     // -------------------------------------------------------------------------
@@ -104,6 +148,13 @@ public final class ControlPanel extends VBox {
         Label lGrav = sectionLabel("Gravity  (m/s²)");
         Slider sGrav = slider(0.5, 30.0, 9.81);
         TextField tfGrav = numericField(9.81);
+        sGrav.setAccessibleText("Gravity in meters per second squared, from 0.5 to 30");
+        tfGrav.setAccessibleText("Gravity value in meters per second squared");
+        lGrav.setLabelFor(sGrav);
+        Label gravityDirHint = hintLabel("Drag the small \"g\" handle near the pivot to tilt which way gravity pulls.");
+        Button btnResetGravityDir = new Button("↺  Reset Gravity Direction");
+        styleButton(btnResetGravityDir);
+        btnResetGravityDir.setOnAction(e -> { if (onResetGravityDirection != null) onResetGravityDirection.run(); });
         sGrav.valueProperty().addListener((o, ov, nv) -> {
             simLoop.setGravity(nv.doubleValue());
             tfGrav.setText(String.format("%.2f", nv.doubleValue()));
@@ -114,6 +165,9 @@ public final class ControlPanel extends VBox {
         Label lSpeed = sectionLabel("Sim Speed");
         Slider sSpeed = slider(0.05, 8.0, 1.0);
         TextField tfSpeed = numericField(1.0);
+        sSpeed.setAccessibleText("Simulation speed multiplier, from 0.05 to 8 times real time");
+        tfSpeed.setAccessibleText("Simulation speed multiplier value");
+        lSpeed.setLabelFor(sSpeed);
         sSpeed.valueProperty().addListener((o, ov, nv) -> {
             simLoop.setSpeedMultiplier(nv.doubleValue());
             tfSpeed.setText(String.format("%.2f", nv.doubleValue()));
@@ -134,10 +188,41 @@ public final class ControlPanel extends VBox {
 
         Button btnReset = new Button("↺  Reset");
         styleButton(btnReset);
+
+        // Reset scope: by default a reset wipes trails/graphs/history too
+        // (the old, only behavior) — but that throws away a Poincaré map or
+        // integrator-comparison chart you were mid-way through building just
+        // to re-center the pendulum. Unchecking this keeps that visual
+        // history and only resets the physics itself.
+        CheckBox cbResetClearsGraphs = new CheckBox("Clear graphs too");
+        cbResetClearsGraphs.setSelected(true);
+        cbResetClearsGraphs.getStyleClass().add("sidebar-checkbox");
+
+        // ---- Time reversal ----
+        ToggleButton btnReverse = new ToggleButton("⏪  Reverse Time: Off");
+        styleButton(btnReverse);
+        btnReverse.setOnAction(e -> {
+            boolean on = btnReverse.isSelected();
+            simLoop.setTimeReversed(on);
+            btnReverse.setText(on ? "⏪  Reverse Time: On" : "⏪  Reverse Time: Off");
+        });
+        Label reverseHint = hintLabel(
+            "Genuinely integrates backward (not a replay) — watch a single pendulum "
+          + "retrace itself almost exactly, and a chaotic chain fail to.");
+
         btnReset.setOnAction(e -> {
             simLoop.reset();
-            pendulumCanvas.clearTrail();
-            graphPanel.clear();
+            if (cbResetClearsGraphs.isSelected()) {
+                pendulumCanvas.clearTrail();
+                graphPanel.clear();
+            }
+            // A reset physics state running backward is a confusing
+            // combination — a reset always means "start over, forward."
+            if (btnReverse.isSelected()) {
+                btnReverse.setSelected(false);
+                simLoop.setTimeReversed(false);
+                btnReverse.setText("⏪  Reverse Time: Off");
+            }
             if (onReset != null) onReset.run();
         });
 
@@ -150,6 +235,8 @@ public final class ControlPanel extends VBox {
                 new ComboBox<>(FXCollections.observableArrayList(IntegratorType.values()));
         integratorBox.setValue(IntegratorType.RK4);
         integratorBox.setMaxWidth(Double.MAX_VALUE);
+        integratorBox.setAccessibleText("Numerical integrator used to advance the simulation");
+        lIntegrator.setLabelFor(integratorBox);
         integratorBox.setOnAction(e -> {
             if (onIntegratorChange != null) onIntegratorChange.accept(integratorBox.getValue());
         });
@@ -163,6 +250,8 @@ public final class ControlPanel extends VBox {
         Label lHistory = sectionLabel("History");
         historySlider.setMaxWidth(Double.MAX_VALUE);
         historySlider.getStyleClass().add("sidebar-slider");
+        historySlider.setAccessibleText("Scrub through the last 30 seconds of simulation history");
+        lHistory.setLabelFor(historySlider);
         historySlider.setOnMousePressed(e -> { if (onScrubStart != null) onScrubStart.run(); });
         historySlider.setOnMouseReleased(e -> { if (onScrubEnd != null) onScrubEnd.run(); });
         historySlider.valueProperty().addListener((o, ov, nv) -> {
@@ -178,6 +267,35 @@ public final class ControlPanel extends VBox {
             refreshTrailModeLabel(pendulumCanvas.getTrailMode());
         });
 
+        ToggleButton btnVelocityTint = new ToggleButton("🌡  Velocity Tint: Off");
+        styleButton(btnVelocityTint);
+        btnVelocityTint.setSelected(pendulumCanvas.isVelocityTint());
+        btnVelocityTint.setOnAction(e -> {
+            boolean on = btnVelocityTint.isSelected();
+            pendulumCanvas.setVelocityTint(on);
+            btnVelocityTint.setText(on ? "🌡  Velocity Tint: On" : "🌡  Velocity Tint: Off");
+        });
+        Label velocityTintHint = hintLabel("Colours the trail by speed (blue=slow, red=fast) instead of by link.");
+
+        Button btnExportTraceArt = new Button("🖼  Export Trace Art (PNG)");
+        styleButton(btnExportTraceArt);
+        Label traceArtHint = hintLabel("Saves the pendulum view exactly as shown — try it with a long trail on.");
+        btnExportTraceArt.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Export Trace Art");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG image", "*.png"));
+            chooser.setInitialFileName("dynamics-engine-trace-art.png");
+            File file = chooser.showSaveDialog(getScene() != null ? getScene().getWindow() : null);
+            if (file == null) return;
+            try {
+                pendulumCanvas.exportSnapshot(file.toPath());
+                traceArtHint.setText("Saved to " + file.getName());
+            } catch (IOException ex) {
+                LOG.log(Level.WARNING, "Failed to export trace art to " + file, ex);
+                traceArtHint.setText("Export failed: " + ex.getMessage());
+            }
+        });
+
         // ---- Butterfly-effect ensemble + perturb ----
         Label lEnsemble = sectionLabel("Chaos");
         styleButton(btnEnsemble);
@@ -191,24 +309,90 @@ public final class ControlPanel extends VBox {
         btnPerturb.setOnAction(e -> simLoop.perturb(PERTURB_MAGNITUDE));
         Label perturbHint = hintLabel("Nudges every link's velocity by a microscopic random amount.");
 
+        styleButton(btnSonify);
+        btnSonify.setOnAction(e -> {
+            boolean on = btnSonify.isSelected();
+            if (onSonifyToggle != null) onSonifyToggle.accept(on);
+            btnSonify.setText(on ? "🔊  Sonify: On" : "🔊  Sonify: Off");
+        });
+        Label sonifyHint = hintLabel("Tip bob's speed as a live tone — hear two nearly-identical runs drift apart.");
+
+        // ---- A/B compare ----
+        Label lCompare = sectionLabel("A/B Compare");
+        Slider sCompareOffset = slider(-1.0, 1.0, 0.1);
+        sCompareOffset.setAccessibleText("B's initial angle offset from A, in radians, from -1 to 1");
+        Label compareOffsetLabel = hintLabel("Δθ₁ = 0.10 rad");
+        sCompareOffset.valueProperty().addListener((o, ov, nv) ->
+                compareOffsetLabel.setText(String.format("Δθ₁ = %.2f rad", nv.doubleValue())));
+        styleButton(btnCompare2);
+        btnCompare2.setOnAction(e -> {
+            boolean on = btnCompare2.isSelected();
+            if (onCompareToggle != null) onCompareToggle.accept(on, sCompareOffset.getValue());
+            setCompareVisual(on);
+        });
+        Label compareHint2 = hintLabel(
+            "Spawns one deliberately different \"B\" chain from right now, offset by Δθ₁ — "
+          + "unlike Butterfly Effect's 50 near-identical copies, this is one clear side-by-side comparison.");
+
         // ---- Graph mode ----
         Label lGraph = sectionLabel("Graph Mode");
         ToggleGroup tgGraph = new ToggleGroup();
 
-        RadioButton rbAngle    = radioBtn("θ₁(t) — Angle",              tgGraph);
-        RadioButton rbEnergy   = radioBtn("E(t)  — Energy",              tgGraph);
-        RadioButton rbPhase    = radioBtn("Phase Portrait (θ₁,ω₁)",      tgGraph);
-        RadioButton rbAll      = radioBtn("All (small multiples)",       tgGraph);
-        RadioButton rbPoincare = radioBtn("Poincaré Section (θ₂,ω₂)",    tgGraph);
-        RadioButton rbCompare  = radioBtn("Integrator Comparison",       tgGraph);
+        RadioButton rbAngle       = radioBtn("θ₁(t) — Angle",              tgGraph);
+        RadioButton rbEnergy      = radioBtn("E(t)  — Energy",              tgGraph);
+        RadioButton rbPhase       = radioBtn("Phase Portrait (θ₁,ω₁)",      tgGraph);
+        RadioButton rbAll         = radioBtn("All (small multiples)",       tgGraph);
+        RadioButton rbPoincare    = radioBtn("Poincaré Section (θ₂,ω₂)",    tgGraph);
+        RadioButton rbCompare     = radioBtn("Integrator Comparison",       tgGraph);
+        RadioButton rbBifurcation = radioBtn("Bifurcation Map",             tgGraph);
         rbAngle.setSelected(true);
 
-        rbAngle   .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ANGLE));
-        rbEnergy  .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ENERGY));
-        rbPhase   .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.PHASE));
-        rbAll     .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ALL));
-        rbPoincare.setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.POINCARE));
-        rbCompare .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.COMPARISON));
+        rbAngle      .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ANGLE));
+        rbEnergy     .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ENERGY));
+        rbPhase      .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.PHASE));
+        rbAll        .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ALL));
+        rbPoincare   .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.POINCARE));
+        rbCompare    .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.COMPARISON));
+        rbBifurcation.setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.BIFURCATION));
+
+        Button btnBifurcation = new Button("🌀  Generate Bifurcation Map");
+        styleButton(btnBifurcation);
+        ProgressBar bifurcationProgress = new ProgressBar(0);
+        bifurcationProgress.setMaxWidth(Double.MAX_VALUE);
+        bifurcationProgress.setVisible(false);
+        bifurcationProgress.setManaged(false);
+        Label bifurcationHint = hintLabel(
+            "Sweeps the first link's initial angle and re-runs the sim many times — "
+          + "can take up to a minute depending on N and this machine's speed.");
+        btnBifurcation.setOnAction(e -> {
+            if (onGenerateBifurcation != null) onGenerateBifurcation.run();
+        });
+        this.bifurcationProgressBar = bifurcationProgress;
+        this.bifurcationButton = btnBifurcation;
+        this.bifurcationRadio = rbBifurcation;
+
+        Button btnExportCsv = new Button("⬇  Export CSV");
+        styleButton(btnExportCsv);
+        Label exportHint = hintLabel("Exports the buffered angle/energy series shown in the graph.");
+        btnExportCsv.setOnAction(e -> {
+            if (!graphPanel.hasData()) {
+                exportHint.setText("Nothing to export yet — let the simulation run first.");
+                return;
+            }
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Export Graph Data");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV", "*.csv"));
+            chooser.setInitialFileName("dynamics-engine-export.csv");
+            File file = chooser.showSaveDialog(getScene() != null ? getScene().getWindow() : null);
+            if (file == null) return;
+            try {
+                graphPanel.exportCsv(file.toPath());
+                exportHint.setText("Exported to " + file.getName());
+            } catch (IOException ex) {
+                LOG.log(Level.WARNING, "Failed to export graph data to " + file, ex);
+                exportHint.setText("Export failed: " + ex.getMessage());
+            }
+        });
 
         // ---- Status display ----
         Label lStatus = sectionLabel("Live Status");
@@ -221,15 +405,19 @@ public final class ControlPanel extends VBox {
 
         // ---- Assemble ----
         getChildren().addAll(
-            header,
-            sep(), lGrav,  hRow(sGrav, tfGrav),
+            header, lblInstabilityWarning,
+            sep(), lGrav,  hRow(sGrav, tfGrav), gravityDirHint, btnResetGravityDir,
             sep(), lSpeed, hRow(sSpeed, tfSpeed),
-            sep(), playRow,
+            sep(), playRow, cbResetClearsGraphs,
+            sep(), btnReverse, reverseHint,
             sep(), lIntegrator, integratorBox, btnCompare, compareHint,
             sep(), lHistory, hRow(historySlider, historyLabel), historyHint,
-            sep(), btnTrailMode,
-            sep(), lEnsemble, btnEnsemble, ensembleHint, btnPerturb, perturbHint,
-            sep(), lGraph, rbAngle, rbEnergy, rbPhase, rbAll, rbPoincare, rbCompare,
+            sep(), btnTrailMode, btnVelocityTint, velocityTintHint, btnExportTraceArt, traceArtHint,
+            sep(), lEnsemble, btnEnsemble, ensembleHint, btnPerturb, perturbHint, btnSonify, sonifyHint,
+            sep(), lCompare, hRow(sCompareOffset, compareOffsetLabel), btnCompare2, compareHint2,
+            sep(), lGraph, rbAngle, rbEnergy, rbPhase, rbAll, rbPoincare, rbCompare, rbBifurcation,
+            btnBifurcation, bifurcationProgress, bifurcationHint,
+            btnExportCsv, exportHint,
             sep(), lStatus, statusBox,
             sep(), hint
         );
@@ -241,6 +429,34 @@ public final class ControlPanel extends VBox {
 
     /** Called with {@code true}/{@code false} when the butterfly-effect toggle is clicked. */
     public void setOnEnsembleToggle(Consumer<Boolean> callback) { this.onEnsembleToggle = callback; }
+    public void setOnSonifyToggle(Consumer<Boolean> callback)   { this.onSonifyToggle = callback; }
+    public void setOnGenerateBifurcation(Runnable callback)     { this.onGenerateBifurcation = callback; }
+    public void setOnResetGravityDirection(Runnable callback)   { this.onResetGravityDirection = callback; }
+    public void setOnCompareToggle(BiConsumer<Boolean, Double> callback) { this.onCompareToggle = callback; }
+
+    /** Resets the A/B compare button's visual state — used when a structural edit drops an active compare (see controller.SimulationController#applyStructuralEdit). */
+    public void setCompareVisual(boolean active) {
+        btnCompare2.setSelected(active);
+        btnCompare2.setText(active ? "🆚  A/B Compare: On" : "🆚  A/B Compare");
+    }
+
+    /** Drives the progress bar while a background sweep runs — see {@code physics.BifurcationSweep}. */
+    public void setBifurcationProgress(double fraction) {
+        bifurcationProgressBar.setProgress(fraction);
+    }
+
+    /** Toggles the button/progress-bar between "idle" and "sweep in progress" — disables re-entrancy. */
+    public void setBifurcationRunning(boolean running) {
+        bifurcationButton.setDisable(running);
+        bifurcationProgressBar.setVisible(running);
+        bifurcationProgressBar.setManaged(running);
+        if (!running) bifurcationProgressBar.setProgress(0);
+    }
+
+    /** Selects the Bifurcation Map radio once a sweep finishes, so the result is immediately visible. */
+    public void selectBifurcationMode() {
+        bifurcationRadio.setSelected(true);
+    }
 
     /** Called with the newly selected type whenever the integrator picker changes. */
     public void setOnIntegratorChange(Consumer<IntegratorType> callback) { this.onIntegratorChange = callback; }
@@ -289,10 +505,19 @@ public final class ControlPanel extends VBox {
         btnPause.setText(paused ? "▶  Resume" : "⏸  Pause");
     }
 
+    /** Keeps the sonify button's visual state in sync when it's force-stopped from outside (leaving the screen). */
+    public void setSonifyVisual(boolean on) {
+        btnSonify.setSelected(on);
+        btnSonify.setText(on ? "🔊  Sonify: On" : "🔊  Sonify: Off");
+    }
+
     public void updateStatus(SimState state, Double initialEnergy) {
         if (state == null) return;
         lblTime.setText(String.format("t  = %8.2f s", state.time));
         lblEnergy.setText(String.format("E  = %8.3f J", state.totalEnergy));
+
+        boolean unstable = !Double.isFinite(state.totalEnergy);
+        for (double v : state.angularVelocities) unstable |= !Double.isFinite(v);
 
         if (initialEnergy != null && Math.abs(initialEnergy) > 1e-6) {
             double drift = Math.abs(state.totalEnergy - initialEnergy)
@@ -303,11 +528,18 @@ public final class ControlPanel extends VBox {
             // Colour-coded by threshold, not theme — kept as direct Color
             // values since the meaning (good/warning/bad) is independent of
             // light/dark, unlike everything styled through theme.css above.
+            // Matches theme.css's -success/-danger tokens exactly (green/red);
+            // the middle "warning" amber is semantic, kept deliberately out
+            // of the magenta accent's hue family so it never reads as "active."
             lblDrift.setText(driftStr);
-            lblDrift.setTextFill(drift < 0.1 ? Color.web("#55EFC4")
-                               : drift < 1.0 ? Color.web("#FDCB6E")
-                                             : Color.web("#FF6B6B"));
+            lblDrift.setTextFill(drift < 0.1 ? Color.web("#3DD68C")
+                               : drift < 1.0 ? Color.web("#E8A33D")
+                                             : Color.web("#E5484D"));
+            unstable |= drift >= INSTABILITY_DRIFT_THRESHOLD_PERCENT;
         }
+
+        lblInstabilityWarning.setVisible(unstable);
+        lblInstabilityWarning.setManaged(unstable);
     }
 
     private void refreshTrailModeLabel(PendulumCanvas.TrailMode mode) {

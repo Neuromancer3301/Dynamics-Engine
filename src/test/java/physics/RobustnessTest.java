@@ -47,7 +47,11 @@ class RobustnessTest {
 
     @Test
     void largeNStaysFiniteAtTheLinkEditorsUpperBound() {
-        // 60 is LinkEditorPanel.MAX_LINKS — the largest chain a user can actually build via the UI.
+        // 60 was LinkEditorPanel's original hardcoded cap, now superseded by
+        // PerformanceCalibrator's per-machine measurement — kept as a fixed
+        // reference N here regardless, since this test cares about engine
+        // correctness at a representative large N, not literally the UI's
+        // current (machine-dependent) ceiling.
         PendulumConfig config = PendulumTestSupport.uniformConfig(60, 3.0, Math.PI / 2.0, G);
         PhysicsEngine engine = new PhysicsEngine(config);
 

@@ -22,6 +22,7 @@ import theme.ThemeManager;
 public final class NavCardController {
 
     @FXML private VBox root;
+    @FXML private Label indexLabel;
     @FXML private Label iconLabel;
     @FXML private Label titleLabel;
     @FXML private Label descriptionLabel;
@@ -43,12 +44,39 @@ public final class NavCardController {
         });
     }
 
-    /** Configures the card's content and click behaviour. Call once, right after {@code fx:include}. */
-    public void configure(String icon, String title, String description, Runnable onActivate) {
+    /**
+     * Configures a live, clickable card. {@code index} is the card's
+     * position in the simulation suite ("01", "02", ...) — a small,
+     * genuinely informative label (there really is a sequence; see
+     * {@link #configureComingSoon} for the slots later in it that aren't
+     * built yet) rather than decoration. Call once, right after
+     * {@code fx:include}.
+     */
+    public void configure(String index, String icon, String title, String description, Runnable onActivate) {
+        indexLabel.setText(index);
         iconLabel.setText(icon);
         titleLabel.setText(title);
         descriptionLabel.setText(description);
         this.onActivate = onActivate;
+    }
+
+    /**
+     * Configures a reserved-but-not-yet-built slot: same layout as a live
+     * card, but disabled — {@link javafx.scene.Node#setDisable} stops mouse
+     * and key events from reaching it at all (so {@link #initialize}'s
+     * hover/click wiring above simply never fires, no extra guards needed
+     * there) and lets {@code nav-card-coming-soon}'s CSS dim it and switch
+     * its border to dashed, reading as "an empty slot" rather than "a
+     * broken button."
+     */
+    public void configureComingSoon(String index, String icon, String title, String description) {
+        indexLabel.setText(index);
+        iconLabel.setText(icon);
+        titleLabel.setText(title);
+        descriptionLabel.setText(description);
+        this.onActivate = null;
+        root.getStyleClass().add("nav-card-coming-soon");
+        root.setDisable(true);
     }
 
     private void activate() {

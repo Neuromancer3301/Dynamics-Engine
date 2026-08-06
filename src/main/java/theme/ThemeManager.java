@@ -2,6 +2,7 @@ package theme;
 
 import config.AppConfig;
 import javafx.scene.Parent;
+import javafx.scene.transform.Scale;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,21 @@ import java.util.prefs.Preferences;
  * each other. Neither is detected from the OS automatically — JavaFX has no
  * accessible bridge to {@code prefers-reduced-motion} the way web CSS
  * does — so both are explicit Settings-screen toggles instead.
+ *
+ * <p>{@link #getFontScale}/{@link #setFontScale} is a third such
+ * preference, for the same underlying reason: JavaFX has no bridge to the
+ * OS's own text-scale accessibility setting, and — unlike a browser —
+ * its CSS engine supports no relative font unit (no {@code em}/{@code rem}/
+ * {@code %}, only {@code px}/{@code pt}), and {@code theme.css} hardcodes a
+ * {@code px} size on essentially every text-bearing class for layout
+ * density reasons. That combination means there is no clean way to make
+ * "100 more DPI-independent px" ripple through every class from one
+ * variable. The honest option taken here is a uniform {@link Scale}
+ * transform on the active root — the same technique a browser's Ctrl+/Ctrl-
+ * zoom uses — applied on top of everything, including hardcoded sizes.
+ * Deliberately capped modestly (see {@link #MAX_FONT_SCALE}): a transform
+ * zoom doesn't reflow layout or grow the window, so a large factor risks
+ * clipping sidebar content against the window edge.
  */
 public final class ThemeManager {
 
@@ -38,6 +54,10 @@ public final class ThemeManager {
     private static final String PREF_KEY_THEME           = "theme";
     private static final String PREF_KEY_REDUCED_MOTION  = "reducedMotion";
     private static final String PREF_KEY_COLORBLIND_SAFE = "colorBlindSafePalette";
+    private static final String PREF_KEY_FONT_SCALE       = "fontScale";
+
+    public static final double MIN_FONT_SCALE = 1.0;
+    public static final double MAX_FONT_SCALE = 1.2;
 
     private final Preferences prefs = Preferences.userRoot().node(AppConfig.PREFS_NODE);
     private final List<Runnable> listeners = new ArrayList<>();
@@ -46,6 +66,7 @@ public final class ThemeManager {
     private Parent activeRoot;
     private boolean reducedMotion;
     private boolean colorBlindSafePalette;
+    private double fontScale;
 
     private ThemeManager() {
         String saved = prefs.get(PREF_KEY_THEME, Theme.DARK.name());
@@ -58,6 +79,7 @@ public final class ThemeManager {
         this.current = parsed;
         this.reducedMotion         = prefs.getBoolean(PREF_KEY_REDUCED_MOTION, false);
         this.colorBlindSafePalette = prefs.getBoolean(PREF_KEY_COLORBLIND_SAFE, false);
+        this.fontScale             = clampFontScale(prefs.getDouble(PREF_KEY_FONT_SCALE, MIN_FONT_SCALE));
     }
 
     public static ThemeManager getInstance() {
@@ -114,8 +136,35 @@ public final class ThemeManager {
         listeners.forEach(Runnable::run);
     }
 
+    public double getFontScale() { return fontScale; }
+
+    public void setFontScale(double scale) {
+        double clamped = clampFontScale(scale);
+        if (clamped == this.fontScale) return;
+        this.fontScale = clamped;
+        prefs.putDouble(PREF_KEY_FONT_SCALE, clamped);
+        if (activeRoot != null) applyFontScale(activeRoot);
+        listeners.forEach(Runnable::run);
+    }
+
+    private static double clampFontScale(double scale) {
+        return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, scale));
+    }
+
     private void applyTo(Parent root) {
         for (Theme t : Theme.values()) root.getStyleClass().remove(t.styleClass());
         root.getStyleClass().add(current.styleClass());
+        applyFontScale(root);
+    }
+
+    private void applyFontScale(Parent root) {
+        root.getTransforms().removeIf(t -> t instanceof Scale);
+        if (fontScale != MIN_FONT_SCALE) {
+            // Pivot at the origin (top-left): the scene's own top-left
+            // corner is the one edge every screen in this app keeps clear
+            // (padding, not controls), so that's the direction least likely
+            // to clip something under the modest cap above.
+            root.getTransforms().add(new Scale(fontScale, fontScale, 0, 0));
+        }
     }
 }

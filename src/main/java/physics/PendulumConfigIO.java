@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * Reads and writes {@link PendulumConfig} as a small, hand-rolled JSON
@@ -27,6 +28,8 @@ import java.util.Map;
  */
 public final class PendulumConfigIO {
 
+    private static final Logger LOG = Logger.getLogger(PendulumConfigIO.class.getName());
+
     private PendulumConfigIO() {}
 
     public static final String FILE_EXTENSION = ".pendulum";
@@ -44,16 +47,38 @@ public final class PendulumConfigIO {
     private static final int MAX_N_FROM_FILE = 500;
 
     public static void save(PendulumConfig config, Path path) throws IOException {
-        Files.writeString(path, toJson(config), StandardCharsets.UTF_8);
+        try {
+            Files.writeString(path, toJson(config), StandardCharsets.UTF_8);
+            LOG.info(() -> "Saved scenario (N=" + config.getN() + ") to " + path.getFileName());
+        } catch (IOException ex) {
+            // Message-only, no stack trace: I/O failures here (permissions,
+            // full disk) are routine user-facing conditions, not bugs — the
+            // caller already surfaces ex.getMessage() in the UI too.
+            LOG.warning("Failed to save scenario to " + path + ": " + ex.getMessage());
+            throw ex;
+        }
     }
 
     public static PendulumConfig load(Path path) throws IOException {
         long size = Files.size(path);
         if (size > MAX_FILE_BYTES) {
-            throw new IOException("Scenario file is too large (" + size + " bytes, max " + MAX_FILE_BYTES + ")");
+            IOException ex = new IOException("Scenario file is too large (" + size + " bytes, max " + MAX_FILE_BYTES + ")");
+            LOG.warning("Rejected oversized scenario file " + path + ": " + ex.getMessage());
+            throw ex;
         }
         String json = Files.readString(path, StandardCharsets.UTF_8);
-        return fromJson(json);
+        try {
+            PendulumConfig config = fromJson(json);
+            LOG.info(() -> "Loaded scenario (N=" + config.getN() + ") from " + path.getFileName());
+            return config;
+        } catch (IOException ex) {
+            // Same reasoning as above: a malformed/adversarial file failing
+            // validation is an expected, handled outcome (that's the whole
+            // point of PendulumConfigIO's javadoc'd defenses) — not worth a
+            // full stack trace in the log.
+            LOG.warning("Rejected malformed or invalid scenario file " + path + ": " + ex.getMessage());
+            throw ex;
+        }
     }
 
     static String toJson(PendulumConfig config) {

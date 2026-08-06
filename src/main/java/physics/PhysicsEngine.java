@@ -3,6 +3,8 @@ package physics;
 import physics.integrator.Integrator;
 import physics.integrator.Rk4Integrator;
 
+import java.util.logging.Logger;
+
 /**
  * N-pendulum Lagrangian dynamics, integrated by a swappable {@link
  * Integrator} strategy (defaulting to RK4).
@@ -34,11 +36,19 @@ import physics.integrator.Rk4Integrator;
  */
 public final class PhysicsEngine {
 
+    private static final Logger LOG = Logger.getLogger(PhysicsEngine.class.getName());
+
     private final int      n;
     private final double[] L;
     private final double[] m;
     private final double[] cumMass;
     private volatile double   g;
+
+    // 0 = straight down (screen +Y), matching this engine's original,
+    // only-ever behavior exactly — see setGravityAngle's javadoc for the
+    // convention and where it's actually set.
+    private volatile double   gravityAngle = 0.0;
+
     private final double[]    initAngles;
     private final double[]    state;
     private double time;
@@ -57,6 +67,12 @@ public final class PhysicsEngine {
     private final double[]   thetaDdot;
 
     private final double[] derivTheta, derivOmega;
+
+    // Logged once per engine instance, not once per step: a persistently
+    // near-singular config (e.g. one near-zero mass) would otherwise flood
+    // the log at up to ~500Hz. The condition itself doesn't need repeating
+    // once known — it's a structural property of this engine's masses.
+    private boolean fallbackWarningLogged = false;
 
     // Not final: setIntegrator() swaps this out (a SimCommand, applied only
     // on the physics thread — see simulation.SimulationLoop). Read from
@@ -95,6 +111,21 @@ public final class PhysicsEngine {
     public void setGravity(double g) { this.g = Math.max(0.01, g); }
     public double getGravity()       { return g; }
 
+    /**
+     * Sets the direction gravity pulls in — "painting" the field, per
+     * {@code ui.PendulumCanvas}'s draggable handle. 0 (the default, and the
+     * only value this engine ever used before this method existed) means
+     * straight down, in the same angle convention {@code theta} itself
+     * uses: a link's rest position is wherever {@code theta == gravityAngle}
+     * places it, exactly as {@code theta == 0} was the only rest position
+     * when gravity could only point down. This is a genuine generalization
+     * of the single-scalar-g case, not an approximation of it: with
+     * {@code gravityAngle == 0} every formula below reduces to exactly what
+     * this engine computed before it existed.
+     */
+    public void setGravityAngle(double gravityAngle) { this.gravityAngle = gravityAngle; }
+    public double getGravityAngle()                  { return gravityAngle; }
+
     /** Swaps the integration strategy. See {@link Integrator} for why this is safe mid-simulation (each owns its own scratch). */
     public void setIntegrator(Integrator integrator) { this.integrator = integrator; }
     public Integrator getIntegrator()                { return integrator; }
@@ -123,8 +154,19 @@ public final class PhysicsEngine {
         state[n + index] = angularVelocity;
     }
 
+    /**
+     * Advances (or, given a negative {@code dt}, reverses) the simulation by
+     * one step. A negative {@code dt} is a real capability, not an
+     * out-of-range input to reject: RK4 (and the other {@link
+     * physics.integrator.Integrator} strategies) integrate an ODE the same
+     * way regardless of the sign of the step, so calling this with negative
+     * steps genuinely runs the same dynamics backward — see {@code
+     * simulation.SimulationLoop#setTimeReversed} for where that's exposed.
+     * Clamped symmetrically so neither direction can take a single step
+     * large enough to blow up the integrator.
+     */
     public void step(double dt) {
-        dt = Math.min(dt, 0.05);
+        dt = Math.max(-0.05, Math.min(dt, 0.05));
         integrator.step(state, dt, this::derivative, n);
         for (int i = 0; i < n; i++) state[i] = wrapAngle(state[i]);
         time += dt;
@@ -147,7 +189,7 @@ public final class PhysicsEngine {
                 ke += 0.5 * c * Math.cos(theta[i]-theta[j]) * omega[i] * omega[j];
             }
         double pe = 0;
-        for (int i = 0; i < n; i++) pe -= cumMass[i] * g * L[i] * Math.cos(theta[i]);
+        for (int i = 0; i < n; i++) pe -= cumMass[i] * g * L[i] * Math.cos(theta[i] - gravityAngle);
         return new SimState(time, theta, omega, bobX, bobY, m, Math.max(0, ke), pe);
     }
 
@@ -163,8 +205,12 @@ public final class PhysicsEngine {
         for (int i = 0; i < n; i++) { derivTheta[i] = s[i]; derivOmega[i] = s[n + i]; }
 
         // Gravity term for each link — independent of the coupling below.
+        // The (derivTheta[i] - gravityAngle) form is exactly the standard
+        // gravity term with theta replaced by "angle from wherever gravity
+        // now points" instead of "angle from straight down" — see
+        // setGravityAngle's javadoc.
         for (int i = 0; i < n; i++) {
-            f[i] = -cumMass[i] * g * L[i] * Math.sin(derivTheta[i]);
+            f[i] = -cumMass[i] * g * L[i] * Math.sin(derivTheta[i] - gravityAngle);
         }
 
         // Coupling terms: each (i, j) pair with j < i is visited once.
@@ -201,6 +247,12 @@ public final class PhysicsEngine {
         if (choleskyDecompose()) {
             choleskySolveInto(thetaDdot);
         } else {
+            if (!fallbackWarningLogged) {
+                LOG.warning("N=" + n + ": mass matrix failed the Cholesky positive-definiteness "
+                        + "check (likely a near-zero mass link) — falling back to pivoted Gaussian "
+                        + "elimination for this and all subsequent steps.");
+                fallbackWarningLogged = true;
+            }
             gaussianFallbackSolveInto(thetaDdot);
         }
     }

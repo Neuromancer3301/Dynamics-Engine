@@ -12,6 +12,8 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Owns the physics thread: a fixed-timestep RK4 loop decoupled from the
@@ -42,6 +44,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class SimulationLoop implements Runnable {
 
+    private static final Logger LOG = Logger.getLogger(SimulationLoop.class.getName());
+
     private static final double FIXED_DT    = 0.002;
     private static final double MAX_WALL_DT = 0.1;
 
@@ -61,12 +65,25 @@ public final class SimulationLoop implements Runnable {
     private volatile boolean paused  = false;
     private volatile double  speed;
 
+    // A loop-scheduling parameter in the same sense as `speed` above (not
+    // physics state), so it's a plain volatile read fresh each iteration
+    // rather than a queued SimCommand — see #setTimeReversed.
+    private volatile boolean timeReversed = false;
+
     // null when the butterfly-effect ensemble isn't active. A plain
     // volatile field, not a queued command: swapping the reference doesn't
     // need to be ordered against an in-flight RK4 step the way engine
     // mutation does, and a fully-constructed Ensemble is safely published
     // by the volatile write regardless of which thread creates it.
     private volatile Ensemble ensemble;
+
+    // null when A/B compare isn't active. Same volatile-reference reasoning
+    // as `ensemble` above, but this is exactly one engine representing a
+    // deliberately, visibly different "B" scenario (not 50 near-identical
+    // copies) — see controller.SimulationController#setCompareActive for
+    // how it's built and ui.PendulumCanvas#drawCompareChain for how it's
+    // drawn distinctly from both the primary and the ensemble ghosts.
+    private volatile PhysicsEngine compareEngine;
 
     // Frame-stepping: incremented from the JavaFX thread (a button click or
     // the -> shortcut), drained and reset from the physics thread. Atomic
@@ -99,6 +116,24 @@ public final class SimulationLoop implements Runnable {
     public void setSpeedMultiplier(double s)    { this.speed  = Math.max(0.01, s); }
     public double getSpeedMultiplier()          { return speed; }
 
+    /**
+     * Toggles between integrating forward and backward — a genuine reversal
+     * of the live {@link PhysicsEngine}'s dynamics via negative {@code dt}
+     * (see {@link PhysicsEngine#step}), not a replay of recorded states the
+     * way {@code HistoryBuffer} scrubbing is. Deliberately distinct from
+     * that feature: this keeps advancing the <em>real</em> engine (so
+     * dragging a bob, changing gravity, etc. all still work while reversed),
+     * and — because RK4 isn't time-symmetric and a chaotic N&ge;2 chain is
+     * sensitive to the tiny numerical error each step accumulates — running
+     * it forward and then backward for the same number of steps will
+     * <em>not</em> land exactly back where it started except for the
+     * simplest (e.g. N=1) configurations. That mismatch is itself the
+     * demonstration: it's a visible illustration of both numerical
+     * irreversibility and chaotic sensitivity, not a bug to hide.
+     */
+    public void setTimeReversed(boolean reversed) { this.timeReversed = reversed; }
+    public boolean isTimeReversed()               { return timeReversed; }
+
     /** Current gravity, read from whichever engine is live right now. Safe cross-thread — see the field's javadoc. */
     public double getGravity() { return engine.getGravity(); }
 
@@ -114,6 +149,12 @@ public final class SimulationLoop implements Runnable {
     }
 
     public void setGravity(double g) { submit(e -> e.setGravity(g)); }
+
+    /** Queues a gravity-direction change — see {@link PhysicsEngine#setGravityAngle}. */
+    public void setGravityAngle(double angle) { submit(e -> e.setGravityAngle(angle)); }
+
+    /** Current gravity direction, read from whichever engine is live right now. Safe cross-thread — see {@link #engine}'s javadoc. */
+    public double getGravityAngle() { return engine.getGravityAngle(); }
     public void reset()              { submit(new ResetCommand()); }
 
     /** Swaps the active integration strategy — see {@link Integrator}. A {@code SimCommand}: mutates the current engine, no rebuild needed. */
@@ -122,6 +163,10 @@ public final class SimulationLoop implements Runnable {
     /** Activates the butterfly-effect ensemble; {@code null} deactivates it. See {@link Ensemble}. */
     public void setEnsemble(Ensemble ensemble) { this.ensemble = ensemble; }
     public Ensemble getEnsemble()              { return ensemble; }
+
+    /** Activates A/B compare with a fully-built "B" engine; {@code null} deactivates it. See {@link #compareEngine}. */
+    public void setCompareEngine(PhysicsEngine compareEngine) { this.compareEngine = compareEngine; }
+    public PhysicsEngine getCompareEngine()                   { return compareEngine; }
 
     /**
      * Queues exactly one {@link PhysicsEngine#step} of {@link #FIXED_DT},
@@ -162,22 +207,35 @@ public final class SimulationLoop implements Runnable {
             double wallDt = Math.min((now - lastNanos) / 1_000_000_000.0, MAX_WALL_DT);
             lastNanos     = now;
 
+            double direction = timeReversed ? -1.0 : 1.0;
+
             int manualSteps = pendingManualSteps.getAndSet(0);
             if (manualSteps > 0) {
-                for (int i = 0; i < manualSteps; i++) engine.step(FIXED_DT);
+                double stepDt = direction * FIXED_DT;
+                for (int i = 0; i < manualSteps; i++) engine.step(stepDt);
 
                 Ensemble ens = ensemble;
-                if (ens != null) ens.step(FIXED_DT, manualSteps);
+                if (ens != null) ens.step(stepDt, manualSteps);
+
+                PhysicsEngine cmp = compareEngine;
+                if (cmp != null) for (int i = 0; i < manualSteps; i++) cmp.step(stepDt);
 
                 buffer.write(engine.getState());
             } else if (!paused && wallDt > 0) {
-                double simDt = wallDt * speed;
-                int    steps = Math.max(1, (int) Math.ceil(simDt / FIXED_DT));
+                double simDt = direction * wallDt * speed;
+                int    steps = Math.max(1, (int) Math.ceil(Math.abs(simDt) / FIXED_DT));
                 double dt    = simDt / steps;
                 for (int i = 0; i < steps; i++) engine.step(dt);
 
                 Ensemble ens = ensemble; // one volatile read; avoids a null-check race against a concurrent setEnsemble()
                 if (ens != null) ens.step(dt, steps);
+
+                // Same dt/step-count as the primary, deliberately: the whole
+                // point of A/B compare is attributing any difference to the
+                // deliberate B-vs-A parameter change, not to a different
+                // integration schedule.
+                PhysicsEngine cmp = compareEngine;
+                if (cmp != null) for (int i = 0; i < steps; i++) cmp.step(dt);
 
                 buffer.write(engine.getState());
             }
@@ -186,24 +244,41 @@ public final class SimulationLoop implements Runnable {
         }
     }
 
-    /** Applies every queued rebuild, in order. Returns true if at least one was applied. */
+    /**
+     * Applies every queued rebuild, in order. Returns true if at least one
+     * was applied. A rebuild that throws is logged and skipped rather than
+     * propagating — an uncaught exception here would silently kill this
+     * daemon thread, after which the UI would just... stop updating, with
+     * no indication why. That failure mode is worse than losing one
+     * structural edit.
+     */
     private boolean drainRebuilds() {
         boolean any = false;
         EngineRebuilder rebuilder;
         while ((rebuilder = rebuildQueue.poll()) != null) {
-            engine = rebuilder.rebuild(engine);
-            any = true;
+            try {
+                PhysicsEngine rebuilt = rebuilder.rebuild(engine);
+                LOG.info(() -> "Engine rebuilt: N=" + rebuilt.getState().getN());
+                engine = rebuilt;
+                any = true;
+            } catch (RuntimeException ex) {
+                LOG.log(Level.SEVERE, "EngineRebuilder threw; keeping the previous engine", ex);
+            }
         }
         return any;
     }
 
-    /** Applies every queued command. Returns true if at least one was applied, so callers know to publish state. */
+    /** Applies every queued command. Returns true if at least one was applied, so callers know to publish state. Same fail-safe reasoning as {@link #drainRebuilds}. */
     private boolean drainCommands() {
         boolean any = false;
         SimCommand cmd;
         while ((cmd = commandQueue.poll()) != null) {
-            cmd.apply(engine);
-            any = true;
+            try {
+                cmd.apply(engine);
+                any = true;
+            } catch (RuntimeException ex) {
+                LOG.log(Level.SEVERE, "SimCommand threw; skipping it", ex);
+            }
         }
         return any;
     }

@@ -8,37 +8,50 @@
    here — the palette is defined once per theme class, every rule below
    reads from it, and no rule ever hardcodes a hex value.
 
+   "Signal" — the app's visual identity, not just a color swap. The premise:
+   an oscilloscope is dark and quiet except for the one trace it's reading
+   right now — so the chrome here is near-void and grayscale, and exactly
+   one accent hue (a hot magenta, chosen because it's a real oscilloscope
+   channel color, not an arbitrary pick) carries every live/active thing —
+   a selected control, a focus ring, the primary trace. Multi-series
+   contexts that genuinely need several simultaneous colors (the energy
+   graph's Total/KE/PE, per-link bob colors) draw from the same convention
+   real scopes use for multi-channel traces (yellow/cyan/green alongside
+   magenta) — see ui.PendulumCanvas and ui.GraphPanel for where those live,
+   since Canvas-drawn pixels sit outside this token system (see the sidebar
+   section below for why).
+
    Extension point: to add a theme, add a token block below (".theme-sepia"
    or similar) and a matching theme.Theme enum constant. Nothing else in the
    codebase references a color by name.
    ========================================================================== */
 
 .theme-dark {
-    -bg-base:     #0D0D1F;
-    -bg-surface:  #14142C;
-    -line:        #25255A;
-    -line-soft:   #1E1E4A;
-    -ink:         #E6E6F4;
-    -ink-2:       #A6A6C8;
-    -ink-3:       #8888BB;
-    -accent:      #6C63FF;
-    -accent-soft: #22225A;
-    -danger:      #FF6B6B;
-    -success:     #55EFC4;
+    -bg-base:     #08080B;
+    -bg-surface:  #101014;
+    -line:        #232329;
+    -line-soft:   #1A1A1F;
+    -ink:         #EDEDF2;
+    -ink-2:       #A0A0AC;
+    -ink-3:       #7B7B86;
+    -accent:      #EA3F8C;
+    -accent-soft: #2A1520;
+    -danger:      #E5484D;
+    -success:     #3DD68C;
 }
 
 .theme-light {
-    -bg-base:     #F6F6FB;
+    -bg-base:     #F5F5F7;
     -bg-surface:  #FFFFFF;
-    -line:        #D8D8E8;
-    -line-soft:   #E4E4F0;
-    -ink:         #16162B;
-    -ink-2:       #46466A;
-    -ink-3:       #62628C;
-    -accent:      #5A50E0;
-    -accent-soft: #ECEAFE;
-    -danger:      #D8483F;
-    -success:     #1B9E77;
+    -line:        #E0E0E5;
+    -line-soft:   #EBEBEF;
+    -ink:         #18181B;
+    -ink-2:       #55555E;
+    -ink-3:       #7A7A84;
+    -accent:      #C81F72;
+    -accent-soft: #FBE6F1;
+    -danger:      #C23B3B;
+    -success:     #1F9D6B;
 }
 
 /* ---------- Screen roots — each declares its own background + font so no
@@ -59,6 +72,7 @@
 }
 
 .app-title {
+    -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
     -fx-font-size: 34px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
@@ -75,13 +89,39 @@
     -fx-text-fill: -ink-3;
 }
 
+/* Settings/About — quiet corner links, not cards. See MainMenu.fxml's own
+   comment for why these two destinations are demoted relative to the
+   simulation grid below. */
+.menu-utility-link {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 11.5px;
+    -fx-text-fill: -ink-3;
+    -fx-cursor: hand;
+    -fx-padding: 4px 2px;
+}
+.menu-utility-link:hover, .menu-utility-link:focused {
+    -fx-text-fill: -accent;
+    -fx-underline: true;
+}
+
+/* The one heading that introduces the hero grid — same monospace-eyebrow
+   language as .eyebrow above, so it reads as "a label," not a headline
+   competing with .app-title. */
+.menu-section-label {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 0.14em;
+    -fx-text-fill: -ink-3;
+}
+
 /* ---------- Nav card (component/NavCard.fxml) ---------- */
 
 .nav-card {
     -fx-background-color: -bg-surface;
-    -fx-background-radius: 10px;
+    -fx-background-radius: 4px;
     -fx-border-color: -line;
-    -fx-border-radius: 10px;
+    -fx-border-radius: 4px;
     -fx-border-width: 1px;
     -fx-padding: 22px;
     -fx-pref-width: 240px;
@@ -91,7 +131,15 @@
 
 .nav-card:hover, .nav-card:focused {
     -fx-border-color: -accent;
-    -fx-effect: dropshadow(gaussian, rgba(108, 99, 255, 0.35), 18, 0.15, 0, 4);
+    -fx-effect: dropshadow(gaussian, rgba(234, 63, 140, 0.35), 18, 0.15, 0, 4);
+}
+
+.nav-card-index {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 0.1em;
+    -fx-text-fill: -accent;
 }
 
 .nav-card-icon {
@@ -100,6 +148,7 @@
 }
 
 .nav-card-title {
+    -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
     -fx-font-size: 16px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
@@ -109,6 +158,19 @@
     -fx-font-size: 12px;
     -fx-text-fill: -ink-2;
     -fx-max-width: 200px;
+}
+
+/* A reserved-but-unbuilt simulation slot: dashed border (an empty exhibit
+   case, not a broken button) and dimmed text. NavCardController also calls
+   setDisable(true) alongside this class — that's what actually stops
+   hover/click, not the styling here, which is purely visual. */
+.nav-card-coming-soon {
+    -fx-opacity: 0.55;
+    -fx-border-style: dashed;
+}
+.nav-card-coming-soon .nav-card-index,
+.nav-card-coming-soon .nav-card-icon {
+    -fx-text-fill: -ink-3;
 }
 
 /* ---------- Simulation shell ---------- */
@@ -124,6 +186,7 @@
     -fx-font-size: 12px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink-3;
+    -fx-letter-spacing: 0.06em;
 }
 
 .canvas-host {
@@ -148,8 +211,8 @@
 .combo-box {
     -fx-background-color: -bg-base;
     -fx-border-color: -line;
-    -fx-border-radius: 3px;
-    -fx-background-radius: 3px;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
 }
 .combo-box .list-cell {
     -fx-text-fill: -ink;
@@ -173,7 +236,10 @@
    controls); the pendulum/graph canvases remain outside this system since
    they're raw pixels on a Canvas, not styleable nodes — that split (UI
    chrome themed, rendered physics not) is the actual boundary, not an
-   oversight. */
+   oversight. Their own colors (bob palette, trails, graph series) are kept
+   consistent with the tokens here by hand, following the same "one magenta
+   accent, else grayscale, real scope-channel colors for multi-series"
+   convention — see PendulumCanvas/GraphPanel's own comments. */
 
 .sidebar-panel {
     -fx-background-color: -bg-surface;
@@ -182,9 +248,11 @@
 }
 
 .sidebar-header {
+    -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
     -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-text-fill: -accent;
+    -fx-letter-spacing: 0.03em;
 }
 
 .sidebar-section-label {
@@ -209,8 +277,8 @@
     -fx-background-color: -bg-base;
     -fx-border-color: -line;
     -fx-border-width: 1px;
-    -fx-border-radius: 4px;
-    -fx-background-radius: 4px;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
 }
 
 .sidebar-hint {
@@ -225,8 +293,8 @@
     -fx-font-size: 11px;
     -fx-border-color: -line;
     -fx-border-width: 1px;
-    -fx-border-radius: 4px;
-    -fx-background-radius: 4px;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
     -fx-cursor: hand;
 }
 .sidebar-button:hover { -fx-border-color: -accent; }
@@ -238,14 +306,24 @@
 .sidebar-numeric-field {
     -fx-background-color: -bg-base;
     -fx-text-fill: -ink;
+    -fx-font-family: "Consolas", "Menlo", monospace;
     -fx-font-size: 10px;
     -fx-border-color: -line;
-    -fx-border-radius: 3px;
-    -fx-background-radius: 3px;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
 }
 
 .sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 10px; }
 .sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 10px; }
+
+.sidebar-warning-banner {
+    -fx-background-color: -danger;
+    -fx-text-fill: white;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 8;
+    -fx-background-radius: 2px;
+}
 
 .sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 11px; }
 
@@ -262,9 +340,9 @@
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
     -fx-font-size: 11px;
-    -fx-background-radius: 4px;
+    -fx-background-radius: 2px;
     -fx-border-color: -line;
-    -fx-border-radius: 4px;
+    -fx-border-radius: 2px;
     -fx-padding: 6px 12px;
     -fx-cursor: hand;
 }
@@ -282,6 +360,7 @@
 /* ---------- Stub screens (Settings / About) ---------- */
 
 .stub-title {
+    -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
     -fx-font-size: 24px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;

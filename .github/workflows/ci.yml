@@ -1,0 +1,42 @@
+name: CI
+
+# Compiles and runs the test suite on every push/PR to main. Deliberately
+# just `mvn test`, not a full jpackage build: the physics/simulation test
+# suite (src/test/java/physics) has no JavaFX or display dependency (see
+# PendulumTestSupport and friends), so it runs on a plain headless runner
+# with no Xvfb setup needed — jpackage's native installer step stays a
+# manual, verified-by-launch process (see README) rather than something CI
+# blindly re-runs on every commit.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Compile
+        run: mvn -B -q compile
+
+      - name: Run test suite
+        run: mvn -B test
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
