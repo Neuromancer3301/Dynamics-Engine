@@ -17,32 +17,28 @@
             </padding>
 
             <VBox styleClass="menu-header" spacing="6.0" HBox.hgrow="ALWAYS">
-                <Label styleClass="eyebrow" text="JAVAFX · RK4 · LAGRANGIAN MECHANICS"/>
                 <Label styleClass="app-title" text="Dynamics Engine"/>
                 <Label styleClass="app-tagline"
                        text="An instrument for exploring chaotic dynamical systems in real time."/>
             </VBox>
 
             <!-- Settings/About: deliberately not cards here — they're utility
-                 destinations, not simulations, so they read as quiet corner
-                 links rather than competing with the hero grid below for
-                 attention. See controller.MainMenuController for the click
-                 wiring (a plain Label, not a Button, so it can match the
-                 hero grid's monospace "meta" typography exactly). -->
-            <HBox styleClass="menu-utility-links" spacing="20.0" alignment="TOP_RIGHT">
-                <Label fx:id="settingsLink" styleClass="menu-utility-link" text="⚙ Settings"/>
-                <Label fx:id="aboutLink" styleClass="menu-utility-link" text="ℹ About"/>
-            </HBox>
+                 destinations, not simulations, so they read as understated
+                 relative to the hero grid below. Populated in Java
+                 (component.UtilityIconButton) rather than declared here,
+                 since they're hand-rolled Canvas-icon buttons, not a type
+                 FXML has a tag for — see controller.MainMenuController. -->
+            <HBox fx:id="utilityLinksBox" spacing="4.0" alignment="TOP_RIGHT"/>
         </HBox>
     </top>
 
     <center>
-        <VBox alignment="CENTER" spacing="16.0">
+        <VBox alignment="CENTER" spacing="28.0">
             <Label styleClass="menu-section-label" text="CHOOSE A SIMULATION"/>
 
-            <HBox styleClass="cards-row" spacing="24.0" alignment="CENTER">
+            <HBox styleClass="cards-row" spacing="28.0" alignment="CENTER">
                 <padding>
-                    <Insets top="0" right="64" bottom="56" left="64"/>
+                    <Insets top="0" right="48" bottom="24" left="48"/>
                 </padding>
 
                 <fx:include fx:id="cardPendulum" source="component/NavCard.fxml"/>
@@ -53,7 +49,7 @@
     </center>
 
     <bottom>
-        <Label fx:id="versionLabel" styleClass="footer-text" text="v1.0.0"
+        <Label fx:id="versionLabel" styleClass="footer-text" text="v1.0.4"
                BorderPane.alignment="CENTER">
             <BorderPane.margin>
                 <Insets bottom="16"/>

@@ -10,4 +10,10 @@
     <Label fx:id="iconLabel" styleClass="nav-card-icon" text="⚛"/>
     <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title"/>
     <Label fx:id="descriptionLabel" styleClass="nav-card-desc" text="Description" wrapText="true"/>
+    <!-- Extra hover-reveal detail line — see NavCardController#configure's
+         optional detail parameter. Collapsed (invisible/unmanaged) until
+         the card expands on hover; a disabled/coming-soon card never
+         reveals this since it never expands. -->
+    <Label fx:id="detailLabel" styleClass="nav-card-detail" text="" wrapText="true"
+           visible="false" managed="false"/>
 </VBox>

@@ -21,15 +21,23 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Control panel — left sidebar with parameter sliders, graph-mode selector,
- * playback controls, and live status display.
+ * Builder for the simulation sidebar's controls — parameter sliders, the
+ * graph-mode selector, playback controls, and live status.
+ *
+ * <p>This class no longer displays its own controls directly (it stopped
+ * extending a shown container's role once the sidebar became a tabbed
+ * shell — see {@link SidebarTabs}); it builds every control once in {@link
+ * #build}, then exposes six grouped panels ({@link #getMotionGroup} through
+ * {@link #getDisplayGroup}) plus an always-visible {@link #getStatusBlock},
+ * for {@code SidebarTabs} to arrange. Splitting the build step from the
+ * display step this way means every existing callback/field wiring below is
+ * unchanged from the single-flat-list version; only the final assembly at
+ * the bottom of {@link #build} changed.
  *
  * <p>Styled entirely through {@code theme.css}'s {@code .sidebar-*} classes
  * rather than inline {@code setStyle()} — being a plain-Java {@code VBox}
  * rather than FXML doesn't stop a style class from applying; CSS only cares
- * about a node's position in the scene graph. This is also what makes the
- * sidebar follow the light/dark toggle: it's ordinary JavaFX controls, so
- * the same token system the FXML screens use reaches it for free.
+ * about a node's position in the scene graph.
  */
 public final class ControlPanel extends VBox {
 
@@ -97,7 +105,23 @@ public final class ControlPanel extends VBox {
     // background Task — see setBifurcationProgress/setBifurcationRunning.
     private ProgressBar bifurcationProgressBar;
     private Button bifurcationButton;
-    private RadioButton bifurcationRadio;
+
+    // Graph-mode picker — independent ToggleButtons (not a ToggleGroup) so
+    // clicking the already-active one can deselect it: §10.2 requires "no
+    // mode selected" to be a reachable state (that's what collapses
+    // graphHost back to zero width), which a single-selection ToggleGroup
+    // doesn't normally allow. toggleGraphMode enforces the exclusivity a
+    // ToggleGroup would otherwise have given us for free.
+    private ToggleButton[] graphModeButtons;
+    private ToggleButton bifurcationToggle;
+
+    // Groups assembled in build(); see the class javadoc.
+    private VBox statusBlock;
+    private VBox motionGroup;
+    private VBox chaosGroup;
+    private VBox graphsGroup;
+    private VBox historyGroup;
+    private VBox displayGroup;
 
     // Callbacks wired in controller.SimulationController
     private Runnable onReset;
@@ -112,12 +136,19 @@ public final class ControlPanel extends VBox {
     private Consumer<Integer> onScrubTo;
     private Runnable onScrubEnd;
 
+    // Fired true when a graph mode becomes selected, false when the active
+    // one is clicked again (deselected) — see controller.SimulationController's
+    // graphHost width animation (§10 of the UI overhaul spec).
+    private Consumer<Boolean> onGraphVisibilityChange;
+
+    // Fired with the new paused state whenever the Pause button is clicked
+    // — lets controller.SimulationController clear a bob selection on
+    // resume (§7.1: "resuming always clears the current selection")
+    // without this class needing to know selection exists at all.
+    private Consumer<Boolean> onPauseChange;
+
     public ControlPanel() {
         super(10);
-        setPadding(new Insets(14, 12, 14, 12));
-        getStyleClass().add("sidebar-panel");
-        setMinWidth(210);
-        setMaxWidth(230);
 
         lblInstabilityWarning.getStyleClass().add("sidebar-warning-banner");
         lblInstabilityWarning.setWrapText(true);
@@ -130,14 +161,14 @@ public final class ControlPanel extends VBox {
     // -------------------------------------------------------------------------
 
     /**
-     * Constructs all child controls. Call after setting all callbacks.
+     * Constructs all child controls and assembles them into the grouped
+     * panels retrievable via {@link #getMotionGroup} etc. Call after
+     * setting all callbacks.
      */
     public void build(SimulationLoop simLoop,
                       GraphPanel graphPanel,
                       PendulumCanvas pendulumCanvas,
                       int n) {
-
-        getChildren().clear();
 
         // ---- Header ----
         header.setText("N-Pendulum  [N=" + n + "]");
@@ -180,6 +211,7 @@ public final class ControlPanel extends VBox {
             boolean p = btnPause.isSelected();
             simLoop.setPaused(p);
             btnPause.setText(p ? "▶  Resume" : "⏸  Pause");
+            if (onPauseChange != null) onPauseChange.accept(p);
         });
 
         Button btnStep = new Button("⏭  Step");
@@ -336,24 +368,24 @@ public final class ControlPanel extends VBox {
 
         // ---- Graph mode ----
         Label lGraph = sectionLabel("Graph Mode");
-        ToggleGroup tgGraph = new ToggleGroup();
 
-        RadioButton rbAngle       = radioBtn("θ₁(t) — Angle",              tgGraph);
-        RadioButton rbEnergy      = radioBtn("E(t)  — Energy",              tgGraph);
-        RadioButton rbPhase       = radioBtn("Phase Portrait (θ₁,ω₁)",      tgGraph);
-        RadioButton rbAll         = radioBtn("All (small multiples)",       tgGraph);
-        RadioButton rbPoincare    = radioBtn("Poincaré Section (θ₂,ω₂)",    tgGraph);
-        RadioButton rbCompare     = radioBtn("Integrator Comparison",       tgGraph);
-        RadioButton rbBifurcation = radioBtn("Bifurcation Map",             tgGraph);
-        rbAngle.setSelected(true);
+        ToggleButton tbAngle       = graphModeButton("θ₁(t) — Angle");
+        ToggleButton tbEnergy      = graphModeButton("E(t)  — Energy");
+        ToggleButton tbPhase       = graphModeButton("Phase Portrait (θ₁,ω₁)");
+        ToggleButton tbAll         = graphModeButton("All (small multiples)");
+        ToggleButton tbPoincare    = graphModeButton("Poincaré Section (θ₂,ω₂)");
+        ToggleButton tbCompare     = graphModeButton("Integrator Comparison");
+        ToggleButton tbBifurcation = graphModeButton("Bifurcation Map");
+        this.graphModeButtons = new ToggleButton[]{tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation};
+        this.bifurcationToggle = tbBifurcation;
 
-        rbAngle      .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ANGLE));
-        rbEnergy     .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ENERGY));
-        rbPhase      .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.PHASE));
-        rbAll        .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.ALL));
-        rbPoincare   .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.POINCARE));
-        rbCompare    .setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.COMPARISON));
-        rbBifurcation.setOnAction(e -> graphPanel.setMode(GraphPanel.Mode.BIFURCATION));
+        tbAngle      .setOnAction(e -> toggleGraphMode(tbAngle, GraphPanel.Mode.ANGLE, graphPanel));
+        tbEnergy     .setOnAction(e -> toggleGraphMode(tbEnergy, GraphPanel.Mode.ENERGY, graphPanel));
+        tbPhase      .setOnAction(e -> toggleGraphMode(tbPhase, GraphPanel.Mode.PHASE, graphPanel));
+        tbAll        .setOnAction(e -> toggleGraphMode(tbAll, GraphPanel.Mode.ALL, graphPanel));
+        tbPoincare   .setOnAction(e -> toggleGraphMode(tbPoincare, GraphPanel.Mode.POINCARE, graphPanel));
+        tbCompare    .setOnAction(e -> toggleGraphMode(tbCompare, GraphPanel.Mode.COMPARISON, graphPanel));
+        tbBifurcation.setOnAction(e -> toggleGraphMode(tbBifurcation, GraphPanel.Mode.BIFURCATION, graphPanel));
 
         Button btnBifurcation = new Button("🌀  Generate Bifurcation Map");
         styleButton(btnBifurcation);
@@ -369,7 +401,6 @@ public final class ControlPanel extends VBox {
         });
         this.bifurcationProgressBar = bifurcationProgress;
         this.bifurcationButton = btnBifurcation;
-        this.bifurcationRadio = rbBifurcation;
 
         Button btnExportCsv = new Button("⬇  Export CSV");
         styleButton(btnExportCsv);
@@ -403,25 +434,56 @@ public final class ControlPanel extends VBox {
         // ---- Hints ----
         Label hint = hintLabel("dt = 2 ms · Space: pause · R: reset · →: step");
 
-        // ---- Assemble ----
-        getChildren().addAll(
-            header, lblInstabilityWarning,
-            sep(), lGrav,  hRow(sGrav, tfGrav), gravityDirHint, btnResetGravityDir,
+        // ---- Assemble into groups (see the class javadoc) ----
+        statusBlock = new VBox(8, header, lblInstabilityWarning, lStatus, statusBox, hint);
+
+        motionGroup = new VBox(10,
+            lGrav,  hRow(sGrav, tfGrav), gravityDirHint, btnResetGravityDir,
             sep(), lSpeed, hRow(sSpeed, tfSpeed),
             sep(), playRow, cbResetClearsGraphs,
             sep(), btnReverse, reverseHint,
-            sep(), lIntegrator, integratorBox, btnCompare, compareHint,
-            sep(), lHistory, hRow(historySlider, historyLabel), historyHint,
-            sep(), btnTrailMode, btnVelocityTint, velocityTintHint, btnExportTraceArt, traceArtHint,
-            sep(), lEnsemble, btnEnsemble, ensembleHint, btnPerturb, perturbHint, btnSonify, sonifyHint,
-            sep(), lCompare, hRow(sCompareOffset, compareOffsetLabel), btnCompare2, compareHint2,
-            sep(), lGraph, rbAngle, rbEnergy, rbPhase, rbAll, rbPoincare, rbCompare, rbBifurcation,
+            sep(), lIntegrator, integratorBox, btnCompare, compareHint
+        );
+
+        chaosGroup = new VBox(10,
+            lEnsemble, btnEnsemble, ensembleHint, btnPerturb, perturbHint, btnSonify, sonifyHint,
+            sep(), lCompare, hRow(sCompareOffset, compareOffsetLabel), btnCompare2, compareHint2
+        );
+
+        graphsGroup = new VBox(10,
+            lGraph, tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation,
             btnBifurcation, bifurcationProgress, bifurcationHint,
-            btnExportCsv, exportHint,
-            sep(), lStatus, statusBox,
-            sep(), hint
+            btnExportCsv, exportHint
+        );
+
+        historyGroup = new VBox(10,
+            lHistory, hRow(historySlider, historyLabel), historyHint
+        );
+
+        displayGroup = new VBox(10,
+            btnTrailMode, btnVelocityTint, velocityTintHint, btnExportTraceArt, traceArtHint
         );
     }
+
+    /** Enforces "at most one graph mode selected, or none" — see the class javadoc on {@link #graphModeButtons}. */
+    private void toggleGraphMode(ToggleButton button, GraphPanel.Mode mode, GraphPanel graphPanel) {
+        if (button.isSelected()) {
+            for (ToggleButton b : graphModeButtons) if (b != button) b.setSelected(false);
+            graphPanel.setMode(mode);
+            if (onGraphVisibilityChange != null) onGraphVisibilityChange.accept(true);
+        } else {
+            if (onGraphVisibilityChange != null) onGraphVisibilityChange.accept(false);
+        }
+    }
+
+    // ---- Group/status accessors — see the class javadoc ----
+
+    public VBox getStatusBlock()  { return statusBlock; }
+    public VBox getMotionGroup()  { return motionGroup; }
+    public VBox getChaosGroup()   { return chaosGroup; }
+    public VBox getGraphsGroup()  { return graphsGroup; }
+    public VBox getHistoryGroup() { return historyGroup; }
+    public VBox getDisplayGroup() { return displayGroup; }
 
     // ---- Called from controller.SimulationController every render tick ----
 
@@ -433,6 +495,12 @@ public final class ControlPanel extends VBox {
     public void setOnGenerateBifurcation(Runnable callback)     { this.onGenerateBifurcation = callback; }
     public void setOnResetGravityDirection(Runnable callback)   { this.onResetGravityDirection = callback; }
     public void setOnCompareToggle(BiConsumer<Boolean, Double> callback) { this.onCompareToggle = callback; }
+
+    /** Called with {@code true} once a graph mode is selected, {@code false} when deselected. See §10 of the UI overhaul spec. */
+    public void setOnGraphVisibilityChange(Consumer<Boolean> callback) { this.onGraphVisibilityChange = callback; }
+
+    /** Called with the new paused state whenever the Pause button is clicked. See §7.1 of the UI overhaul spec. */
+    public void setOnPauseChange(Consumer<Boolean> callback) { this.onPauseChange = callback; }
 
     /** Resets the A/B compare button's visual state — used when a structural edit drops an active compare (see controller.SimulationController#applyStructuralEdit). */
     public void setCompareVisual(boolean active) {
@@ -453,9 +521,16 @@ public final class ControlPanel extends VBox {
         if (!running) bifurcationProgressBar.setProgress(0);
     }
 
-    /** Selects the Bifurcation Map radio once a sweep finishes, so the result is immediately visible. */
+    /**
+     * Selects the Bifurcation Map toggle once a sweep finishes (so the
+     * result is immediately visible) and reveals the graph — mirrors what
+     * a manual click on that toggle would do, since this path bypasses
+     * {@link #toggleGraphMode} (the sweep finishes on a background task
+     * callback, not a button click).
+     */
     public void selectBifurcationMode() {
-        bifurcationRadio.setSelected(true);
+        for (ToggleButton b : graphModeButtons) b.setSelected(b == bifurcationToggle);
+        if (onGraphVisibilityChange != null) onGraphVisibilityChange.accept(true);
     }
 
     /** Called with the newly selected type whenever the integrator picker changes. */
@@ -620,11 +695,10 @@ public final class ControlPanel extends VBox {
         b.getStyleClass().add("sidebar-button");
     }
 
-    private static RadioButton radioBtn(String text, ToggleGroup group) {
-        RadioButton rb = new RadioButton(text);
-        rb.setToggleGroup(group);
-        rb.getStyleClass().add("sidebar-radio");
-        return rb;
+    private static ToggleButton graphModeButton(String text) {
+        ToggleButton b = new ToggleButton(text);
+        styleButton(b);
+        return b;
     }
 
     private static Separator sep() {
