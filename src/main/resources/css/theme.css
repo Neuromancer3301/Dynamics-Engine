@@ -165,7 +165,7 @@
 
 .nav-card:hover, .nav-card:focused {
     -fx-border-color: -accent;
-    -fx-effect: dropshadow(gaussian, rgba(234, 63, 140, 0.35), 18, 0.15, 0, 4);
+    -fx-effect: dropshadow(gaussian, rgba(242, 72, 154, 0.35), 18, 0.15, 0, 4);
 }
 
 .nav-card-index {
@@ -173,11 +173,6 @@
     -fx-font-size: 17px;
     -fx-font-weight: bold;
     -fx-letter-spacing: 0.1em;
-    -fx-text-fill: -accent;
-}
-
-.nav-card-icon {
-    -fx-font-size: 30px;
     -fx-text-fill: -accent;
 }
 
@@ -231,8 +226,7 @@
     -fx-opacity: 0.55;
     -fx-border-style: dashed;
 }
-.nav-card-coming-soon .nav-card-index,
-.nav-card-coming-soon .nav-card-icon {
+.nav-card-coming-soon .nav-card-index {
     -fx-text-fill: -ink-3;
 }
 

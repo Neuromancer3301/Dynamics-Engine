@@ -10,8 +10,11 @@ import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import javafx.util.Duration;
+import theme.Theme;
 import theme.ThemeManager;
+import ui.icon.Icons;
 
 /**
  * Controller behind {@code fxml/component/NavCard.fxml} — a reusable,
@@ -27,7 +30,7 @@ import theme.ThemeManager;
  * <p>A live card can also optionally grow downward on hover to reveal one
  * extra {@code detail} line beyond {@code descriptionLabel}, plus a
  * placeholder demo-video box beneath it — see the
- * {@link #configure(String, String, String, String, String, Runnable)}
+ * {@link #configure(String, ui.icon.Icons.Glyph, String, String, String, Runnable)}
  * overload. {@link #configureComingSoon} never opts into this: a disabled,
  * reserved-but-unbuilt slot has nothing further to reveal.
  */
@@ -43,10 +46,14 @@ public final class NavCardController {
     // new videoBox placeholder (see setExpanded) without clipping.
     private static final double EXPANDED_GROWTH = 240.0;
     private static final Duration EXPAND_DURATION = Duration.millis(160);
+    // Matches the old .nav-card-icon font-size (30px) this replaces — see
+    // iconHost below — so the swap to a Canvas glyph keeps the same visual
+    // weight.
+    private static final double ICON_SIZE = 30.0;
 
     @FXML private VBox root;
     @FXML private Label indexLabel;
-    @FXML private Label iconLabel;
+    @FXML private StackPane iconHost;
     @FXML private Label titleLabel;
     @FXML private Label descriptionLabel;
     @FXML private Label detailLabel;
@@ -54,6 +61,8 @@ public final class NavCardController {
 
     private Runnable onActivate;
     private boolean expandable = false;
+    private boolean comingSoon = false;
+    private Icons.IconView iconView;
     private Timeline expandAnim;
 
     @FXML
@@ -76,10 +85,15 @@ public final class NavCardController {
         root.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) activate();
         });
+
+        // Keeps the icon's tint in sync with a live theme toggle, the same
+        // way component.UtilityIconButton and ui.SidebarTabs do for their
+        // own Canvas glyphs.
+        ThemeManager.getInstance().addListener(this::refreshIconColor);
     }
 
     /** Configures a live, clickable card with no extra hover-reveal detail. */
-    public void configure(String index, String icon, String title, String description, Runnable onActivate) {
+    public void configure(String index, Icons.Glyph icon, String title, String description, Runnable onActivate) {
         configure(index, icon, title, description, null, onActivate);
     }
 
@@ -95,15 +109,16 @@ public final class NavCardController {
      * demonstrates" blurb or feature list, one tier more detail than
      * {@code description} without cluttering the card's resting state.
      */
-    public void configure(String index, String icon, String title, String description,
+    public void configure(String index, Icons.Glyph icon, String title, String description,
                            String detail, Runnable onActivate) {
         indexLabel.setText(index);
-        iconLabel.setText(icon);
         titleLabel.setText(title);
         descriptionLabel.setText(description);
         this.onActivate = onActivate;
         this.expandable = detail != null && !detail.isBlank();
         if (expandable) detailLabel.setText(detail);
+        this.comingSoon = false;
+        setIcon(icon);
     }
 
     /**
@@ -116,15 +131,36 @@ public final class NavCardController {
      * broken button." Never expandable — there is no detail to reveal for a
      * slot that isn't built yet.
      */
-    public void configureComingSoon(String index, String icon, String title, String description) {
+    public void configureComingSoon(String index, Icons.Glyph icon, String title, String description) {
         indexLabel.setText(index);
-        iconLabel.setText(icon);
         titleLabel.setText(title);
         descriptionLabel.setText(description);
         this.onActivate = null;
         this.expandable = false;
+        this.comingSoon = true;
+        setIcon(icon);
         root.getStyleClass().add("nav-card-coming-soon");
         root.setDisable(true);
+    }
+
+    /**
+     * Builds (or repaints, if a card is ever reconfigured) the icon Canvas
+     * and colors it for the current state/theme — {@code -accent} for a
+     * live card, {@code -ink-3} for a coming-soon one, matching what {@code
+     * .nav-card-coming-soon .nav-card-index} already does for the index
+     * label via CSS. See {@link #refreshIconColor} for the live-toggle path.
+     */
+    private void setIcon(Icons.Glyph glyph) {
+        Theme current = ThemeManager.getInstance().getCurrent();
+        Color color = comingSoon ? Icons.dimColor(current) : Icons.activeColor(current);
+        iconView = Icons.create(glyph, ICON_SIZE, color);
+        iconHost.getChildren().setAll(iconView);
+    }
+
+    private void refreshIconColor() {
+        if (iconView == null) return;
+        Theme current = ThemeManager.getInstance().getCurrent();
+        iconView.setColor(comingSoon ? Icons.dimColor(current) : Icons.activeColor(current));
     }
 
     private void activate() {
