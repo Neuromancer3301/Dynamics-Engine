@@ -14,7 +14,7 @@ public final class AppConfig {
 
     public static final String APP_NAME    = "Dynamics Engine";
     public static final String APP_TAGLINE = "N-Pendulum Chain Simulator";
-    public static final String APP_VERSION = "1.0.0";
+    public static final String APP_VERSION = "1.0.4";
 
     public static final double MIN_WIDTH  = 960;
     public static final double MIN_HEIGHT = 640;

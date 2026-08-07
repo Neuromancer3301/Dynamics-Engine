@@ -7,6 +7,7 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
+import javafx.scene.input.MouseButton;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
@@ -135,6 +136,36 @@ public final class PendulumCanvas extends Canvas {
         void onGravityAngleChanged(double angle);
     }
 
+    /**
+     * Notified when a bob becomes selected — a completed left-button click
+     * or click-drag-release (§7.1 of the UI overhaul spec). Selection is a
+     * persistent state that outlives the gesture, unlike {@link
+     * #hoveredLink}/{@link #draggedLink}; this class only reports the
+     * event, it doesn't own the state itself — see {@link #setSelectedLink}.
+     */
+    public interface SelectionListener {
+        void onLinkSelected(int linkIndex);
+    }
+
+    /**
+     * Notified during a right-button ("length") drag on a bob (§7.3). Length
+     * is a structural parameter — {@link #onLengthPreview} fires
+     * continuously as a visual-only preview (no engine mutation), and
+     * {@link #onLengthCommit} fires once on release, meant to be routed
+     * through the same structural-edit path {@code ui.LinkEditorPanel}'s
+     * "Apply Changes" already uses. {@code newLength} is already positive
+     * and finite (clamped) by the time either method is called.
+     */
+    public interface LengthDragListener {
+        void onLengthPreview(int linkIndex, double newLength);
+        void onLengthCommit(int linkIndex, double newLength);
+    }
+
+    /** Notified when a bob is double-clicked (not part of a drag) — opens the per-link parameter dialog (§7.4). */
+    public interface DoubleClickListener {
+        void onDoubleClick(int linkIndex);
+    }
+
     // Not final: a structural edit (per-link editor, runtime N) changes the
     // arm's total length after construction. Without a way to update this,
     // the render scale computed in render() would silently go stale — the
@@ -190,6 +221,30 @@ public final class PendulumCanvas extends Canvas {
     private double gravityAngle = 0.0;
     private boolean draggingGravity = false;
 
+    // ---- Selection (§7.1) ----
+    private SelectionListener selectionListener;
+    private int selectedLink = -1;
+
+    // ---- Snap-to-unit (§6.3) ----
+    private static final double ANGLE_SNAP_INCREMENT  = Math.PI / 12.0; // 15 degrees
+    private static final double LENGTH_SNAP_INCREMENT = 0.25;           // meters
+    private boolean snapEnabled = false;
+
+    // ---- Right-click ("length") drag (§7.3) ----
+    // Length is a structural parameter — dragging only produces a local
+    // visual preview (previewLink/previewScreenX/Y below); the engine is
+    // never touched until release, when lengthDragListener.onLengthCommit
+    // fires exactly once.
+    private static final double MIN_DRAG_LENGTH = 0.05;
+    private LengthDragListener lengthDragListener;
+    private int lengthDragLink = -1;
+    private int previewLink = -1;
+    private double[] previewScreenX;
+    private double[] previewScreenY;
+
+    // ---- Double-click (§7.4) ----
+    private DoubleClickListener doubleClickListener;
+
     public PendulumCanvas(double width, double height, double totalLength) {
         super(width, height);
         this.totalLength = totalLength;
@@ -204,6 +259,41 @@ public final class PendulumCanvas extends Canvas {
     /** Registers the listener notified when the gravity handle is dragged. {@code null} disables that interaction. */
     public void setGravityListener(GravityListener listener) {
         this.gravityListener = listener;
+    }
+
+    /** Registers the listener notified when a bob becomes selected. {@code null} disables that notification (selection can still be set programmatically). */
+    public void setSelectionListener(SelectionListener listener) {
+        this.selectionListener = listener;
+    }
+
+    /** Registers the listener notified during/after a right-click length drag. {@code null} disables that interaction. */
+    public void setLengthDragListener(LengthDragListener listener) {
+        this.lengthDragListener = listener;
+    }
+
+    /** Registers the listener notified on a double-click. {@code null} disables that interaction. */
+    public void setDoubleClickListener(DoubleClickListener listener) {
+        this.doubleClickListener = listener;
+    }
+
+    /**
+     * Sets the currently-selected link, drawn with a pulsing halo (see
+     * {@link #drawSelectionHalo}) and reflected in the top-left HUD (see
+     * {@link #drawSelectedLinkHud}). {@code -1} clears the selection. This
+     * is the single source of truth for selection state — {@code
+     * controller.SimulationController} owns the pause/resume policy (§7.1)
+     * and calls this to reflect it visually; this class never pauses
+     * anything itself.
+     */
+    public void setSelectedLink(int link) {
+        this.selectedLink = link;
+    }
+
+    public int getSelectedLink() { return selectedLink; }
+
+    /** Toggles 15°-angle / 0.25m-length drag snapping (§6.3). Off by default (continuous drag, today's existing behavior). */
+    public void setSnapEnabled(boolean snapEnabled) {
+        this.snapEnabled = snapEnabled;
     }
 
     /**
@@ -305,11 +395,15 @@ public final class PendulumCanvas extends Canvas {
         drawScaleIndicator(gc, pivotX, pivotY, scale);
         drawGravityHandle(gc, pivotX, pivotY);
         drawChain(gc, state, scale, pivotX, pivotY);
+        drawSelectionHalo(gc, state, scale, pivotX, pivotY);
         drawInfoOverlay(gc, state, W);
+        drawSelectedLinkHud(gc, state);
 
         // Whichever link is currently grabbed takes priority over whatever
         // was last hovered — mouseMoved doesn't fire mid-drag in JavaFX, so
-        // hoveredLink alone would show stale data while dragging.
+        // hoveredLink alone would show stale data while dragging. Hover
+        // inspection is tool-agnostic (§7.2): it fires whenever a bob is
+        // hovered, regardless of selection or which rail tool is "active."
         int inspected = (draggedLink >= 0) ? draggedLink : hoveredLink;
         drawBobInspector(gc, state, inspected, scale, pivotX, pivotY, W);
     }
@@ -384,12 +478,29 @@ public final class PendulumCanvas extends Canvas {
         });
 
         setOnMousePressed(e -> {
-            // Bob grabs take priority: the handle sits GRAVITY_HANDLE_RADIUS
-            // (46px) from the pivot, close enough to a small/low-N chain's
-            // first bob that treating the handle as a fallback rather than
-            // checking it first avoids ever stealing a legitimate bob grab.
+            if (e.getButton() == MouseButton.SECONDARY) {
+                // Right-click-drag = length (§7.3) — an entirely separate
+                // gesture from the left-button angle drag below; grabbing a
+                // bob here never affects selection or the primary drag state.
+                int hit = hitTestBob(e.getX(), e.getY());
+                if (hit >= 0 && lengthDragListener != null) lengthDragLink = hit;
+                return;
+            }
+            if (e.getButton() != MouseButton.PRIMARY) return;
+
+            // Bob grabs take priority: the gravity handle sits
+            // GRAVITY_HANDLE_RADIUS (46px) from the pivot, close enough to a
+            // small/low-N chain's first bob that treating the handle as a
+            // fallback rather than checking it first avoids ever stealing a
+            // legitimate bob grab.
             int hit = hitTestBob(e.getX(), e.getY());
             if (hit >= 0) {
+                if (e.getClickCount() == 2) {
+                    // Double-click (§7.4) — not a drag; the parameter dialog
+                    // handles its own selection/pause, so nothing else here.
+                    if (doubleClickListener != null) doubleClickListener.onDoubleClick(hit);
+                    return;
+                }
                 if (dragListener == null) return;
                 if (dragListener.onGrab(hit)) {
                     draggedLink = hit;
@@ -409,8 +520,14 @@ public final class PendulumCanvas extends Canvas {
                 gravityListener.onGravityAngleChanged(gravityAngle);
                 return;
             }
+            if (lengthDragLink >= 0) {
+                double newLength = clampLength(maybeSnapLength(computeDraggedLength(lengthDragLink, e.getX(), e.getY())));
+                computeLengthPreview(lengthDragLink, newLength);
+                if (lengthDragListener != null) lengthDragListener.onLengthPreview(lengthDragLink, newLength);
+                return;
+            }
             if (draggedLink < 0) return;
-            double angle = angleFromScreen(draggedLink, e.getX(), e.getY());
+            double angle = maybeSnapAngle(angleFromScreen(draggedLink, e.getX(), e.getY()));
             recordDragSample(angle);
             dragListener.onDrag(draggedLink, angle);
         });
@@ -420,15 +537,106 @@ public final class PendulumCanvas extends Canvas {
                 draggingGravity = false;
                 return;
             }
+            if (lengthDragLink >= 0) {
+                double newLength = clampLength(maybeSnapLength(computeDraggedLength(lengthDragLink, e.getX(), e.getY())));
+                if (lengthDragListener != null) lengthDragListener.onLengthCommit(lengthDragLink, newLength);
+                lengthDragLink = -1;
+                clearLengthPreview();
+                return;
+            }
             if (draggedLink < 0) return;
-            double angle = angleFromScreen(draggedLink, e.getX(), e.getY());
+            double angle = maybeSnapAngle(angleFromScreen(draggedLink, e.getX(), e.getY()));
             double angularVelocity = estimateAngularVelocity();
             dragListener.onRelease(draggedLink, angle, angularVelocity);
+            // A completed click-drag-release selects the link (§7.1); a
+            // plain click (no movement) is the click-count==1, drag-free
+            // case of the same gesture and lands here too.
+            if (selectionListener != null) selectionListener.onLinkSelected(draggedLink);
             draggedLink = -1;
             dragSamples.clear();
             hoveredLink = hitTestBob(e.getX(), e.getY());
             setCursor(hoveredLink >= 0 ? Cursor.HAND : Cursor.DEFAULT);
         });
+    }
+
+    private double maybeSnapAngle(double angle) {
+        return snapEnabled ? snapToIncrement(angle, ANGLE_SNAP_INCREMENT) : angle;
+    }
+
+    private double maybeSnapLength(double length) {
+        return snapEnabled ? snapToIncrement(length, LENGTH_SNAP_INCREMENT) : length;
+    }
+
+    private static double snapToIncrement(double value, double increment) {
+        return Math.round(value / increment) * increment;
+    }
+
+    private static double clampLength(double length) {
+        return Math.max(MIN_DRAG_LENGTH, length);
+    }
+
+    /** World-unit distance from {@code link}'s parent joint to a screen point — the same quantity {@link #angleFromScreen} measures the direction of. */
+    private double computeDraggedLength(int link, double screenX, double screenY) {
+        double parentX, parentY;
+        if (link <= 0) {
+            parentX = pivotX;
+            parentY = pivotY;
+        } else {
+            parentX = pivotX + lastState.bobX[link - 1] * scale;
+            parentY = pivotY - lastState.bobY[link - 1] * scale;
+        }
+        return Math.hypot(screenX - parentX, screenY - parentY) / scale;
+    }
+
+    /**
+     * Recomputes screen-space bob positions for a proposed length change on
+     * {@code editedLink}, without touching {@link #lastState}: the edited
+     * bob moves to its new distance along its unchanged angle, and every
+     * downstream bob (which only depends on its own angle/length, not the
+     * edited one's) shifts by that same screen-space delta — the chain is
+     * otherwise rigid. Read by {@link #drawChain} whenever {@link
+     * #previewLink} is non-negative; cleared by {@link #clearLengthPreview}.
+     */
+    private void computeLengthPreview(int editedLink, double newLength) {
+        if (lastState == null) return;
+        int n = lastState.getN();
+        if (editedLink < 0 || editedLink >= n) return;
+
+        double[] xs = new double[n];
+        double[] ys = new double[n];
+        double dx = 0, dy = 0;
+
+        for (int i = 0; i < n; i++) {
+            double bx = pivotX + lastState.bobX[i] * scale;
+            double by = pivotY - lastState.bobY[i] * scale;
+
+            if (i == editedLink) {
+                double parentX = (i == 0) ? pivotX : pivotX + lastState.bobX[i - 1] * scale;
+                double parentY = (i == 0) ? pivotY : pivotY - lastState.bobY[i - 1] * scale;
+                double theta = lastState.angles[i];
+                double newBx = parentX + newLength * scale * Math.sin(theta);
+                double newBy = parentY - newLength * scale * Math.cos(theta);
+                dx = newBx - bx;
+                dy = newBy - by;
+                xs[i] = newBx;
+                ys[i] = newBy;
+            } else if (i > editedLink) {
+                xs[i] = bx + dx;
+                ys[i] = by + dy;
+            } else {
+                xs[i] = bx;
+                ys[i] = by;
+            }
+        }
+
+        this.previewScreenX = xs;
+        this.previewScreenY = ys;
+        this.previewLink = editedLink;
+    }
+
+    /** Ends a right-click length-drag preview — the next render() draws the chain from real state again. */
+    public void clearLengthPreview() {
+        this.previewLink = -1;
     }
 
     private boolean hitTestGravityHandle(double screenX, double screenY) {
@@ -761,9 +969,15 @@ public final class PendulumCanvas extends Canvas {
         double prevX = pivotX, prevY = pivotY;
         boolean simple = reducedMotion || state.getN() > GRADIENT_THRESHOLD;
 
+        // A right-click length drag in progress (§7.3): draw from the
+        // locally-computed preview positions instead of live state — the
+        // engine itself is untouched until release, so this is the only
+        // place the proposed length is visible.
+        boolean previewing = previewLink >= 0 && previewScreenX != null && previewScreenX.length == state.getN();
+
         for (int i = 0; i < state.getN(); i++) {
-            double bx = pivotX + state.bobX[i] * scale;
-            double by = pivotY - state.bobY[i] * scale;
+            double bx = previewing ? previewScreenX[i] : pivotX + state.bobX[i] * scale;
+            double by = previewing ? previewScreenY[i] : pivotY - state.bobY[i] * scale;
 
             // Rod shadow
             gc.setStroke(Color.web("#000000", 0.35));
@@ -821,6 +1035,38 @@ public final class PendulumCanvas extends Canvas {
         }
     }
 
+    // Cycles per second for the selection halo's pulse — fast enough to
+    // read as "alive," slow enough not to be distracting next to the
+    // pendulum's own motion.
+    private static final double HALO_PULSE_HZ = 1.2;
+
+    /**
+     * A glowing accent ring around the selected bob (§7.1), redrawn every
+     * frame. Pulses via a simple sine-based alpha animation; under {@link
+     * #reducedMotion} it's a static ring at a fixed alpha instead — the
+     * same "skip the tween, keep the state visible" rule as everywhere else
+     * in this app that checks {@code isReducedMotion()}.
+     */
+    private void drawSelectionHalo(GraphicsContext gc, SimState state, double scale, double pivotX, double pivotY) {
+        if (selectedLink < 0 || selectedLink >= state.getN()) return;
+
+        double bx = pivotX + state.bobX[selectedLink] * scale;
+        double by = pivotY - state.bobY[selectedLink] * scale;
+        double r = radiusForBob(state, selectedLink) * 1.9;
+
+        double alpha;
+        if (reducedMotion) {
+            alpha = 0.6;
+        } else {
+            double phase = (System.nanoTime() / 1.0e9) * HALO_PULSE_HZ * 2 * Math.PI;
+            alpha = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(phase));
+        }
+
+        gc.setStroke(Color.web("#EA3F8C", alpha));
+        gc.setLineWidth(2.5);
+        gc.strokeOval(bx - r, by - r, r * 2, r * 2);
+    }
+
     /**
      * The hover/drag inspector: live angle, angular velocity, mass, and
      * rod length for whichever link is currently hovered or grabbed. Rod
@@ -840,45 +1086,89 @@ public final class PendulumCanvas extends Canvas {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && link < state.masses.length) ? state.masses[link] : Double.NaN;
 
-        gc.setFont(Font.font("Monospaced", 10));
-        double boxW = 176, boxH = 48;
+        gc.setFont(Font.font("Monospaced", 13));
+        double boxW = 208, boxH = 58;
         double boxX = Math.min(bx + 14, canvasW - boxW - 4);
         double boxY = Math.max(by - boxH - 14, 4);
 
-        gc.setFill(Color.web("#000000", 0.6));
-        gc.fillRoundRect(boxX, boxY, boxW, boxH, 3, 3);
+        // Opacity raised from 0.6 (see the class-level note on §2's audit):
+        // at the larger font sizes this pass introduces, the old value let
+        // a bright swinging bob or a light-colored trail show through
+        // enough to hurt legibility.
+        gc.setFill(Color.web("#000000", 0.7));
+        gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
         gc.setStroke(Color.web("#EA3F8C", 0.7));
         gc.setLineWidth(1.0);
-        gc.strokeRoundRect(boxX, boxY, boxW, boxH, 3, 3);
+        gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
         gc.setFill(Color.web("#FFFFFF"));
-        gc.fillText("Link #" + (link + 1), boxX + 8, boxY + 15);
-        gc.setFill(Color.web("#C7C7D1"));
+        gc.fillText("Link #" + (link + 1), boxX + 9, boxY + 18);
+        gc.setFill(Color.web("#D6D6DC"));
         gc.fillText(String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[link], state.angularVelocities[link]),
-                boxX + 8, boxY + 30);
-        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 8, boxY + 44);
+                boxX + 9, boxY + 36);
+        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 9, boxY + 53);
     }
 
     private void drawInfoOverlay(GraphicsContext gc, SimState state, double W) {
-        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, 11));
+        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, 13));
 
-        // Semi-transparent pill background
-        gc.setFill(Color.web("#000000", 0.45));
-        gc.fillRoundRect(8, 8, 190, 46, 3, 3);
+        // Semi-transparent pill background — opacity raised from 0.45 (see
+        // §2's audit note) so the larger text stays legible over a bright
+        // swinging bob or a light-colored trail passing behind it.
+        gc.setFill(Color.web("#000000", 0.6));
+        gc.fillRoundRect(8, 8, 216, 58, 4, 4);
 
         // Live telemetry gets the accent — the same "one hue for anything
         // actively reporting a current value" rule as the tip trail and the
         // gravity handle.
         gc.setFill(Color.web("#EA3F8C"));
-        gc.fillText(String.format("t  = %7.2f s",   state.time),         14, 23);
-        gc.fillText(String.format("E  = %7.3f J",   state.totalEnergy),  14, 37);
+        gc.fillText(String.format("t  = %7.2f s",   state.time),         15, 27);
+        gc.fillText(String.format("E  = %7.3f J",   state.totalEnergy),  15, 43);
         gc.fillText(String.format("KE = %6.3f  PE = %7.3f",
-                                   state.kineticEnergy, state.potentialEnergy), 14, 51);
+                                   state.kineticEnergy, state.potentialEnergy), 15, 59);
+    }
+
+    /**
+     * A second, fixed-position HUD pill beside the time/energy overlay,
+     * shown only while a link is selected (§8) — the same fields {@link
+     * #drawBobInspector} already computes, just anchored top-left instead
+     * of floating near the bob, and driven by selection rather than
+     * hover/drag. This is in addition to, not a replacement for, the
+     * floating inspector, which keeps following whichever bob is
+     * hovered/dragged regardless of selection.
+     */
+    private void drawSelectedLinkHud(GraphicsContext gc, SimState state) {
+        if (selectedLink < 0 || selectedLink >= state.getN()) return;
+
+        double bx = pivotX + state.bobX[selectedLink] * scale;
+        double by = pivotY - state.bobY[selectedLink] * scale;
+        double parentX = (selectedLink == 0) ? pivotX : pivotX + state.bobX[selectedLink - 1] * scale;
+        double parentY = (selectedLink == 0) ? pivotY : pivotY - state.bobY[selectedLink - 1] * scale;
+        double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
+        double mass = (state.masses != null && selectedLink < state.masses.length) ? state.masses[selectedLink] : Double.NaN;
+
+        gc.setFont(Font.font("Monospaced", 13));
+        double boxX = 8 + 216 + 8; // immediately right of drawInfoOverlay's pill
+        double boxY = 8;
+        double boxW = 224, boxH = 58;
+
+        gc.setFill(Color.web("#000000", 0.6));
+        gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
+        gc.setStroke(Color.web("#EA3F8C", 0.7));
+        gc.setLineWidth(1.0);
+        gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
+
+        gc.setFill(Color.web("#EA3F8C"));
+        gc.fillText("Selected: Link #" + (selectedLink + 1), boxX + 9, boxY + 18);
+        gc.setFill(Color.web("#D6D6DC"));
+        gc.fillText(String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[selectedLink], state.angularVelocities[selectedLink]),
+                boxX + 9, boxY + 36);
+        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 9, boxY + 53);
     }
 
     private void drawWaitingMessage(GraphicsContext gc, double W, double H) {
-        gc.setFill(Color.web("#5C5C66", 0.85));
-        gc.setFont(Font.font("System", FontWeight.NORMAL, 14));
-        gc.fillText("Initialising physics engine...", W / 2 - 100, H / 2);
+        gc.setFill(Color.web("#7C7C88", 0.9));
+        gc.setFont(Font.font("System", FontWeight.NORMAL, 15));
+        gc.fillText("Initialising physics engine...", W / 2 - 105, H / 2);
     }
 }

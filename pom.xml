@@ -18,7 +18,7 @@
         <junit.version>5.10.2</junit.version>
         <!-- jpackage requires a numeric X[.Y[.Z]] version; "1.0-SNAPSHOT"
              (the Maven version above) isn't valid input for it. -->
-        <app.version>1.0.0</app.version>
+        <app.version>1.0.4</app.version>
         <!-- Points at an extracted javafx-jmods-<version> directory (the
              JMODS SDK distribution — NOT the Maven javafx-*.jar artifacts
              used everywhere else in this build). jpackage needs these to

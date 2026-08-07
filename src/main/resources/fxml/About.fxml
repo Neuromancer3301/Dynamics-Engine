@@ -14,7 +14,7 @@
 
     <Button styleClass="back-button" text="← Menu" onAction="#handleBack"/>
     <Label styleClass="stub-title" text="About"/>
-    <Label fx:id="versionLabel" styleClass="stub-body" text="Dynamics Engine · v1.0.0"/>
+    <Label fx:id="versionLabel" styleClass="stub-body" text="Dynamics Engine · v1.0.4"/>
     <Label styleClass="stub-body"
            text="A JavaFX N-pendulum chain simulator: RK4 / Lagrangian mechanics, a lock-free physics thread, and a command-driven, FXML-based navigation shell built to grow."/>
     <Label styleClass="stub-body" text="CSE4402 — Visual Programming"/>
