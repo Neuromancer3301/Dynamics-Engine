@@ -36,7 +36,7 @@ public final class Icons {
     /** Every glyph this app currently needs. See each draw method below for what it looks like. */
     public enum Glyph {
         SETTINGS, INFO, CHEVRON, SELECT, ADD, SNAP,
-        MOTION, CHAOS, GRAPHS, HISTORY, LINKS, DISPLAY
+        MOTION, CHAOS, GRAPHS, HISTORY, LINKS, DISPLAY, PENDULUM, RESERVED
     }
 
     /** Creates a fixed-size, recolorable icon node. {@code size} is the glyph's logical (square) pixel size. */
@@ -46,17 +46,22 @@ public final class Icons {
 
     /** {@code -ink-2} equivalent — idle/unselected glyph tint. Matches {@code theme.css}'s token exactly. */
     public static Color idleColor(Theme theme) {
-        return theme == Theme.DARK ? Color.web("#A0A0AC") : Color.web("#55555E");
+        return theme == Theme.DARK ? Color.web("#B6B6C2") : Color.web("#55555E");
     }
 
     /** {@code -ink} equivalent — hovered/emphasized glyph tint. */
     public static Color hoverColor(Theme theme) {
-        return theme == Theme.DARK ? Color.web("#EDEDF2") : Color.web("#18181B");
+        return theme == Theme.DARK ? Color.web("#F2F2F6") : Color.web("#18181B");
     }
 
     /** {@code -accent} equivalent — active/selected/live glyph tint, the one hue this app reserves for "live." */
     public static Color activeColor(Theme theme) {
-        return theme == Theme.DARK ? Color.web("#EA3F8C") : Color.web("#C81F72");
+        return theme == Theme.DARK ? Color.web("#F2489A") : Color.web("#C81F72");
+    }
+
+    /** {@code -ink-3} equivalent — dimmed tint for a reserved/disabled glyph (see NavCardController's coming-soon cards). */
+    public static Color dimColor(Theme theme) {
+        return theme == Theme.DARK ? Color.web("#96969F") : Color.web("#6B6B76");
     }
 
     /**
@@ -104,6 +109,8 @@ public final class Icons {
                 case HISTORY  -> drawHistory(gc, w, h);
                 case LINKS    -> drawLinks(gc, w, h);
                 case DISPLAY  -> drawDisplay(gc, w, h);
+                case PENDULUM -> drawPendulum(gc, w, h);
+                case RESERVED -> drawReserved(gc, w, h);
             }
         }
 
@@ -221,6 +228,36 @@ public final class Icons {
             gc.strokeArc(w * 0.1, h * 0.14, w * 0.8, h * 0.62, 0, 180, ArcType.OPEN);
             gc.strokeArc(w * 0.1, h * 0.24, w * 0.8, h * 0.62, 180, 180, ArcType.OPEN);
             double r = w * 0.1;
+            gc.strokeOval(cx - r, cy - r, r * 2, r * 2);
+        }
+
+        /**
+         * A double pendulum: fixed pivot, first rod to bob one, second rod
+         * bent at an angle to bob two — the app's own icon for the
+         * N-Pendulum Chain card (see MainMenuController), reading as the
+         * actual apparatus rather than an unrelated glyph.
+         */
+        private static void drawPendulum(GraphicsContext gc, double w, double h) {
+            double pivotX = w * 0.5, pivotY = h * 0.12;
+            double bob1X = w * 0.78, bob1Y = h * 0.46;
+            double bob2X = w * 0.30, bob2Y = h * 0.88;
+
+            gc.strokeLine(pivotX, pivotY, bob1X, bob1Y);
+            gc.strokeLine(bob1X, bob1Y, bob2X, bob2Y);
+
+            double pivotR = w * 0.045;
+            gc.fillOval(pivotX - pivotR, pivotY - pivotR, pivotR * 2, pivotR * 2);
+
+            double bob1R = w * 0.11;
+            gc.fillOval(bob1X - bob1R, bob1Y - bob1R, bob1R * 2, bob1R * 2);
+
+            double bob2R = w * 0.14;
+            gc.fillOval(bob2X - bob2R, bob2Y - bob2R, bob2R * 2, bob2R * 2);
+        }
+
+        /** A plain open ring — a reserved-but-unbuilt slot's icon (see NavCardController#configureComingSoon). */
+        private static void drawReserved(GraphicsContext gc, double w, double h) {
+            double cx = w / 2, cy = h / 2, r = w * 0.32;
             gc.strokeOval(cx - r, cy - r, r * 2, r * 2);
         }
     }

@@ -8,7 +8,13 @@
       xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
       fx:controller="component.NavCardController">
     <Label fx:id="indexLabel" styleClass="nav-card-index" text="01"/>
-    <Label fx:id="iconLabel" styleClass="nav-card-icon" text="⚛"/>
+    <!-- Icon is a hand-rolled Canvas glyph (ui.icon.Icons.Glyph.PENDULUM),
+         built and colored in NavCardController#initialize the same way
+         component.UtilityIconButton and ui.SidebarTabs build theirs — not a
+         styleable node, so this is just the placeholder it's added into.
+         See theme.css's sidebar-section comment for why Canvas pixels sit
+         outside the CSS token system. -->
+    <StackPane fx:id="iconHost" alignment="TOP_LEFT"/>
     <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title"/>
     <Label fx:id="descriptionLabel" styleClass="nav-card-desc" text="Description" wrapText="true"/>
     <!-- Extra hover-reveal detail line — see NavCardController#configure's

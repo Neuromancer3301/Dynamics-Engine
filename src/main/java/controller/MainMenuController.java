@@ -58,18 +58,18 @@ public final class MainMenuController implements Initializable, Navigable {
         versionLabel.setText("v" + AppConfig.APP_VERSION);
 
         cardPendulumController.configure(
-                "01", "⚛", "N-Pendulum Chain",
+                "01", Icons.Glyph.PENDULUM, "N-Pendulum Chain",
                 "Configure any number of coupled links, watch chaos emerge, and drag it live.",
                 "Demonstrates: RK4/Lagrangian mechanics, live angle & length editing, "
                         + "butterfly-effect ensembles, and bifurcation/Poincaré analysis.",
                 () -> router.navigate(Route.SIMULATION));
 
         cardSlotTwoController.configureComingSoon(
-                "02", "◌", "Coming Soon",
+                "02", Icons.Glyph.RESERVED, "Coming Soon",
                 "A second dynamical system — reserved for what's next.");
 
         cardSlotThreeController.configureComingSoon(
-                "03", "◌", "Coming Soon",
+                "03", Icons.Glyph.RESERVED, "Coming Soon",
                 "A third slot, waiting for its simulation.");
 
         UtilityIconButton settingsButton = new UtilityIconButton(Icons.Glyph.SETTINGS, "Settings");
