@@ -804,7 +804,7 @@ public final class PendulumCanvas extends Canvas {
         gc.setLineWidth(1.0);
         gc.strokeOval(prevX - r, prevY - r, r * 2, r * 2);
 
-        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, 9));
+        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, 13));
         gc.setFill(compareColor);
         gc.fillText("B", prevX + r + 3, prevY + 3);
     }
@@ -888,7 +888,7 @@ public final class PendulumCanvas extends Canvas {
         gc.strokeLine(barX + barPx, barY - 4, barX + barPx, barY + 4);
 
         gc.setFill(Color.web("#8A8A94"));
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", 13));
         gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
         String label = (referenceLength == Math.floor(referenceLength))
                 ? String.format("%d m", (int) referenceLength)
@@ -927,7 +927,7 @@ public final class PendulumCanvas extends Canvas {
         gc.setLineWidth(1.0);
         gc.strokeOval(hx - 5, hy - 5, 10, 10);
 
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", 13));
         gc.setFill(Color.web("#EA3F8C"));
         gc.fillText("g", hx + 8, hy + 3);
     }
@@ -1086,7 +1086,7 @@ public final class PendulumCanvas extends Canvas {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && link < state.masses.length) ? state.masses[link] : Double.NaN;
 
-        gc.setFont(Font.font("Monospaced", 13));
+        gc.setFont(Font.font("Monospaced", 18));
         double boxW = 208, boxH = 58;
         double boxX = Math.min(bx + 14, canvasW - boxW - 4);
         double boxY = Math.max(by - boxH - 14, 4);
@@ -1110,7 +1110,7 @@ public final class PendulumCanvas extends Canvas {
     }
 
     private void drawInfoOverlay(GraphicsContext gc, SimState state, double W) {
-        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, 13));
+        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, 18));
 
         // Semi-transparent pill background — opacity raised from 0.45 (see
         // §2's audit note) so the larger text stays legible over a bright
@@ -1147,7 +1147,7 @@ public final class PendulumCanvas extends Canvas {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && selectedLink < state.masses.length) ? state.masses[selectedLink] : Double.NaN;
 
-        gc.setFont(Font.font("Monospaced", 13));
+        gc.setFont(Font.font("Monospaced", 18));
         double boxX = 8 + 216 + 8; // immediately right of drawInfoOverlay's pill
         double boxY = 8;
         double boxW = 224, boxH = 58;
@@ -1168,7 +1168,7 @@ public final class PendulumCanvas extends Canvas {
 
     private void drawWaitingMessage(GraphicsContext gc, double W, double H) {
         gc.setFill(Color.web("#7C7C88", 0.9));
-        gc.setFont(Font.font("System", FontWeight.NORMAL, 15));
+        gc.setFont(Font.font("System", FontWeight.NORMAL, 21));
         gc.fillText("Initialising physics engine...", W / 2 - 105, H / 2);
     }
 }
