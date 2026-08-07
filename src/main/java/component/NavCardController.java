@@ -8,6 +8,7 @@ import javafx.animation.Timeline;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 import theme.ThemeManager;
@@ -24,7 +25,8 @@ import theme.ThemeManager;
  * caller without any Java inheritance.
  *
  * <p>A live card can also optionally grow downward on hover to reveal one
- * extra {@code detail} line beyond {@code descriptionLabel} — see the
+ * extra {@code detail} line beyond {@code descriptionLabel}, plus a
+ * placeholder demo-video box beneath it — see the
  * {@link #configure(String, String, String, String, String, Runnable)}
  * overload. {@link #configureComingSoon} never opts into this: a disabled,
  * reserved-but-unbuilt slot has nothing further to reveal.
@@ -37,7 +39,9 @@ public final class NavCardController {
     // values are small, deliberate, and co-located with the animation code
     // that actually needs them as literal doubles.
     private static final double BASE_HEIGHT     = 220.0;
-    private static final double EXPANDED_GROWTH = 56.0;
+    // Widened from 56.0 to comfortably fit both detailLabel's text and the
+    // new videoBox placeholder (see setExpanded) without clipping.
+    private static final double EXPANDED_GROWTH = 240.0;
     private static final Duration EXPAND_DURATION = Duration.millis(160);
 
     @FXML private VBox root;
@@ -46,6 +50,7 @@ public final class NavCardController {
     @FXML private Label titleLabel;
     @FXML private Label descriptionLabel;
     @FXML private Label detailLabel;
+    @FXML private StackPane videoBox;
 
     private Runnable onActivate;
     private boolean expandable = false;
@@ -129,11 +134,13 @@ public final class NavCardController {
     }
 
     /**
-     * Grows/shrinks the card's height to reveal/hide {@code detailLabel}.
-     * Respects {@link ThemeManager#isReducedMotion()} by jumping straight
-     * to the target height instead of tweening — content visibility (unlike
-     * the purely decorative hover-scale above) shouldn't depend on motion
-     * being enabled.
+     * Grows/shrinks the card's height to reveal/hide {@code detailLabel}
+     * and, below it, the placeholder {@code videoBox} — one animation
+     * drives both, not two independent ones. Respects {@link
+     * ThemeManager#isReducedMotion()} by jumping straight to the target
+     * height instead of tweening — content visibility (unlike the purely
+     * decorative hover-scale above) shouldn't depend on motion being
+     * enabled.
      */
     private void setExpanded(boolean expanded) {
         if (!expandable) return;
@@ -146,18 +153,26 @@ public final class NavCardController {
             detailLabel.setVisible(expanded);
             detailLabel.setManaged(expanded);
             detailLabel.setOpacity(expanded ? 1.0 : 0.0);
+            videoBox.setVisible(expanded);
+            videoBox.setManaged(expanded);
+            videoBox.setOpacity(expanded ? 1.0 : 0.0);
             return;
         }
 
         detailLabel.setVisible(true);
         detailLabel.setManaged(true);
+        videoBox.setVisible(true);
+        videoBox.setManaged(true);
         expandAnim = new Timeline(new KeyFrame(EXPAND_DURATION,
                 new KeyValue(root.prefHeightProperty(), target, Interpolator.EASE_BOTH),
-                new KeyValue(detailLabel.opacityProperty(), expanded ? 1.0 : 0.0, Interpolator.EASE_BOTH)));
+                new KeyValue(detailLabel.opacityProperty(), expanded ? 1.0 : 0.0, Interpolator.EASE_BOTH),
+                new KeyValue(videoBox.opacityProperty(), expanded ? 1.0 : 0.0, Interpolator.EASE_BOTH)));
         if (!expanded) {
             expandAnim.setOnFinished(e -> {
                 detailLabel.setVisible(false);
                 detailLabel.setManaged(false);
+                videoBox.setVisible(false);
+                videoBox.setManaged(false);
             });
         }
         expandAnim.playFromStart();

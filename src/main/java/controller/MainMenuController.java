@@ -3,8 +3,10 @@ package controller;
 import component.NavCardController;
 import component.UtilityIconButton;
 import config.AppConfig;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.scene.Parent;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -44,6 +46,7 @@ public final class MainMenuController implements Initializable, Navigable {
 
     // fx:include fx:id="cardPendulum" auto-injects both the included root
     // (as `cardPendulum`) and its controller (as `cardPendulumController`).
+    @FXML private Parent cardPendulum;
     @FXML private NavCardController cardPendulumController;
     @FXML private NavCardController cardSlotTwoController;
     @FXML private NavCardController cardSlotThreeController;
@@ -81,5 +84,26 @@ public final class MainMenuController implements Initializable, Navigable {
     @Override
     public void setRouter(SceneRouter router) {
         this.router = router;
+    }
+
+    /**
+     * Without this, JavaFX's automatic initial-focus placement lands on the
+     * first focus-traversable, enabled node in the scene graph — here, the
+     * Settings utility button (built into the top region, ahead of the card
+     * grid) — which then keeps its :focused glow/label revealed permanently
+     * since nothing else ever takes focus away. Requesting focus on the
+     * primary card instead fixes which node gets it, without touching the
+     * focus-visibility system itself (still a real accessibility feature for
+     * Settings/About when the user actually reaches them).
+     *
+     * <p>Runs on every return to this screen (this method fires each time,
+     * per {@link Navigable}), not just first launch — one mechanism for
+     * both. {@link Platform#runLater} defers past JavaFX's own automatic
+     * initial-focus pass for this pulse so it reliably overrides it instead
+     * of racing it.
+     */
+    @Override
+    public void onShow() {
+        Platform.runLater(() -> cardPendulum.requestFocus());
     }
 }

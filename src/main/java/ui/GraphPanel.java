@@ -337,10 +337,10 @@ public final class GraphPanel extends Canvas {
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 5, C_PE,     1.2); // PE
 
         // Legend
-        gc.setFont(Font.font("Monospaced", LEGEND_FONT_SIZE));
-        gc.setFill(C_ENERGY); gc.fillText("─ Total", MARGIN + 6, MARGIN + 36);
-        gc.setFill(C_KE);     gc.fillText("─ KE",    MARGIN + 6, MARGIN + 36 + LEGEND_LINE_H);
-        gc.setFill(C_PE);     gc.fillText("─ PE",    MARGIN + 6, MARGIN + 36 + LEGEND_LINE_H * 2);
+        gc.setFont(Font.font("Monospaced", 14));
+        gc.setFill(C_ENERGY); gc.fillText("─ Total", MARGIN + 6, MARGIN + 30);
+        gc.setFill(C_KE);     gc.fillText("─ KE",    MARGIN + 6, MARGIN + 42);
+        gc.setFill(C_PE);     gc.fillText("─ PE",    MARGIN + 6, MARGIN + 54);
     }
 
     private void drawSeries(GraphicsContext gc, double tMin, double tMax,
@@ -407,7 +407,7 @@ public final class GraphPanel extends Canvas {
         }
 
         // Axis labels for phase portrait
-        gc.setFont(Font.font("Monospaced", CAPTION_FONT_SIZE));
+        gc.setFont(Font.font("Monospaced", 13));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("θ  [%.2f, %.2f] rad", thetaMin, thetaMax),
                     MARGIN + 4, MARGIN + 20 + plotH + 18);
@@ -418,7 +418,7 @@ public final class GraphPanel extends Canvas {
     // ---- Mode: Poincaré Section ----
     private void drawPoincareSection(GraphicsContext gc, double plotW, double plotH) {
         if (poincarePoints.isEmpty()) {
-            gc.setFont(Font.font("System", MESSAGE_FONT_SIZE));
+            gc.setFont(Font.font("System", 15));
             gc.setFill(Color.web("#8A8A96"));
             gc.fillText("Accumulating — a point is plotted each time θ₁",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
@@ -447,7 +447,7 @@ public final class GraphPanel extends Canvas {
             gc.fillOval(sx - 1.5, sy - 1.5, 3, 3);
         }
 
-        gc.setFont(Font.font("Monospaced", CAPTION_FONT_SIZE));
+        gc.setFont(Font.font("Monospaced", 13));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("%d crossings   θ₂ [%.2f, %.2f]   ω₂ [%.2f, %.2f]",
                         poincarePoints.size(), thetaMin, thetaMax, omegaMin, omegaMax),
@@ -457,7 +457,7 @@ public final class GraphPanel extends Canvas {
     // ---- Mode: Integrator Comparison ----
     private void drawComparison(GraphicsContext gc, double plotW, double plotH) {
         if (comparisonSeries.isEmpty()) {
-            gc.setFont(Font.font("System", MESSAGE_FONT_SIZE));
+            gc.setFont(Font.font("System", 15));
             gc.setFill(Color.web("#8A8A96"));
             gc.fillText("Press \"Compare Integrators\" in the sidebar to run this.",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0);
@@ -475,8 +475,8 @@ public final class GraphPanel extends Canvas {
 
         drawAxisTicks(gc, plotW, plotH, tMin, tMax, yMin, yMax);
 
-        double legendY = MARGIN + 36;
-        gc.setFont(Font.font("Monospaced", LEGEND_FONT_SIZE));
+        double legendY = MARGIN + 30;
+        gc.setFont(Font.font("Monospaced", 14));
         for (ComparisonSeries s : comparisonSeries) {
             gc.setStroke(s.color());
             gc.setLineWidth(1.6);
@@ -498,7 +498,7 @@ public final class GraphPanel extends Canvas {
     // ---- Mode: Bifurcation Diagram ----
     private void drawBifurcation(GraphicsContext gc, double plotW, double plotH) {
         if (bifurcationParams.length == 0) {
-            gc.setFont(Font.font("System", MESSAGE_FONT_SIZE));
+            gc.setFont(Font.font("System", 15));
             gc.setFill(Color.web("#8A8A96"));
             gc.fillText("Press \"Generate Bifurcation Map\" in the sidebar to run this.",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
@@ -522,7 +522,7 @@ public final class GraphPanel extends Canvas {
             }
         }
 
-        gc.setFont(Font.font("Monospaced", CAPTION_FONT_SIZE));
+        gc.setFont(Font.font("Monospaced", 13));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("θ₁ initial swept [%.2f, %.2f] rad · y = last link's angle at each θ₁ crossing",
                         xMin, xMax),
@@ -651,7 +651,7 @@ public final class GraphPanel extends Canvas {
     private void drawMiniBackground(GraphicsContext gc, double y0, double h, double W, String title) {
         gc.setFill(Color.web("#101014"));
         gc.fillRect(0, y0, W, h);
-        gc.setFont(Font.font("System", FontWeight.BOLD, MINI_TITLE_SIZE));
+        gc.setFont(Font.font("System", FontWeight.BOLD, 13));
         gc.setFill(Color.web("#C7C7D1"));
         gc.fillText(title, MINI_MARGIN, y0 + 12);
     }
@@ -705,7 +705,7 @@ public final class GraphPanel extends Canvas {
             case BIFURCATION -> "Bifurcation Diagram — swept θ₁ initial angle";
             case ALL        -> ""; // render() returns before this is ever reached for ALL
         };
-        gc.setFont(Font.font("System", FontWeight.BOLD, TITLE_FONT_SIZE));
+        gc.setFont(Font.font("System", FontWeight.BOLD, 17));
         gc.setFill(Color.web("#C7C7D1"));
         gc.fillText(title, MARGIN + 4, MARGIN + 16);
     }
@@ -718,7 +718,7 @@ public final class GraphPanel extends Canvas {
      */
     private void drawAxisTicks(GraphicsContext gc, double plotW, double plotH,
                                double tMin, double tMax, double yMin, double yMax) {
-        gc.setFont(Font.font("Monospaced", AXIS_FONT_SIZE));
+        gc.setFont(Font.font("Monospaced", 13));
         gc.setFill(Color.web("#8A8A96"));
 
         int gridN = 5;

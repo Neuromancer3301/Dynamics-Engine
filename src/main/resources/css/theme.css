@@ -28,15 +28,28 @@
 
 .theme-dark {
     -bg-base:     #08080B;
-    -bg-surface:  #101014;
-    /* Slightly lightened from #232329 — the sidebar's vertical divider
-       (.sidebar-panel, .canvas-host, .action-rail) measured barely visible
-       against -bg-surface at the old value; this keeps the same "quiet
-       hairline" character while actually being visible as a divider. */
-    -line:        #2B2B33;
-    -line-soft:   #1A1A1F;
-    -ink:         #EDEDF2;
-    -ink-2:       #A0A0AC;
+    /* Round 2: lightened again from #101014 — round 1's value still sat
+       close enough to -bg-base that panels/cards barely separated from the
+       void (everything read as flat charcoal even where individual text
+       passed contrast on its own). This widens the perceptual gap so
+       -bg-surface visibly sits *on* -bg-base rather than blending into it. */
+    -bg-surface:  #16161D;
+    /* Round 2: lightened again from #2B2B33, same reasoning as -bg-surface
+       above — the sidebar's vertical divider (.sidebar-panel, .canvas-host,
+       .action-rail) and nav-card borders were present but not legible as
+       borders. */
+    -line:        #363640;
+    -line-soft:   #1D1D24;
+    /* Round 2: brightened again from #EDEDF2 — already cleared AA by a wide
+       margin, but round 1 optimized purely for the contrast floor rather
+       than for reading as crisp; this pushes headroom well past 7:1 against
+       -bg-base so primary text pops rather than just technically passing. */
+    -ink:         #F2F2F6;
+    /* Round 2: brightened again from #A0A0AC — round 1 landed this right
+       around 7:1 against -bg-base with little margin above the 4.5:1 floor;
+       this pushes it further past 7:1 so secondary text reads noticeably
+       brighter than before, not just barely-there-AA. */
+    -ink-2:       #B6B6C2;
     /* Lightened from #7B7B86 — at the larger sizes this pass introduces
        (12px+ floor; see the sidebar-* classes below), the old value's
        contrast against -bg-surface measured ~4.5:1 with no real margin.
@@ -44,7 +57,12 @@
        and -bg-surface with headroom, while staying visibly the dimmest
        step of the -ink/-ink-2/-ink-3 hierarchy. */
     -ink-3:       #96969F;
-    -accent:      #EA3F8C;
+    /* Round 2: -ink brightened above without much saturation loss risk —
+       -accent's vividness comes from chroma (a saturated magenta against a
+       desaturated gray hierarchy), not raw lightness, so it still reads as
+       the one saturated hue in the room. Nudged a shade brighter anyway for
+       a touch more punch now that everything around it reads brighter too. */
+    -accent:      #F2489A;
     -accent-soft: #2A1520;
     -danger:      #E5484D;
     -success:     #3DD68C;
@@ -86,13 +104,13 @@
 }
 
 .app-tagline {
-    -fx-font-size: 16px;
+    -fx-font-size: 20px;
     -fx-text-fill: -ink-2;
 }
 
 .footer-text {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-text-fill: -ink-3;
 }
 
@@ -110,7 +128,7 @@
 }
 .menu-utility-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-text-fill: -ink-2;
 }
 .menu-utility-button:hover .menu-utility-label,
@@ -152,7 +170,7 @@
 
 .nav-card-index {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-font-weight: bold;
     -fx-letter-spacing: 0.1em;
     -fx-text-fill: -accent;
@@ -165,13 +183,13 @@
 
 .nav-card-title {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 18px;
+    -fx-font-size: 25px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
 }
 
 .nav-card-desc {
-    -fx-font-size: 14px;
+    -fx-font-size: 20px;
     -fx-text-fill: -ink-2;
     -fx-max-width: 240px;
 }
@@ -179,9 +197,30 @@
 /* The extra hover-reveal detail line — see component/NavCardController's
    new optional detail parameter and MainMenu's hover-expand behavior. */
 .nav-card-detail {
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-text-fill: -ink-3;
     -fx-max-width: 240px;
+}
+
+/* Placeholder demo-video slot revealed on card hover-expand — see
+   component/NavCard.fxml and NavCardController#setExpanded. Same "reserved
+   slot, not broken" visual language as .nav-card-coming-soon and the
+   action-rail's .rail-button-reserved: a bordered box in -bg-base/-line,
+   dimmed -ink-3 text. */
+.nav-card-video-box {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -line;
+    -fx-border-style: dashed;
+    -fx-border-width: 1px;
+    -fx-background-radius: 3px;
+    -fx-border-radius: 3px;
+    -fx-pref-height: 140px;
+    -fx-alignment: center;
+}
+.nav-card-video-label {
+    -fx-font-size: 17px;
+    -fx-text-fill: -ink-3;
+    -fx-padding: 12px;
 }
 
 /* A reserved-but-unbuilt simulation slot: dashed border (an empty exhibit
@@ -207,7 +246,7 @@
 
 .sim-title {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink-2;
     -fx-letter-spacing: 0.06em;
@@ -270,7 +309,7 @@
 .tooltip {
     -fx-background-color: -bg-surface;
     -fx-text-fill: -ink;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-border-color: -line;
     -fx-border-width: 1px;
     -fx-background-radius: 3px;
@@ -366,27 +405,27 @@
 
 .sidebar-header {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 16px;
+    -fx-font-size: 20px;
     -fx-font-weight: bold;
     -fx-text-fill: -accent;
     -fx-letter-spacing: 0.03em;
 }
 
 .sidebar-section-label {
-    -fx-font-size: 14px;
+    -fx-font-size: 20px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink-2;
 }
 
 .sidebar-value-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-text-fill: -ink-2;
 }
 
 .sidebar-status-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-text-fill: -ink;
 }
 
@@ -400,14 +439,14 @@
 
 .sidebar-hint {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-text-fill: -ink-3;
 }
 
 .sidebar-button {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-border-color: -line;
     -fx-border-width: 1px;
     -fx-border-radius: 2px;
@@ -424,30 +463,30 @@
     -fx-background-color: -bg-base;
     -fx-text-fill: -ink;
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-border-color: -line;
     -fx-border-radius: 2px;
     -fx-background-radius: 2px;
 }
 
-.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 12px; }
-.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 12px; }
+.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 17px; }
+.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 17px; }
 
 .sidebar-warning-banner {
     -fx-background-color: -danger;
     -fx-text-fill: white;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-font-weight: bold;
     -fx-padding: 6 8;
     -fx-background-radius: 2px;
 }
 
-.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 13px; }
+.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 18px; }
 
 .link-delete-button {
     -fx-background-color: transparent;
     -fx-text-fill: -danger;
-    -fx-font-size: 12px;
+    -fx-font-size: 17px;
     -fx-cursor: hand;
 }
 
@@ -456,7 +495,7 @@
 .back-button, .primary-button {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-background-radius: 2px;
     -fx-border-color: -line;
     -fx-border-radius: 2px;
@@ -508,13 +547,13 @@
 }
 .dialog-pane.themed-dialog .header-panel .label {
     -fx-text-fill: -ink;
-    -fx-font-size: 15px;
+    -fx-font-size: 21px;
     -fx-font-weight: bold;
 }
 .dialog-pane.themed-dialog > .content.label,
 .dialog-pane.themed-dialog .dialog-grid .label {
     -fx-text-fill: -ink-2;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
 }
 .dialog-pane.themed-dialog .dialog-grid {
     -fx-padding: 8 4 4 4;
@@ -525,7 +564,7 @@
     -fx-border-color: -line;
     -fx-border-radius: 2px;
     -fx-background-radius: 2px;
-    -fx-font-size: 13px;
+    -fx-font-size: 18px;
     -fx-cursor: hand;
 }
 .dialog-pane.themed-dialog .button-bar .button:default {
@@ -547,7 +586,7 @@
 }
 
 .stub-body {
-    -fx-font-size: 14.5px;
+    -fx-font-size: 18px;
     -fx-text-fill: -ink-2;
     -fx-wrap-text: true;
     -fx-max-width: 480px;

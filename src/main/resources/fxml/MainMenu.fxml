@@ -36,7 +36,14 @@
         <VBox alignment="CENTER" spacing="28.0">
             <Label styleClass="menu-section-label" text="CHOOSE A SIMULATION"/>
 
-            <HBox styleClass="cards-row" spacing="28.0" alignment="CENTER">
+            <!-- fillHeight="false": HBox defaults to true, which stretches
+                 every child to the row's own computed height. Without this,
+                 growing the hovered card's prefHeight (see
+                 component.NavCardController#setExpanded) grows the row,
+                 and fillHeight then stretches the other two (unhovered)
+                 cards to match — only the hovered card should visibly
+                 grow. -->
+            <HBox styleClass="cards-row" spacing="28.0" alignment="CENTER" fillHeight="false">
                 <padding>
                     <Insets top="0" right="48" bottom="24" left="48"/>
                 </padding>

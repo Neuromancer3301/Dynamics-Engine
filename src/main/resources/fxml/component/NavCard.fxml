@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 
 <VBox fx:id="root" styleClass="nav-card" alignment="TOP_LEFT" spacing="8.0"
@@ -16,4 +17,14 @@
          reveals this since it never expands. -->
     <Label fx:id="detailLabel" styleClass="nav-card-detail" text="" wrapText="true"
            visible="false" managed="false"/>
+    <!-- Placeholder demo-video slot — revealed together with detailLabel by
+         the same expand/collapse animation (see
+         NavCardController#setExpanded). Same "reserved slot, not broken"
+         visual language as .nav-card-coming-soon: a bordered box, dimmed
+         placeholder text, reads as intentionally empty. -->
+    <StackPane fx:id="videoBox" styleClass="nav-card-video-box"
+               visible="false" managed="false">
+        <Label styleClass="nav-card-video-label" text="Demo not available right now — will be added later."
+               wrapText="true" textAlignment="CENTER"/>
+    </StackPane>
 </VBox>
