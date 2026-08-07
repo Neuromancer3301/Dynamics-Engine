@@ -29,11 +29,21 @@
 .theme-dark {
     -bg-base:     #08080B;
     -bg-surface:  #101014;
-    -line:        #232329;
+    /* Slightly lightened from #232329 — the sidebar's vertical divider
+       (.sidebar-panel, .canvas-host, .action-rail) measured barely visible
+       against -bg-surface at the old value; this keeps the same "quiet
+       hairline" character while actually being visible as a divider. */
+    -line:        #2B2B33;
     -line-soft:   #1A1A1F;
     -ink:         #EDEDF2;
     -ink-2:       #A0A0AC;
-    -ink-3:       #7B7B86;
+    /* Lightened from #7B7B86 — at the larger sizes this pass introduces
+       (12px+ floor; see the sidebar-* classes below), the old value's
+       contrast against -bg-surface measured ~4.5:1 with no real margin.
+       This clears WCAG AA (4.5:1 body / 3:1 large) against both -bg-base
+       and -bg-surface with headroom, while staying visibly the dimmest
+       step of the -ink/-ink-2/-ink-3 hierarchy. */
+    -ink-3:       #96969F;
     -accent:      #EA3F8C;
     -accent-soft: #2A1520;
     -danger:      #E5484D;
@@ -47,7 +57,11 @@
     -line-soft:   #EBEBEF;
     -ink:         #18181B;
     -ink-2:       #55555E;
-    -ink-3:       #7A7A84;
+    /* Darkened from #7A7A84 — the old value measured ~3.9:1 against
+       -bg-base, failing WCAG AA body-text contrast (4.5:1). Darkened just
+       enough to clear it against both -bg-base and -bg-surface (white)
+       while staying the lightest step of the hierarchy. */
+    -ink-3:       #6B6B76;
     -accent:      #C81F72;
     -accent-soft: #FBE6F1;
     -danger:      #C23B3B;
@@ -64,13 +78,6 @@
 
 /* ---------- Main menu ---------- */
 
-.eyebrow {
-    -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
-    -fx-font-weight: bold;
-    -fx-text-fill: -accent;
-}
-
 .app-title {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
     -fx-font-size: 38px;
@@ -85,34 +92,43 @@
 
 .footer-text {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-text-fill: -ink-3;
 }
 
-/* Settings/About — quiet corner links, not cards. See MainMenu.fxml's own
-   comment for why these two destinations are demoted relative to the
-   simulation grid below. */
-.menu-utility-link {
+/* Settings/About — icon-first utility buttons (component.UtilityIconButton),
+   not cards: they're utility destinations, not simulations, so they still
+   read as understated relative to the simulation grid below, just with a
+   real ≥40x40 hit target instead of a bare text link. The icon itself is
+   Canvas-drawn (see ui.icon.Icons) so its color is set from Java, not CSS —
+   only the revealed text label below is a real styleable control. */
+.menu-utility-button {
+    -fx-cursor: hand;
+}
+.menu-utility-button:focused {
+    -fx-effect: dropshadow(gaussian, -accent, 10, 0.6, 0, 0);
+}
+.menu-utility-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
     -fx-font-size: 13px;
-    -fx-text-fill: -ink-3;
-    -fx-cursor: hand;
-    -fx-padding: 4px 2px;
+    -fx-text-fill: -ink-2;
 }
-.menu-utility-link:hover, .menu-utility-link:focused {
+.menu-utility-button:hover .menu-utility-label,
+.menu-utility-button:focused .menu-utility-label {
     -fx-text-fill: -accent;
-    -fx-underline: true;
 }
 
-/* The one heading that introduces the hero grid — same monospace-eyebrow
-   language as .eyebrow above, so it reads as "a label," not a headline
-   competing with .app-title. */
+/* The heading that introduces the hero grid. Previously sized to read as a
+   small monospace "label" alongside .eyebrow; now that .eyebrow is gone
+   (see MainMenu.fxml), this is the section's only heading and is sized to
+   read as one — still uppercase/letter-spaced/monospace for its own
+   identity, just at real-heading scale instead of caption scale. */
 .menu-section-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 24px;
     -fx-font-weight: bold;
-    -fx-letter-spacing: 0.14em;
-    -fx-text-fill: -ink-3;
+    -fx-letter-spacing: 0.08em;
+    -fx-text-fill: -ink-2;
 }
 
 /* ---------- Nav card (component/NavCard.fxml) ---------- */
@@ -124,8 +140,8 @@
     -fx-border-radius: 4px;
     -fx-border-width: 1px;
     -fx-padding: 22px;
-    -fx-pref-width: 264px;
-    -fx-min-height: 178px;
+    -fx-pref-width: 300px;
+    -fx-min-height: 220px;
     -fx-cursor: hand;
 }
 
@@ -136,7 +152,7 @@
 
 .nav-card-index {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
     -fx-letter-spacing: 0.1em;
     -fx-text-fill: -accent;
@@ -149,15 +165,23 @@
 
 .nav-card-title {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 19px;
+    -fx-font-size: 18px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
 }
 
 .nav-card-desc {
-    -fx-font-size: 13.5px;
+    -fx-font-size: 14px;
     -fx-text-fill: -ink-2;
-    -fx-max-width: 220px;
+    -fx-max-width: 240px;
+}
+
+/* The extra hover-reveal detail line — see component/NavCardController's
+   new optional detail parameter and MainMenu's hover-expand behavior. */
+.nav-card-detail {
+    -fx-font-size: 13px;
+    -fx-text-fill: -ink-3;
+    -fx-max-width: 240px;
 }
 
 /* A reserved-but-unbuilt simulation slot: dashed border (an empty exhibit
@@ -185,7 +209,7 @@
     -fx-font-family: "Consolas", "Menlo", monospace;
     -fx-font-size: 13px;
     -fx-font-weight: bold;
-    -fx-text-fill: -ink-3;
+    -fx-text-fill: -ink-2;
     -fx-letter-spacing: 0.06em;
 }
 
@@ -193,6 +217,99 @@
     -fx-background-color: -bg-base;
     -fx-border-color: -line-soft;
     -fx-border-width: 0 1 0 0;
+}
+
+/* Left action rail (Select / Add / Snap-to-Unit) — a slim, fixed-width,
+   always-present BorderPane.left column; see Simulation.fxml and
+   controller.SimulationController#buildActionRail. */
+.action-rail {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 0 1 0 0;
+    -fx-pref-width: 52px;
+    -fx-min-width: 52px;
+    -fx-max-width: 52px;
+    -fx-padding: 8 0 0 0;
+}
+
+.rail-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3px;
+    -fx-padding: 8px;
+    -fx-cursor: hand;
+}
+.rail-button:hover { -fx-background-color: -bg-base; }
+
+/* Select is permanently "locked on" — a persistent accent-tinted
+   background, not a normal toggle that can be switched off (it's the only
+   functional tool right now). */
+.rail-button-locked-active {
+    -fx-background-color: -accent-soft;
+}
+.rail-button-locked-active:hover { -fx-background-color: -accent-soft; }
+
+/* Add: visibly present but non-functional — dimmer, dashed outline, same
+   "reserved for later, not broken" convention as .nav-card-coming-soon. */
+.rail-button-reserved {
+    -fx-opacity: 0.5;
+    -fx-border-color: -line;
+    -fx-border-style: dashed;
+    -fx-border-radius: 3px;
+    -fx-cursor: default;
+}
+.rail-button-reserved:hover { -fx-background-color: transparent; }
+
+.rail-separator {
+    -fx-background-color: -line-soft;
+    -fx-padding: 2 8;
+}
+
+/* Tooltip — the default Modena skin is unstyled (a plain grey box) and
+   needs explicit rules to pick up the app's own tokens; used by the action
+   rail's Select/Add tooltips (§6) and anywhere else a Tooltip appears. */
+.tooltip {
+    -fx-background-color: -bg-surface;
+    -fx-text-fill: -ink;
+    -fx-font-size: 12px;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+    -fx-background-radius: 3px;
+    -fx-border-radius: 3px;
+    -fx-padding: 6 8;
+}
+
+/* Sidebar tab shell (ui/SidebarTabs.java) — the icon bar, the always-visible
+   status block pinned above it, and the single-active-group content area. */
+.sidebar-tabbar {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 0 0 1 0;
+    -fx-spacing: 0;
+}
+.sidebar-tab-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-padding: 10 0 10 0;
+    -fx-cursor: hand;
+}
+.sidebar-tab-button:hover {
+    -fx-background-color: -bg-base;
+}
+.sidebar-tab-button-active {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: transparent transparent -accent transparent;
+    -fx-border-width: 0 0 2 0;
+}
+.sidebar-status-wrapper {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 12 12 12 12;
+}
+.sidebar-tab-content {
+    -fx-background-color: -bg-surface;
+    -fx-padding: 12 12 12 12;
 }
 
 /* ScrollPane's default Modena skin paints an opaque white viewport —
@@ -256,20 +373,20 @@
 }
 
 .sidebar-section-label {
-    -fx-font-size: 12.5px;
+    -fx-font-size: 14px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink-2;
 }
 
 .sidebar-value-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
     -fx-text-fill: -ink-2;
 }
 
 .sidebar-status-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12.5px;
+    -fx-font-size: 13px;
     -fx-text-fill: -ink;
 }
 
@@ -283,14 +400,14 @@
 
 .sidebar-hint {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 10.5px;
+    -fx-font-size: 12px;
     -fx-text-fill: -ink-3;
 }
 
 .sidebar-button {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
-    -fx-font-size: 12.5px;
+    -fx-font-size: 13px;
     -fx-border-color: -line;
     -fx-border-width: 1px;
     -fx-border-radius: 2px;
@@ -307,25 +424,25 @@
     -fx-background-color: -bg-base;
     -fx-text-fill: -ink;
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11.5px;
+    -fx-font-size: 12px;
     -fx-border-color: -line;
     -fx-border-radius: 2px;
     -fx-background-radius: 2px;
 }
 
-.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 11.5px; }
-.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 11.5px; }
+.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 12px; }
+.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 12px; }
 
 .sidebar-warning-banner {
     -fx-background-color: -danger;
     -fx-text-fill: white;
-    -fx-font-size: 11.5px;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
     -fx-padding: 6 8;
     -fx-background-radius: 2px;
 }
 
-.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 12.5px; }
+.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 13px; }
 
 .link-delete-button {
     -fx-background-color: transparent;
@@ -339,7 +456,7 @@
 .back-button, .primary-button {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
-    -fx-font-size: 12.5px;
+    -fx-font-size: 13px;
     -fx-background-radius: 2px;
     -fx-border-color: -line;
     -fx-border-radius: 2px;
@@ -355,6 +472,69 @@
     -fx-background-color: -accent;
     -fx-text-fill: white;
     -fx-border-color: transparent;
+}
+
+/* Small overlay buttons that sit directly on top of the pendulum/graph
+   canvases (currently just the sidebar-collapse chevron — see
+   controller.SimulationController#buildSidebarToggle). ui.PendulumCanvas
+   always paints a near-black background regardless of the app's light/dark
+   theme (see its own class javadoc), so a fixed dark translucent chip reads
+   fine in both themes without a light-theme variant. */
+.canvas-overlay-button {
+    -fx-background-color: rgba(16, 16, 20, 0.55);
+    -fx-background-radius: 4px;
+    -fx-padding: 6px;
+    -fx-cursor: hand;
+}
+.canvas-overlay-button:hover {
+    -fx-background-color: rgba(234, 63, 140, 0.28);
+}
+
+/* Link parameter dialog (double-click a bob — see
+   controller.SimulationController#showLinkParameterDialog). A
+   javafx.scene.control.Dialog's default Modena skin is unstyled white
+   chrome, entirely outside theme.css's reach unless explicitly targeted —
+   these rules bring it onto the same token system as everything else. The
+   dialog pane carries both "themed-dialog" and the active theme's own style
+   class (theme-dark/theme-light), so the -bg-surface/-ink/etc. tokens below
+   resolve exactly as they do on every other screen. */
+.dialog-pane.themed-dialog {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+}
+.dialog-pane.themed-dialog > .header-panel {
+    -fx-background-color: -bg-base;
+}
+.dialog-pane.themed-dialog .header-panel .label {
+    -fx-text-fill: -ink;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+.dialog-pane.themed-dialog > .content.label,
+.dialog-pane.themed-dialog .dialog-grid .label {
+    -fx-text-fill: -ink-2;
+    -fx-font-size: 13px;
+}
+.dialog-pane.themed-dialog .dialog-grid {
+    -fx-padding: 8 4 4 4;
+}
+.dialog-pane.themed-dialog .button-bar .button {
+    -fx-background-color: -accent-soft;
+    -fx-text-fill: -ink;
+    -fx-border-color: -line;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+.dialog-pane.themed-dialog .button-bar .button:default {
+    -fx-background-color: -accent;
+    -fx-text-fill: white;
+    -fx-border-color: transparent;
+}
+.dialog-pane.themed-dialog .button-bar .button:hover {
+    -fx-border-color: -accent;
 }
 
 /* ---------- Stub screens (Settings / About) ---------- */

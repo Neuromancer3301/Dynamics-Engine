@@ -2,18 +2,37 @@ package controller;
 
 import audio.Sonifier;
 import javafx.animation.AnimationTimer;
+import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
 import javafx.concurrent.Task;
+import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
+import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.util.Duration;
 import navigation.Navigable;
 import navigation.SceneRouter;
 import physics.BifurcationSweep;
@@ -26,11 +45,14 @@ import simulation.Ensemble;
 import simulation.HistoryBuffer;
 import simulation.SimulationLoop;
 import simulation.StateBuffer;
+import theme.Theme;
 import theme.ThemeManager;
 import ui.ControlPanel;
 import ui.GraphPanel;
 import ui.LinkEditorPanel;
 import ui.PendulumCanvas;
+import ui.SidebarTabs;
+import ui.icon.Icons;
 
 import java.net.URL;
 import java.util.ArrayList;
@@ -61,7 +83,20 @@ import java.util.logging.Logger;
  * real time rather than sitting frozen — a standard "kinematic forcing"
  * technique for interactive physics, not a special case bolted onto the
  * integrator. Releasing submits one final command with an angular velocity
- * estimated from the last ~150ms of motion, producing the "fling".
+ * estimated from the last ~150ms of motion, producing the "fling", and
+ * selects the dragged link (see {@link #setPaused} and {@link
+ * PendulumCanvas.SelectionListener}).
+ *
+ * <p><b>Selection (§7.1 of the UI overhaul spec):</b> completing a click or
+ * click-drag-release on a bob selects it and pauses the simulation; picking
+ * a different bob switches the selection without an intermediate resume;
+ * resuming — from any cause, this button or the Space shortcut — always
+ * clears the current selection. See {@link #setPaused}.
+ *
+ * <p><b>Right-click length editing and double-click parameters (§7.3,
+ * §7.4):</b> both are structural edits and are routed through the exact
+ * same {@link #applyStructuralEdit} path as {@link LinkEditorPanel}'s
+ * "Apply Changes" — no second way to mutate the engine's structure exists.
  *
  * <p><b>Structural edits:</b> {@link ui.LinkEditorPanel} covers both the
  * per-link parameter editor and runtime N control in one place — adding or
@@ -90,6 +125,15 @@ import java.util.logging.Logger;
  * on the canvas while the live simulation keeps running underneath — see
  * that class's javadoc for the deliberate scope boundary (a view into the
  * past, not a rewind of the live engine).
+ *
+ * <p><b>Layout shell (§5, §9, §10):</b> the sidebar ({@link #sidebarScroll})
+ * and the graph column ({@link #graphHost}) both start collapsed to zero
+ * width — canvas-first — and animate open via {@link #setSidebarExpanded}/
+ * {@link #setGraphVisible}, never {@code setVisible(false)}, so each stays a
+ * genuine layout column that shrinks its neighbors rather than overlapping
+ * them. The sidebar's contents are a {@link SidebarTabs} shell: an
+ * always-visible "Live Status" block plus exactly one settings group's
+ * controls at a time, built from {@link ControlPanel}'s grouped panels.
  */
 public final class SimulationController implements Initializable, Navigable {
 
@@ -128,10 +172,20 @@ public final class SimulationController implements Initializable, Navigable {
     private static final double BIFURCATION_SETTLE_SECONDS = 6.0;
     private static final double BIFURCATION_SAMPLE_SECONDS = 5.0;
 
+    // §5/§10 layout shell: expanded widths and the shared collapse/expand
+    // animation duration. Chosen to comfortably fit the sidebar's larger
+    // fonts/icon tab bar (§2, §9) and the graph panel's own axes/labels.
+    private static final double SIDEBAR_EXPANDED_WIDTH = 340;
+    private static final double GRAPH_EXPANDED_WIDTH    = 460;
+    private static final Duration WIDTH_ANIM_DURATION   = Duration.millis(220);
+
     @FXML private Button btnBack;
     @FXML private Label titleLabel;
+    @FXML private VBox actionRail;
+    @FXML private StackPane canvasGraphStack;
     @FXML private StackPane canvasHost;
     @FXML private StackPane graphHost;
+    @FXML private ScrollPane sidebarScroll;
     @FXML private VBox controlHost;
 
     private SceneRouter router;
@@ -139,9 +193,16 @@ public final class SimulationController implements Initializable, Navigable {
     private StateBuffer stateBuffer;
     private ControlPanel controlPanel;
     private LinkEditorPanel linkEditorPanel;
+    private SidebarTabs sidebarTabs;
     private PendulumCanvas pendulumCanvas;
     private GraphPanel graphPanel;
     private AnimationTimer renderTimer;
+
+    // §5: sidebar/graph collapse state and their width-animation handles.
+    private boolean sidebarExpanded = false;
+    private Icons.IconView sidebarToggleIcon;
+    private Timeline sidebarWidthAnim;
+    private Timeline graphWidthAnim;
 
     // The structural shape (N, lengths, masses, gravity, speed) currently
     // applied — kept so the butterfly-effect toggle can build ensemble
@@ -262,6 +323,33 @@ public final class SimulationController implements Initializable, Navigable {
             simLoop.setGravityAngle(angle);
         });
 
+        // §7.1 — a completed click/click-drag-release selects the bob and
+        // pauses the simulation; see setPaused for the resume-always-clears
+        // half of this rule.
+        pendulumCanvas.setSelectionListener(linkIndex -> {
+            pendulumCanvas.setSelectedLink(linkIndex);
+            setPaused(true);
+        });
+
+        // §7.3 — right-click-drag previews a length change visually (handled
+        // entirely inside PendulumCanvas); only the commit-on-release needs
+        // to reach the engine, through the same structural-edit path as
+        // everything else that changes a link's length.
+        pendulumCanvas.setLengthDragListener(new PendulumCanvas.LengthDragListener() {
+            @Override
+            public void onLengthPreview(int linkIndex, double newLength) {
+                // No-op: the canvas already redraws its own local preview.
+            }
+
+            @Override
+            public void onLengthCommit(int linkIndex, double newLength) {
+                commitLinkLength(linkIndex, newLength);
+            }
+        });
+
+        // §7.4
+        pendulumCanvas.setDoubleClickListener(this::showLinkParameterDialog);
+
         controlPanel = new ControlPanel();
         controlPanel.setOnResetCallback(() -> {
             initialEnergy = null;
@@ -282,6 +370,13 @@ public final class SimulationController implements Initializable, Navigable {
         controlPanel.setOnScrubStart(() -> scrubbing = true);
         controlPanel.setOnScrubTo(idx -> scrubIndex = idx);
         controlPanel.setOnScrubEnd(() -> scrubbing = false);
+        controlPanel.setOnGraphVisibilityChange(this::setGraphVisible);
+        // Resuming always clears selection (§7.1) — the Pause button is one
+        // of two paths that can resume (the Space shortcut, via setPaused,
+        // is the other), so both need to enforce it.
+        controlPanel.setOnPauseChange(paused -> {
+            if (!paused) pendulumCanvas.setSelectedLink(-1);
+        });
         controlPanel.build(simLoop, graphPanel, pendulumCanvas, config.getN());
 
         linkEditorPanel = new LinkEditorPanel();
@@ -289,7 +384,29 @@ public final class SimulationController implements Initializable, Navigable {
         linkEditorPanel.setLiveParameterSuppliers(simLoop::getGravity, simLoop::getSpeedMultiplier);
         linkEditorPanel.setOnApply(this::applyStructuralEdit);
 
-        controlHost.getChildren().addAll(controlPanel, new Separator(), linkEditorPanel);
+        // §9 — the tabbed sidebar shell: Live Status always visible, one
+        // group's controls shown at a time.
+        sidebarTabs = new SidebarTabs();
+        sidebarTabs.build(
+                controlPanel.getStatusBlock(),
+                controlPanel.getMotionGroup(),
+                controlPanel.getChaosGroup(),
+                controlPanel.getGraphsGroup(),
+                controlPanel.getHistoryGroup(),
+                linkEditorPanel,
+                controlPanel.getDisplayGroup());
+        VBox.setVgrow(sidebarTabs, Priority.ALWAYS);
+        controlHost.getChildren().setAll(sidebarTabs);
+
+        // §5.4 — the sidebar's background must fill the whole right column
+        // regardless of content length; binding controlHost's minHeight to
+        // the ScrollPane's own (viewport) height, rather than leaving it to
+        // "size to children," is what removes the uncovered strip at the
+        // bottom when a group's content is short.
+        controlHost.minHeightProperty().bind(sidebarScroll.heightProperty());
+
+        buildActionRail();
+        buildSidebarToggle();
 
         titleLabel.setText("N-Pendulum Chain Simulator   ·   N = " + config.getN()
                 + "   ·   RK4 / Lagrangian Mechanics");
@@ -297,14 +414,277 @@ public final class SimulationController implements Initializable, Navigable {
         renderTimer = buildRenderTimer();
     }
 
+    // -------------------------------------------------------------------------
+    // §5 layout shell — left action rail, sidebar/graph collapse
+    // -------------------------------------------------------------------------
+
+    /** Builds the always-present left action rail: Select (locked active), Add (reserved), Snap-to-Unit (§6). */
+    private void buildActionRail() {
+        Theme theme = ThemeManager.getInstance().getCurrent();
+
+        Button selectButton = new Button();
+        selectButton.getStyleClass().addAll("rail-button", "rail-button-locked-active");
+        Icons.IconView selectIcon = Icons.create(Icons.Glyph.SELECT, 20, Icons.activeColor(theme));
+        selectButton.setGraphic(selectIcon);
+        Tooltip.install(selectButton, new Tooltip("Select — click a link to pose it; drag to pose live."));
+        // Permanently "on": the only functional tool today, so it's
+        // rendered as locked-active rather than a normal toggle that could
+        // be switched off — a click is intentionally a no-op.
+
+        Button addButton = new Button();
+        addButton.getStyleClass().addAll("rail-button", "rail-button-reserved");
+        Icons.IconView addIcon = Icons.create(Icons.Glyph.ADD, 20, Icons.idleColor(theme));
+        addButton.setGraphic(addIcon);
+        Tooltip.install(addButton, new Tooltip("Not available right now."));
+        // No onAction — present but inert by design; theme.css's
+        // .rail-button-reserved dims it and gives it a dashed outline so it
+        // reads as "reserved for later," not "broken."
+
+        Separator sep = new Separator();
+        sep.getStyleClass().add("rail-separator");
+
+        ToggleButton snapButton = new ToggleButton();
+        snapButton.getStyleClass().add("rail-button");
+        Icons.IconView snapIcon = Icons.create(Icons.Glyph.SNAP, 20, Icons.idleColor(theme));
+        snapButton.setGraphic(snapIcon);
+        Tooltip.install(snapButton, new Tooltip("Snap to 15° angle / 0.25m length increments"));
+        snapButton.setOnAction(e -> {
+            boolean on = snapButton.isSelected();
+            pendulumCanvas.setSnapEnabled(on);
+            Theme t = ThemeManager.getInstance().getCurrent();
+            snapIcon.setColor(on ? Icons.activeColor(t) : Icons.idleColor(t));
+        });
+
+        actionRail.getChildren().addAll(selectButton, addButton, sep, snapButton);
+
+        ThemeManager.getInstance().addListener(() -> {
+            Theme t = ThemeManager.getInstance().getCurrent();
+            selectIcon.setColor(Icons.activeColor(t));
+            addIcon.setColor(Icons.idleColor(t));
+            snapIcon.setColor(snapButton.isSelected() ? Icons.activeColor(t) : Icons.idleColor(t));
+        });
+    }
+
+    /** Builds the overlay chevron button (top-right of the canvas/graph area) that toggles the sidebar. */
+    private void buildSidebarToggle() {
+        Button toggle = new Button();
+        toggle.getStyleClass().add("canvas-overlay-button");
+        sidebarToggleIcon = Icons.create(Icons.Glyph.CHEVRON, 18, Icons.hoverColor(ThemeManager.getInstance().getCurrent()));
+        sidebarToggleIcon.setRotate(sidebarExpanded ? 0 : 180);
+        toggle.setGraphic(sidebarToggleIcon);
+        Tooltip.install(toggle, new Tooltip("Toggle sidebar"));
+        toggle.setOnAction(e -> setSidebarExpanded(!sidebarExpanded));
+
+        StackPane.setAlignment(toggle, Pos.TOP_RIGHT);
+        StackPane.setMargin(toggle, new Insets(10));
+        canvasGraphStack.getChildren().add(toggle);
+
+        ThemeManager.getInstance().addListener(() ->
+                sidebarToggleIcon.setColor(Icons.hoverColor(ThemeManager.getInstance().getCurrent())));
+    }
+
     /**
-     * Handles a validated {@link PendulumConfig} from the link editor: swaps
-     * the engine via {@link SimulationLoop#rebuildWithConfig}, then refreshes
-     * everything downstream that was sized or labeled for the old N/length —
-     * the canvas's render scale, its stale trail, the graph's history, and
-     * the two sidebar headers that display N.
+     * Animates the sidebar's width between 0 (collapsed) and {@link
+     * #SIDEBAR_EXPANDED_WIDTH}. Deliberately a min/pref/max width tween on a
+     * real layout column, not {@code setVisible(false)} — the canvas/graph
+     * genuinely shrink to make room rather than being overlaid.
+     */
+    private void setSidebarExpanded(boolean expanded) {
+        this.sidebarExpanded = expanded;
+        double target = expanded ? SIDEBAR_EXPANDED_WIDTH : 0.0;
+
+        if (sidebarWidthAnim != null) sidebarWidthAnim.stop();
+
+        if (ThemeManager.getInstance().isReducedMotion()) {
+            sidebarScroll.setMinWidth(target);
+            sidebarScroll.setPrefWidth(target);
+            sidebarScroll.setMaxWidth(target);
+        } else {
+            sidebarWidthAnim = new Timeline(new KeyFrame(WIDTH_ANIM_DURATION,
+                    new KeyValue(sidebarScroll.minWidthProperty(), target, Interpolator.EASE_BOTH),
+                    new KeyValue(sidebarScroll.prefWidthProperty(), target, Interpolator.EASE_BOTH),
+                    new KeyValue(sidebarScroll.maxWidthProperty(), target, Interpolator.EASE_BOTH)));
+            sidebarWidthAnim.play();
+        }
+
+        if (sidebarToggleIcon != null) sidebarToggleIcon.setRotate(expanded ? 0 : 180);
+    }
+
+    /**
+     * Animates the graph column's width between 0 (hidden) and {@link
+     * #GRAPH_EXPANDED_WIDTH} — see §10. Entirely independent of the
+     * sidebar's own collapse state; both just happen to use the same
+     * min/pref/max-width technique.
+     */
+    private void setGraphVisible(boolean show) {
+        double target = show ? GRAPH_EXPANDED_WIDTH : 0.0;
+
+        if (graphWidthAnim != null) graphWidthAnim.stop();
+
+        if (ThemeManager.getInstance().isReducedMotion()) {
+            graphHost.setMinWidth(target);
+            graphHost.setPrefWidth(target);
+            graphHost.setMaxWidth(target);
+        } else {
+            graphWidthAnim = new Timeline(new KeyFrame(WIDTH_ANIM_DURATION,
+                    new KeyValue(graphHost.minWidthProperty(), target, Interpolator.EASE_BOTH),
+                    new KeyValue(graphHost.prefWidthProperty(), target, Interpolator.EASE_BOTH),
+                    new KeyValue(graphHost.maxWidthProperty(), target, Interpolator.EASE_BOTH)));
+            graphWidthAnim.play();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // §7.1 — pause/resume + selection
+    // -------------------------------------------------------------------------
+
+    /**
+     * The single place pause state changes from code (the Space shortcut
+     * and bob selection both call this): keeps {@link SimulationLoop} and
+     * {@link ControlPanel}'s Pause button in sync, and — per §7.1 — clears
+     * any current selection whenever the simulation resumes, regardless of
+     * what caused the pause in the first place. The Pause button's own
+     * click handler (in {@link ControlPanel}) doesn't call this directly —
+     * it mirrors the same two effects via {@link
+     * ControlPanel#setOnPauseChange} instead, so there's no risk of a
+     * double {@code simLoop.setPaused} call.
+     */
+    private void setPaused(boolean paused) {
+        simLoop.setPaused(paused);
+        controlPanel.setPausedVisual(paused);
+        if (!paused) pendulumCanvas.setSelectedLink(-1);
+    }
+
+    /** Commits a right-click length drag (§7.3) through the same structural-edit path as every other length change. */
+    private void commitLinkLength(int linkIndex, double newLength) {
+        if (currentConfig == null || linkIndex < 0 || linkIndex >= currentConfig.getN()) return;
+
+        double[] lengths = currentConfig.getLengths();
+        lengths[linkIndex] = newLength;
+        try {
+            PendulumConfig edited = new PendulumConfig(currentConfig.getN(), lengths, currentConfig.getMasses(),
+                    currentConfig.getInitAngles(), currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
+            applyStructuralEdit(edited);
+        } catch (IllegalArgumentException ex) {
+            // PendulumConfig rejected it — shouldn't happen given the canvas
+            // already clamps to a positive, finite length before committing,
+            // but fail quietly rather than crash, same as setLinkState's
+            // existing non-finite-input handling elsewhere in this app.
+            LOG.log(Level.WARNING, "Length-drag commit rejected", ex);
+        }
+    }
+
+    /**
+     * Opens the double-click parameter dialog (§7.4): angle/length/mass for
+     * one link, validated the same way {@link LinkEditorPanel} validates its
+     * own rows, committing through {@link #applyStructuralEdit} on "Apply."
+     * Editing implies focus, so this selects the link (if not already
+     * selected) and pauses, same as a click would.
+     */
+    private void showLinkParameterDialog(int link) {
+        if (currentConfig == null || link < 0 || link >= currentConfig.getN()) return;
+
+        if (pendulumCanvas.getSelectedLink() != link) {
+            pendulumCanvas.setSelectedLink(link);
+            setPaused(true);
+        }
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Edit Link #" + (link + 1));
+        dialog.getDialogPane().getStylesheets().add(getClass().getResource("/css/theme.css").toExternalForm());
+        dialog.getDialogPane().getStyleClass().addAll("themed-dialog", ThemeManager.getInstance().getCurrent().styleClass());
+
+        ButtonType applyButtonType = new ButtonType("Apply", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(applyButtonType, ButtonType.CANCEL);
+
+        TextField angleField  = dialogField(String.format("%.4f", currentConfig.getInitAngle(link)));
+        TextField lengthField = dialogField(String.format("%.4f", currentConfig.getLength(link)));
+        TextField massField   = dialogField(String.format("%.4f", currentConfig.getMass(link)));
+
+        Label error = new Label();
+        error.getStyleClass().add("sidebar-error-label");
+        error.setWrapText(true);
+        error.setVisible(false);
+        error.setManaged(false);
+
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("dialog-grid");
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.addRow(0, new Label("Angle (rad)"), angleField);
+        grid.addRow(1, new Label("Length (m)"), lengthField);
+        grid.addRow(2, new Label("Mass (kg)"), massField);
+        grid.add(error, 0, 3, 2, 1);
+        dialog.getDialogPane().setContent(grid);
+
+        Node applyButtonNode = dialog.getDialogPane().lookupButton(applyButtonType);
+        applyButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {
+            Double angle  = parseFinite(angleField.getText());
+            Double length = parsePositive(lengthField.getText());
+            Double mass   = parsePositive(massField.getText());
+            if (angle == null)  { showDialogError(error, "Angle must be a finite number."); evt.consume(); return; }
+            if (length == null) { showDialogError(error, "Length must be a positive, finite number."); evt.consume(); return; }
+            if (mass == null)   { showDialogError(error, "Mass must be a positive, finite number."); evt.consume(); return; }
+
+            double[] lengths = currentConfig.getLengths();
+            double[] masses  = currentConfig.getMasses();
+            double[] angles  = currentConfig.getInitAngles();
+            lengths[link] = length;
+            masses[link]  = mass;
+            angles[link]  = angle;
+            try {
+                PendulumConfig edited = new PendulumConfig(currentConfig.getN(), lengths, masses, angles,
+                        currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
+                applyStructuralEdit(edited);
+            } catch (IllegalArgumentException ex) {
+                showDialogError(error, ex.getMessage());
+                evt.consume();
+            }
+        });
+
+        if (btnBack.getScene() != null) dialog.initOwner(btnBack.getScene().getWindow());
+        dialog.showAndWait();
+    }
+
+    private static TextField dialogField(String initial) {
+        TextField f = new TextField(initial);
+        f.getStyleClass().add("sidebar-numeric-field");
+        f.setPrefWidth(120);
+        return f;
+    }
+
+    private static Double parseFinite(String text) {
+        if (text == null) return null;
+        try {
+            double v = Double.parseDouble(text.trim());
+            return Double.isFinite(v) ? v : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static Double parsePositive(String text) {
+        Double v = parseFinite(text);
+        return (v != null && v > 0) ? v : null;
+    }
+
+    private static void showDialogError(Label error, String message) {
+        error.setText(message);
+        error.setVisible(true);
+        error.setManaged(true);
+    }
+
+    /**
+     * Handles a validated {@link PendulumConfig} from the link editor, the
+     * length-drag commit, or the parameter dialog: swaps the engine via
+     * {@link SimulationLoop#rebuildWithConfig}, then refreshes everything
+     * downstream that was sized or labeled for the old N/length — the
+     * canvas's render scale, its stale trail, the graph's history, and the
+     * two sidebar headers that display N.
      */
     private void applyStructuralEdit(PendulumConfig newConfig) {
+        int selectedBefore = pendulumCanvas.getSelectedLink();
+
         currentConfig = newConfig;
         simLoop.rebuildWithConfig(newConfig);
         // The fresh engine rebuildWithConfig just built defaults to RK4 —
@@ -326,6 +706,11 @@ public final class SimulationController implements Initializable, Navigable {
 
         pendulumCanvas.setTotalLength(newConfig.getTotalLength());
         pendulumCanvas.clearTrail();
+        pendulumCanvas.clearLengthPreview();
+        // The selected index is still meaningful if it's still in range (the
+        // length-drag/dialog paths never change N); otherwise there's
+        // nothing sensible left to point the halo/HUD at.
+        pendulumCanvas.setSelectedLink(selectedBefore >= 0 && selectedBefore < newConfig.getN() ? selectedBefore : -1);
         graphPanel.clear();
         controlPanel.updateLinkCount(newConfig.getN());
         initialEnergy = null;
@@ -669,9 +1054,7 @@ public final class SimulationController implements Initializable, Navigable {
     private void handleKeyPress(KeyEvent e) {
         switch (e.getCode()) {
             case SPACE -> {
-                boolean paused = !simLoop.isPaused();
-                simLoop.setPaused(paused);
-                controlPanel.setPausedVisual(paused);
+                setPaused(!simLoop.isPaused());
                 e.consume();
             }
             case R -> {

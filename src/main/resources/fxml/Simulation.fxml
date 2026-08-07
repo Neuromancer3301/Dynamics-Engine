@@ -26,48 +26,47 @@
         </HBox>
     </top>
 
+    <!--
+        Slim, always-present left action rail (Select / Add / Snap-to-Unit —
+        see ui.icon.Icons and controller.SimulationController#buildActionRail).
+        A genuine BorderPane.left column, not a floating overlay: at its
+        fixed ~52px width it never risks occluding a bob swinging near the
+        canvas's left edge the way an overlay could.
+    -->
+    <left>
+        <VBox fx:id="actionRail" styleClass="action-rail" alignment="TOP_CENTER" spacing="6.0"/>
+    </left>
+
     <center>
         <!--
-            A GridPane with explicit percentages rather than an HBox: two
-            hgrow="ALWAYS" children split leftover space *equally*, which
-            is what pinned this to 50/50 before. Percentages express the
-            intended 60/40 ratio directly — the pendulum is the thing being
-            watched, and PendulumCanvas's render scale is width-limited in a
-            typical window (see its coordinate-mapping comment), so the
-            extra width becomes a visibly larger pendulum rather than
-            padding. Not pushed further than 60 because GraphPanel's axis
-            gutters (MARGIN) grew with its labels, and the plot area is
-            what's left over after subtracting them.
+            canvasGraphStack layers the small overlay sidebar-toggle button
+            (top-right corner; see SimulationController#buildSidebarToggle)
+            over canvasHost/graphHost — a StackPane, not part of the title
+            bar, per the layout spec.
         -->
-        <GridPane BorderPane.alignment="CENTER">
-            <columnConstraints>
+        <StackPane fx:id="canvasGraphStack" BorderPane.alignment="CENTER">
+            <HBox fx:id="canvasGraphRow" spacing="0">
                 <!--
-                    minWidth=0 for the same reason the hosts below pin it:
-                    without it a column refuses to shrink past its content's
-                    minimum and pushes the layout off-screen.
-                -->
-                <ColumnConstraints percentWidth="60.0" minWidth="0.0"/>
-                <ColumnConstraints percentWidth="40.0" minWidth="0.0"/>
-            </columnConstraints>
-            <rowConstraints>
-                <RowConstraints vgrow="ALWAYS"/>
-            </rowConstraints>
+                    minWidth/prefWidth are pinned to 0 rather than left to the
+                    default "size to children" computation. The host contains an
+                    unmanaged Canvas (see SimulationController) specifically so
+                    it can never contribute to this number, but pinning it here
+                    too means a future child added to either host can't silently
+                    reintroduce the same overflow-off-screen failure mode.
 
-            <!--
-                minWidth/prefWidth are pinned to 0 rather than left to the
-                default "size to children" computation. The host contains an
-                unmanaged Canvas (see SimulationController) specifically so
-                it can never contribute to this number, but pinning it here
-                too means a future child added to either host can't silently
-                reintroduce the same overflow-off-screen failure mode.
-            -->
-            <StackPane fx:id="canvasHost" styleClass="canvas-host"
-                       minWidth="0.0" prefWidth="0.0"
-                       GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-            <StackPane fx:id="graphHost" styleClass="canvas-host"
-                       minWidth="0.0" prefWidth="0.0"
-                       GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-        </GridPane>
+                    graphHost's width is driven entirely by an animated
+                    min/pref/max width (see SimulationController#setGraphVisible)
+                    rather than HBox.hgrow, so it can sit at exactly 0px by
+                    default (hidden) and a fixed slice of width once a graph
+                    mode is selected, independent of window size; canvasHost
+                    keeps ALWAYS growth so it always claims whatever's left.
+                -->
+                <StackPane fx:id="canvasHost" styleClass="canvas-host"
+                           minWidth="0.0" prefWidth="0.0" HBox.hgrow="ALWAYS"/>
+                <StackPane fx:id="graphHost" styleClass="canvas-host"
+                           minWidth="0.0" prefWidth="0.0" maxWidth="0.0" HBox.hgrow="NEVER"/>
+            </HBox>
+        </StackPane>
     </center>
 
     <right>
@@ -77,8 +76,15 @@
             the ScrollPane exists because the link editor's row count is
             unbounded — without it, editing a 20-link chain would push
             content below the window with no way to reach it.
+
+            Collapsed to zero width by default (see
+            SimulationController#setSidebarExpanded) — canvas-first per the
+            layout spec — and animated open/closed via min/pref/maxWidth,
+            never setVisible(false), so it's a genuine layout column that
+            shrinks the canvas/graph rather than overlaying them.
         -->
-        <ScrollPane styleClass="sidebar-scroll" fitToWidth="true" hbarPolicy="NEVER">
+        <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true" hbarPolicy="NEVER"
+                    minWidth="0.0" prefWidth="0.0" maxWidth="0.0">
             <content>
                 <VBox fx:id="controlHost"/>
             </content>
