@@ -15,7 +15,7 @@
          See theme.css's sidebar-section comment for why Canvas pixels sit
          outside the CSS token system. -->
     <StackPane fx:id="iconHost" alignment="TOP_LEFT"/>
-    <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title"/>
+    <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title" wrapText="true"/>
     <Label fx:id="descriptionLabel" styleClass="nav-card-desc" text="Description" wrapText="true"/>
     <!-- Extra hover-reveal detail line — see NavCardController#configure's
          optional detail parameter. Collapsed (invisible/unmanaged) until

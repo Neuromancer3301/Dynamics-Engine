@@ -181,6 +181,12 @@
     -fx-font-size: 25px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
+    /* Same -fx-max-width as .nav-card-desc/.nav-card-detail below, paired
+       with wrapText="true" on the FXML label — without both, a title that
+       doesn't fit the card's content width on one line (e.g. "N-Pendulum
+       Chain" at this pass's larger font size) gets silently truncated with
+       an ellipsis instead of wrapping to a second line. */
+    -fx-max-width: 240px;
 }
 
 .nav-card-desc {
