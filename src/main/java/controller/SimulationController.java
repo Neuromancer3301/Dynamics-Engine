@@ -15,11 +15,13 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Dialog;
+import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
@@ -369,6 +371,11 @@ public final class SimulationController implements Initializable, Navigable {
             else showLinkParameterDialog(link);
         });
 
+        // Round 4 §2 — right-click-and-release a link while Add is active
+        // (i.e. drag-editing disabled, so no length-drag armed) opens the
+        // delete-confirmation dialog.
+        pendulumCanvas.setRightClickListener(this::showDeleteLinkDialog);
+
         controlPanel = new ControlPanel();
         // Round 3 §4-f: Reset rebuilds all the way back to the pre-stacking
         // baseline, not just wherever currentConfig currently sits — a full
@@ -647,13 +654,14 @@ public final class SimulationController implements Initializable, Navigable {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Edit Link #" + (link + 1));
-        dialog.getDialogPane().getStylesheets().add(getClass().getResource("/css/theme.css").toExternalForm());
-        dialog.getDialogPane().getStyleClass().addAll("themed-dialog", ThemeManager.getInstance().getCurrent().styleClass());
+        themeDialog(dialog.getDialogPane());
 
         ButtonType applyButtonType = new ButtonType("Apply", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(applyButtonType, ButtonType.CANCEL);
 
-        TextField angleField  = dialogField(String.format("%.4f", currentConfig.getInitAngle(link)));
+        // Round 4 §1b: degrees, matching LinkEditorPanel's new default —
+        // internal state stays radians; this dialog is display/input only.
+        TextField angleField  = dialogField(String.format("%.4f", Math.toDegrees(currentConfig.getInitAngle(link))));
         TextField lengthField = dialogField(String.format("%.4f", currentConfig.getLength(link)));
         TextField massField   = dialogField(String.format("%.4f", currentConfig.getMass(link)));
 
@@ -667,7 +675,7 @@ public final class SimulationController implements Initializable, Navigable {
         grid.getStyleClass().add("dialog-grid");
         grid.setHgap(10);
         grid.setVgap(10);
-        grid.addRow(0, new Label("Angle (rad)"), angleField);
+        grid.addRow(0, new Label("Angle (°)"), angleField);
         grid.addRow(1, new Label("Length (m)"), lengthField);
         grid.addRow(2, new Label("Mass (kg)"), massField);
         grid.add(error, 0, 3, 2, 1);
@@ -675,19 +683,19 @@ public final class SimulationController implements Initializable, Navigable {
 
         Node applyButtonNode = dialog.getDialogPane().lookupButton(applyButtonType);
         applyButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {
-            Double angle  = parseFinite(angleField.getText());
-            Double length = parsePositive(lengthField.getText());
-            Double mass   = parsePositive(massField.getText());
-            if (angle == null)  { showDialogError(error, "Angle must be a finite number."); evt.consume(); return; }
-            if (length == null) { showDialogError(error, "Length must be a positive, finite number."); evt.consume(); return; }
-            if (mass == null)   { showDialogError(error, "Mass must be a positive, finite number."); evt.consume(); return; }
+            Double angleDegrees = parseFinite(angleField.getText());
+            Double length       = parsePositive(lengthField.getText());
+            Double mass         = parsePositive(massField.getText());
+            if (angleDegrees == null) { showDialogError(error, "Angle must be a finite number."); evt.consume(); return; }
+            if (length == null)       { showDialogError(error, "Length must be a positive, finite number."); evt.consume(); return; }
+            if (mass == null)         { showDialogError(error, "Mass must be a positive, finite number."); evt.consume(); return; }
 
             double[] lengths = currentConfig.getLengths();
             double[] masses  = currentConfig.getMasses();
             double[] angles  = liveAngles(); // every other link's live pose, not currentConfig's stale one (§4-f)
             lengths[link] = length;
             masses[link]  = mass;
-            angles[link]  = angle;
+            angles[link]  = Math.toRadians(angleDegrees);
             try {
                 PendulumConfig edited = new PendulumConfig(currentConfig.getN(), lengths, masses, angles,
                         currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
@@ -718,15 +726,14 @@ public final class SimulationController implements Initializable, Navigable {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Add Link After #" + (k + 1));
-        dialog.getDialogPane().getStylesheets().add(getClass().getResource("/css/theme.css").toExternalForm());
-        dialog.getDialogPane().getStyleClass().addAll("themed-dialog", ThemeManager.getInstance().getCurrent().styleClass());
+        themeDialog(dialog.getDialogPane());
 
         ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
 
         TextField lengthField = dialogField(String.format("%.4f", currentConfig.getLength(k)));
         TextField massField   = dialogField(String.format("%.4f", currentConfig.getMass(k)));
-        TextField angleField  = dialogField("0.0000");
+        TextField angleField  = dialogField("0.0000"); // zero is zero in either unit — no conversion needed here
         CheckBox relativeCheck = new CheckBox("Relative angle (offset from Link #" + (k + 1) + ")");
         relativeCheck.getStyleClass().add("sidebar-checkbox");
 
@@ -742,7 +749,7 @@ public final class SimulationController implements Initializable, Navigable {
         grid.setVgap(10);
         grid.addRow(0, new Label("Length (m)"), lengthField);
         grid.addRow(1, new Label("Mass (kg)"), massField);
-        grid.addRow(2, new Label("Angle (rad)"), angleField);
+        grid.addRow(2, new Label("Angle (°)"), angleField);
         grid.add(relativeCheck, 0, 3, 2, 1);
         grid.add(error, 0, 4, 2, 1);
         dialog.getDialogPane().setContent(grid);
@@ -757,7 +764,12 @@ public final class SimulationController implements Initializable, Navigable {
             if (angleInput == null) { showDialogError(error, "Angle must be a finite number."); evt.consume(); return; }
 
             double[] liveAngles = liveAngles();
-            double newAngle = relativeCheck.isSelected() ? liveAngles[k] + angleInput : angleInput;
+            // §1b: angleInput is degrees (display unit) — convert before
+            // combining with liveAngles[k], which is radians either way.
+            double angleOffsetOrAbsoluteRadians = Math.toRadians(angleInput);
+            double newAngle = relativeCheck.isSelected()
+                    ? liveAngles[k] + angleOffsetOrAbsoluteRadians
+                    : angleOffsetOrAbsoluteRadians;
 
             int n = currentConfig.getN();
             int newN = n + 1;
@@ -795,6 +807,96 @@ public final class SimulationController implements Initializable, Navigable {
 
         if (btnBack.getScene() != null) dialog.initOwner(btnBack.getScene().getWindow());
         dialog.showAndWait();
+    }
+
+    /**
+     * Opens the delete-confirmation dialog (round 4 §2): right-clicking link
+     * {@code link} while the Add tool is active (see {@link
+     * PendulumCanvas.RightClickListener}). Refuses on the sole remaining
+     * link — {@link PendulumConfig} requires N &ge; 1 — with a plain info
+     * alert rather than silently doing nothing. When a next link survives
+     * the deletion, offers to keep its current swing direction (recomputed
+     * from its new parent) instead of leaving its raw stored angle as-is;
+     * this only ever touches that one surviving link's angle, never its
+     * length, so "relative" means "preserve pose," not "preserve exact
+     * world position" (the latter would require silently resizing a rod
+     * nobody asked to resize).
+     */
+    private void showDeleteLinkDialog(int link) {
+        if (currentConfig == null || link < 0 || link >= currentConfig.getN()) return;
+        int n = currentConfig.getN();
+        if (n <= 1) {
+            Alert info = new Alert(Alert.AlertType.INFORMATION, "Can't delete the only remaining link.");
+            themeDialog(info.getDialogPane());
+            info.showAndWait();
+            return;
+        }
+
+        boolean hasNext = link < n - 1;
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Delete Link #" + (link + 1));
+        confirm.setHeaderText("Delete Link #" + (link + 1) + "?");
+        themeDialog(confirm.getDialogPane());
+
+        CheckBox relativeCheck = new CheckBox(
+                "Keep Link #" + (link + 2) + "'s current pose (relative to its new parent)");
+        relativeCheck.setSelected(true); // avoids a visual snap by default — judgment call
+        if (hasNext) confirm.getDialogPane().setContent(relativeCheck);
+
+        confirm.showAndWait().filter(bt -> bt == ButtonType.OK).ifPresent(bt -> {
+            double[] liveAngles = liveAngles();
+            double[] oldLengths = currentConfig.getLengths();
+            double[] oldMasses  = currentConfig.getMasses();
+            SimState state = stateBuffer.read();
+
+            int newN = n - 1;
+            double[] lengths = new double[newN];
+            double[] masses  = new double[newN];
+            double[] angles  = new double[newN];
+
+            for (int i = 0; i < link; i++) {
+                lengths[i] = oldLengths[i]; masses[i] = oldMasses[i]; angles[i] = liveAngles[i];
+            }
+            for (int i = link + 1; i < n; i++) {
+                int dst = i - 1;
+                lengths[dst] = oldLengths[i];
+                masses[dst]  = oldMasses[i];
+                angles[dst]  = liveAngles[i]; // "global" default — the raw stored angle, unchanged
+            }
+
+            if (hasNext && relativeCheck.isSelected() && state != null) {
+                // Recompute the surviving next link's angle so it points the
+                // same *direction* it did a moment ago, now measured from its
+                // new parent (whatever the deleted link's own parent was) —
+                // its length is left exactly as stored, so this preserves
+                // pose, not necessarily the exact same (x,y): reattaching at
+                // a different anchor distance can't hit the old point
+                // without also changing the rod's length, which nothing
+                // here asked for.
+                double oldBx = state.bobX[link + 1], oldBy = state.bobY[link + 1];
+                double parentX = (link == 0) ? 0.0 : state.bobX[link - 1];
+                double parentY = (link == 0) ? 0.0 : state.bobY[link - 1];
+                double dx = oldBx - parentX, dy = oldBy - parentY;
+                // Same convention as PhysicsEngine.getState(): cx += L*sin(theta), cy -= L*cos(theta)
+                angles[link] = Math.atan2(dx, -dy);
+            }
+
+            try {
+                PendulumConfig edited = new PendulumConfig(newN, lengths, masses, angles,
+                        currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
+                applyStructuralEdit(edited);
+                pendulumCanvas.setSelectedLink(Math.min(link, newN - 1));
+            } catch (IllegalArgumentException ex) {
+                LOG.log(Level.WARNING, "Delete-link commit rejected", ex);
+            }
+        });
+    }
+
+    /** Themes a Dialog/Alert's pane the same way every themed dialog in this class does — pulled out to avoid a third copy-paste. */
+    private static void themeDialog(DialogPane pane) {
+        pane.getStylesheets().add(SimulationController.class.getResource("/css/theme.css").toExternalForm());
+        pane.getStyleClass().addAll("themed-dialog", ThemeManager.getInstance().getCurrent().styleClass());
     }
 
     private static TextField dialogField(String initial) {

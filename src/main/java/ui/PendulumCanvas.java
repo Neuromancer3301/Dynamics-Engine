@@ -179,6 +179,19 @@ public final class PendulumCanvas extends Canvas {
         void onDoubleClick(int linkIndex);
     }
 
+    /**
+     * Notified on a clean right-click-and-release on a bob (round 4 §2) —
+     * i.e. a right-click that never armed the length-drag (see {@link
+     * #dragEditingEnabled}), since length-editing and delete are
+     * mutually-exclusive right-click gestures gated by the same flag. Fires
+     * once the gesture completes, not on press, so a modal doesn't pop up
+     * before the mouse button is even lifted — the same reasoning as {@link
+     * DoubleClickListener}.
+     */
+    public interface RightClickListener {
+        void onRightClick(int linkIndex);
+    }
+
     // Not final: a structural edit (per-link editor, runtime N) changes the
     // arm's total length after construction. Without a way to update this,
     // the render scale computed in render() would silently go stale — the
@@ -265,6 +278,14 @@ public final class PendulumCanvas extends Canvas {
     // See controller.SimulationController#setActiveTool.
     private boolean dragEditingEnabled = true;
 
+    // ---- Right-click delete (round 4 §2) ----
+    // Armed on a right-press that didn't arm the length-drag (i.e.
+    // !dragEditingEnabled — the Add tool is active); fires on a clean
+    // release, mirroring how double-click only fires once the gesture
+    // completes.
+    private RightClickListener rightClickListener;
+    private int pendingRightClickLink = -1;
+
     public PendulumCanvas(double width, double height, double totalLength) {
         super(width, height);
         this.totalLength = totalLength;
@@ -294,6 +315,11 @@ public final class PendulumCanvas extends Canvas {
     /** Registers the listener notified on a double-click. {@code null} disables that interaction. */
     public void setDoubleClickListener(DoubleClickListener listener) {
         this.doubleClickListener = listener;
+    }
+
+    /** Registers the listener notified on a clean right-click-and-release (round 4 §2). {@code null} disables that notification. */
+    public void setRightClickListener(RightClickListener listener) {
+        this.rightClickListener = listener;
     }
 
     /**
@@ -538,7 +564,15 @@ public final class PendulumCanvas extends Canvas {
                 int hit = hitTestBob(e.getX(), e.getY());
                 if (hit >= 0) {
                     if (selectionListener != null) selectionListener.onLinkSelected(hit);
-                    if (dragEditingEnabled && lengthDragListener != null) lengthDragLink = hit;
+                    // Round 4 §2: right-click is now two mutually-exclusive
+                    // gestures gated by the same dragEditingEnabled flag as
+                    // left-drag — length-editing (Edit tool) or delete
+                    // (Add tool, armed here and fired on a clean release).
+                    if (dragEditingEnabled && lengthDragListener != null) {
+                        lengthDragLink = hit;
+                    } else if (!dragEditingEnabled) {
+                        pendingRightClickLink = hit;
+                    }
                 }
                 return;
             }
@@ -599,6 +633,11 @@ public final class PendulumCanvas extends Canvas {
         setOnMouseReleased(e -> {
             if (draggingGravity) {
                 draggingGravity = false;
+                return;
+            }
+            if (pendingRightClickLink >= 0) {
+                if (rightClickListener != null) rightClickListener.onRightClick(pendingRightClickLink);
+                pendingRightClickLink = -1;
                 return;
             }
             if (lengthDragLink >= 0) {
@@ -1234,7 +1273,10 @@ public final class PendulumCanvas extends Canvas {
         gc.setFont(font);
 
         String line1 = "Link #" + (link + 1);
-        String line2 = String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[link], state.angularVelocities[link]);
+        // Round 4 §1c: θ in degrees (display-only — angles stay radians
+        // internally); ω stays rad/s, the conventional unit for this kind
+        // of display.
+        String line2 = String.format("θ=%+.1f°  ω=%+.3f rad/s", Math.toDegrees(state.angles[link]), state.angularVelocities[link]);
         String line3 = String.format("m=%.3f kg   L=%.3f m", mass, rodLength);
 
         double boxW = hudBoxWidth(font, line1, line2, line3);
@@ -1316,7 +1358,7 @@ public final class PendulumCanvas extends Canvas {
         gc.setFont(font);
 
         String line1 = "Selected: Link #" + (selectedLink + 1);
-        String line2 = String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[selectedLink], state.angularVelocities[selectedLink]);
+        String line2 = String.format("θ=%+.1f°  ω=%+.3f rad/s", Math.toDegrees(state.angles[selectedLink]), state.angularVelocities[selectedLink]);
         String line3 = String.format("m=%.3f kg   L=%.3f m", mass, rodLength);
 
         double boxX = 8 + infoOverlayBoxW + 8; // immediately right of drawInfoOverlay's pill
