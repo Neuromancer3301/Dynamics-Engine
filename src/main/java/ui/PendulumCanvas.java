@@ -245,6 +245,13 @@ public final class PendulumCanvas extends Canvas {
     // ---- Double-click (§7.4) ----
     private DoubleClickListener doubleClickListener;
 
+    // Round 3 §4-e: while the Add tool is active, left/right-drag on a bob
+    // are intentionally no-ops (Add's only job is inserting a link, not
+    // posing the chain) — gated here rather than in the listener interfaces
+    // themselves, since selection/pause (§4-a) must still fire either way.
+    // See controller.SimulationController#setActiveTool.
+    private boolean dragEditingEnabled = true;
+
     public PendulumCanvas(double width, double height, double totalLength) {
         super(width, height);
         this.totalLength = totalLength;
@@ -274,6 +281,15 @@ public final class PendulumCanvas extends Canvas {
     /** Registers the listener notified on a double-click. {@code null} disables that interaction. */
     public void setDoubleClickListener(DoubleClickListener listener) {
         this.doubleClickListener = listener;
+    }
+
+    /**
+     * Enables or disables left/right-drag posing of bobs (§4-e's Add-tool
+     * no-op) without touching selection, which stays tool-agnostic — see
+     * {@link #wireInteraction}. On by default (today's existing behavior).
+     */
+    public void setDragEditingEnabled(boolean dragEditingEnabled) {
+        this.dragEditingEnabled = dragEditingEnabled;
     }
 
     /**
@@ -369,10 +385,16 @@ public final class PendulumCanvas extends Canvas {
         }
 
         // ---- Coordinate mapping ----
-        // scale: fit full arm length in ~45% of canvas width (allows full swing)
-        this.scale  = Math.min(W * 0.44, H * 0.80) / Math.max(totalLength, 0.1);
+        // Round 3 §4-c: pivot centred (was H*0.14, near the top) so a
+        // near-180° swing has real clearance above the pivot, not just
+        // below — the old near-top pivot clipped the apex of exactly the
+        // near-inverted case this app ships a preset for (see Presets
+        // .nearVerticalKnifeEdge()). scale zoomed out to match: bounded by
+        // the smaller of two now roughly-symmetric clearances around the
+        // centred pivot, not the old split's generous 80%-below/nothing-above.
+        this.scale  = Math.min(W * 0.40, H * 0.40) / Math.max(totalLength, 0.1);
         this.pivotX = W / 2.0;
-        this.pivotY = H * 0.14;   // pivot near top-centre
+        this.pivotY = H * 0.46;
         this.bobBaseRadius = baseRadiusForN(state.getN());
 
         ensureTrailCapacity(state.getN());
@@ -481,9 +503,14 @@ public final class PendulumCanvas extends Canvas {
             if (e.getButton() == MouseButton.SECONDARY) {
                 // Right-click-drag = length (§7.3) — an entirely separate
                 // gesture from the left-button angle drag below; grabbing a
-                // bob here never affects selection or the primary drag state.
+                // bob here never affects the primary drag state. Selection
+                // (and the resulting pause, via SimulationController) fires
+                // on press regardless of button — see §4-a/§4-f.
                 int hit = hitTestBob(e.getX(), e.getY());
-                if (hit >= 0 && lengthDragListener != null) lengthDragLink = hit;
+                if (hit >= 0) {
+                    if (selectionListener != null) selectionListener.onLinkSelected(hit);
+                    if (dragEditingEnabled && lengthDragListener != null) lengthDragLink = hit;
+                }
                 return;
             }
             if (e.getButton() != MouseButton.PRIMARY) return;
@@ -495,13 +522,21 @@ public final class PendulumCanvas extends Canvas {
             // legitimate bob grab.
             int hit = hitTestBob(e.getX(), e.getY());
             if (hit >= 0) {
+                // §4-a/§4-f: select (and pause) the instant the bob is
+                // pressed, before any drag/double-click branching — one
+                // code path, tool-agnostic, for angle-editing, length-
+                // editing, and Add-tool clicks alike.
+                if (selectionListener != null) selectionListener.onLinkSelected(hit);
                 if (e.getClickCount() == 2) {
-                    // Double-click (§7.4) — not a drag; the parameter dialog
-                    // handles its own selection/pause, so nothing else here.
+                    // Double-click (§7.4) — not a drag; the parameter/add
+                    // dialog handles anything else it needs, so nothing more
+                    // here.
                     if (doubleClickListener != null) doubleClickListener.onDoubleClick(hit);
                     return;
                 }
-                if (dragListener == null) return;
+                // §4-e: Add tool poses nothing — dragging a bob is a no-op
+                // while it's active.
+                if (!dragEditingEnabled || dragListener == null) return;
                 if (dragListener.onGrab(hit)) {
                     draggedLink = hit;
                     dragSamples.clear();
@@ -548,10 +583,7 @@ public final class PendulumCanvas extends Canvas {
             double angle = maybeSnapAngle(angleFromScreen(draggedLink, e.getX(), e.getY()));
             double angularVelocity = estimateAngularVelocity();
             dragListener.onRelease(draggedLink, angle, angularVelocity);
-            // A completed click-drag-release selects the link (§7.1); a
-            // plain click (no movement) is the click-count==1, drag-free
-            // case of the same gesture and lands here too.
-            if (selectionListener != null) selectionListener.onLinkSelected(draggedLink);
+            // Selection (§7.1) now happens on press (§4-a), not here.
             draggedLink = -1;
             dragSamples.clear();
             hoveredLink = hitTestBob(e.getX(), e.getY());
@@ -615,7 +647,12 @@ public final class PendulumCanvas extends Canvas {
                 double parentY = (i == 0) ? pivotY : pivotY - lastState.bobY[i - 1] * scale;
                 double theta = lastState.angles[i];
                 double newBx = parentX + newLength * scale * Math.sin(theta);
-                double newBy = parentY - newLength * scale * Math.cos(theta);
+                // + not - : matches this class's own screen-Y convention
+                // everywhere else (render(): by = pivotY - bobY*scale, where
+                // PhysicsEngine.getState() composes bobY = L*cos(theta)); the
+                // old "-" mirrored the preview vertically around the parent
+                // joint (a 30° angle previewing near 150°) — see round-3 §4-b.
+                double newBy = parentY + newLength * scale * Math.cos(theta);
                 dx = newBx - bx;
                 dy = newBy - by;
                 xs[i] = newBx;
@@ -724,6 +761,28 @@ public final class PendulumCanvas extends Canvas {
     // -------------------------------------------------------------------------
     // Private drawing helpers
     // -------------------------------------------------------------------------
+
+    // Round 3 §4-d: shared text measurement for the HUD/inspector boxes
+    // below, so their width tracks the font actually rendered instead of a
+    // hardcoded pixel guess that quietly drifts out of sync with it (as
+    // happened once already, when the earlier font-size pass landed).
+    private static final double HUD_TEXT_PADDING = 9;
+    private static final double HUD_MIN_WIDTH = 150;
+
+    // Reused scratch node — cheap to query, no need to recreate per call.
+    private final javafx.scene.text.Text metricsProbe = new javafx.scene.text.Text();
+
+    private double measureTextWidth(Font font, String text) {
+        metricsProbe.setFont(font);
+        metricsProbe.setText(text);
+        return metricsProbe.getLayoutBounds().getWidth();
+    }
+
+    private double hudBoxWidth(Font font, String... lines) {
+        double max = 0;
+        for (String line : lines) max = Math.max(max, measureTextWidth(font, line));
+        return Math.max(HUD_MIN_WIDTH, HUD_TEXT_PADDING * 2 + max);
+    }
 
     private void drawBackground(GraphicsContext gc, double W, double H) {
         // Near-void, neutral grey grid — no blue/violet tint, so the one
@@ -1086,8 +1145,15 @@ public final class PendulumCanvas extends Canvas {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && link < state.masses.length) ? state.masses[link] : Double.NaN;
 
-        gc.setFont(Font.font("Monospaced", 14));
-        double boxW = 208, boxH = 58;
+        Font font = Font.font("Monospaced", 14);
+        gc.setFont(font);
+
+        String line1 = "Link #" + (link + 1);
+        String line2 = String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[link], state.angularVelocities[link]);
+        String line3 = String.format("m=%.3f kg   L=%.3f m", mass, rodLength);
+
+        double boxW = hudBoxWidth(font, line1, line2, line3);
+        double boxH = 58;
         double boxX = Math.min(bx + 14, canvasW - boxW - 4);
         double boxY = Math.max(by - boxH - 14, 4);
 
@@ -1102,30 +1168,42 @@ public final class PendulumCanvas extends Canvas {
         gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
         gc.setFill(Color.web("#FFFFFF"));
-        gc.fillText("Link #" + (link + 1), boxX + 9, boxY + 18);
+        gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 18);
         gc.setFill(Color.web("#D6D6DC"));
-        gc.fillText(String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[link], state.angularVelocities[link]),
-                boxX + 9, boxY + 36);
-        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 9, boxY + 53);
+        gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 36);
+        gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 53);
     }
 
+    // Round 3 §4-d: drawSelectedLinkHud sits immediately right of this pill,
+    // so it needs this call's actual box width, not a hardcoded guess —
+    // recorded here each frame since render() always draws this first.
+    private double infoOverlayBoxW = 216;
+
     private void drawInfoOverlay(GraphicsContext gc, SimState state, double W) {
-        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, 14));
+        Font font = Font.font("Monospaced", FontWeight.NORMAL, 14);
+        gc.setFont(font);
+
+        String line1 = String.format("t  = %7.2f s",   state.time);
+        String line2 = String.format("E  = %7.3f J",   state.totalEnergy);
+        String line3 = String.format("KE = %6.3f  PE = %7.3f", state.kineticEnergy, state.potentialEnergy);
+
+        double boxX = 8, boxY = 8, boxH = 58;
+        double boxW = hudBoxWidth(font, line1, line2, line3);
+        this.infoOverlayBoxW = boxW;
 
         // Semi-transparent pill background — opacity raised from 0.45 (see
         // §2's audit note) so the larger text stays legible over a bright
         // swinging bob or a light-colored trail passing behind it.
         gc.setFill(Color.web("#000000", 0.6));
-        gc.fillRoundRect(8, 8, 216, 58, 4, 4);
+        gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
         // Live telemetry gets the accent — the same "one hue for anything
         // actively reporting a current value" rule as the tip trail and the
         // gravity handle.
         gc.setFill(Color.web("#EA3F8C"));
-        gc.fillText(String.format("t  = %7.2f s",   state.time),         15, 27);
-        gc.fillText(String.format("E  = %7.3f J",   state.totalEnergy),  15, 43);
-        gc.fillText(String.format("KE = %6.3f  PE = %7.3f",
-                                   state.kineticEnergy, state.potentialEnergy), 15, 59);
+        gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 19);
+        gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 35);
+        gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 51);
     }
 
     /**
@@ -1147,10 +1225,17 @@ public final class PendulumCanvas extends Canvas {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && selectedLink < state.masses.length) ? state.masses[selectedLink] : Double.NaN;
 
-        gc.setFont(Font.font("Monospaced", 14));
-        double boxX = 8 + 216 + 8; // immediately right of drawInfoOverlay's pill
+        Font font = Font.font("Monospaced", 14);
+        gc.setFont(font);
+
+        String line1 = "Selected: Link #" + (selectedLink + 1);
+        String line2 = String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[selectedLink], state.angularVelocities[selectedLink]);
+        String line3 = String.format("m=%.3f kg   L=%.3f m", mass, rodLength);
+
+        double boxX = 8 + infoOverlayBoxW + 8; // immediately right of drawInfoOverlay's pill
         double boxY = 8;
-        double boxW = 224, boxH = 58;
+        double boxW = hudBoxWidth(font, line1, line2, line3);
+        double boxH = 58;
 
         gc.setFill(Color.web("#000000", 0.6));
         gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
@@ -1159,11 +1244,10 @@ public final class PendulumCanvas extends Canvas {
         gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
         gc.setFill(Color.web("#EA3F8C"));
-        gc.fillText("Selected: Link #" + (selectedLink + 1), boxX + 9, boxY + 18);
+        gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 18);
         gc.setFill(Color.web("#D6D6DC"));
-        gc.fillText(String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[selectedLink], state.angularVelocities[selectedLink]),
-                boxX + 9, boxY + 36);
-        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 9, boxY + 53);
+        gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 36);
+        gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 53);
     }
 
     private void drawWaitingMessage(GraphicsContext gc, double W, double H) {

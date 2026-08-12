@@ -49,9 +49,10 @@ public final class ControlPanel extends VBox {
     // directly to the primary instead of a separate copy.
     private static final double PERTURB_MAGNITUDE = 1.0e-6;
 
-    // Live status labels — updated each frame by controller.SimulationController
-    private final Label lblTime      = styledLabel("t  = ---");
-    private final Label lblEnergy    = styledLabel("E  = ---");
+    // Live status labels — updated each frame by controller.SimulationController.
+    // Time/Energy used to live here too, but PendulumCanvas's own always-on
+    // top-left HUD (drawInfoOverlay) already shows both, so this block is
+    // just the two readings that HUD doesn't cover.
     private final Label lblDrift     = styledLabel("Drift = ---");
     private final Label lblLyapunov  = styledLabel("λ  = ---");
 
@@ -243,7 +244,6 @@ public final class ControlPanel extends VBox {
           + "retrace itself almost exactly, and a chaotic chain fail to.");
 
         btnReset.setOnAction(e -> {
-            simLoop.reset();
             if (cbResetClearsGraphs.isSelected()) {
                 pendulumCanvas.clearTrail();
                 graphPanel.clear();
@@ -427,7 +427,7 @@ public final class ControlPanel extends VBox {
 
         // ---- Status display ----
         Label lStatus = sectionLabel("Live Status");
-        VBox statusBox = new VBox(4, lblTime, lblEnergy, lblDrift, lblLyapunov);
+        VBox statusBox = new VBox(4, lblDrift, lblLyapunov);
         statusBox.getStyleClass().add("sidebar-status-box");
         statusBox.setPadding(new Insets(6, 8, 6, 8));
 
@@ -588,8 +588,6 @@ public final class ControlPanel extends VBox {
 
     public void updateStatus(SimState state, Double initialEnergy) {
         if (state == null) return;
-        lblTime.setText(String.format("t  = %8.2f s", state.time));
-        lblEnergy.setText(String.format("E  = %8.3f J", state.totalEnergy));
 
         boolean unstable = !Double.isFinite(state.totalEnergy);
         for (double v : state.angularVelocities) unstable |= !Double.isFinite(v);

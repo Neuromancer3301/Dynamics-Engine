@@ -32,7 +32,13 @@ public final class UtilityIconButton extends HBox {
     private final Icons.IconView icon;
     private final Label label;
     private Runnable onActivate;
-    private boolean hoverOrFocus = false;
+
+    // Tracked independently (not one boolean overwritten by whichever event
+    // fired last) so the label stays revealed for as long as EITHER is true —
+    // otherwise a mouse-exit while still keyboard-focused would clear focus's
+    // reveal too. See refreshRevealState.
+    private boolean hovering = false;
+    private boolean focused = false;
 
     public UtilityIconButton(Icons.Glyph glyph, String text) {
         super(6);
@@ -51,15 +57,15 @@ public final class UtilityIconButton extends HBox {
 
         getChildren().addAll(label, icon);
 
-        setOnMouseEntered(e -> setHoverOrFocus(true));
-        setOnMouseExited(e -> setHoverOrFocus(false));
-        focusedProperty().addListener((obs, was, is) -> setHoverOrFocus(is));
+        setOnMouseEntered(e -> { hovering = true; refreshRevealState(); });
+        setOnMouseExited(e -> { hovering = false; refreshRevealState(); });
+        focusedProperty().addListener((obs, was, is) -> { focused = is; refreshRevealState(); });
         setOnMouseClicked(e -> activate());
         setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) activate();
         });
 
-        ThemeManager.getInstance().addListener(this::refreshIconColor);
+        ThemeManager.getInstance().addListener(() -> refreshIconColor(hovering || focused));
     }
 
     public void setOnActivate(Runnable onActivate) {
@@ -70,9 +76,10 @@ public final class UtilityIconButton extends HBox {
         if (onActivate != null) onActivate.run();
     }
 
-    private void setHoverOrFocus(boolean on) {
-        this.hoverOrFocus = on;
-        refreshIconColor();
+    /** Reveals the label whenever either hover or focus is active; hides it only once both have cleared. */
+    private void refreshRevealState() {
+        boolean on = hovering || focused;
+        refreshIconColor(on);
 
         if (ThemeManager.getInstance().isReducedMotion()) {
             label.setOpacity(on ? 1.0 : 0.0);
@@ -83,8 +90,8 @@ public final class UtilityIconButton extends HBox {
         fade.play();
     }
 
-    private void refreshIconColor() {
+    private void refreshIconColor(boolean on) {
         theme.Theme t = ThemeManager.getInstance().getCurrent();
-        icon.setColor(hoverOrFocus ? Icons.activeColor(t) : Icons.idleColor(t));
+        icon.setColor(on ? Icons.activeColor(t) : Icons.idleColor(t));
     }
 }
