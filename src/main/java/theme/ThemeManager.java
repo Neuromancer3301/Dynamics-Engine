@@ -2,7 +2,6 @@ package theme;
 
 import config.AppConfig;
 import javafx.scene.Parent;
-import javafx.scene.transform.Scale;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,19 +33,16 @@ import java.util.prefs.Preferences;
  * does — so both are explicit Settings-screen toggles instead.
  *
  * <p>{@link #getFontScale}/{@link #setFontScale} is a third such
- * preference, for the same underlying reason: JavaFX has no bridge to the
- * OS's own text-scale accessibility setting, and — unlike a browser —
- * its CSS engine supports no relative font unit (no {@code em}/{@code rem}/
- * {@code %}, only {@code px}/{@code pt}), and {@code theme.css} hardcodes a
- * {@code px} size on essentially every text-bearing class for layout
- * density reasons. That combination means there is no clean way to make
- * "100 more DPI-independent px" ripple through every class from one
- * variable. The honest option taken here is a uniform {@link Scale}
- * transform on the active root — the same technique a browser's Ctrl+/Ctrl-
- * zoom uses — applied on top of everything, including hardcoded sizes.
- * Deliberately capped modestly (see {@link #MAX_FONT_SCALE}): a transform
- * zoom doesn't reflow layout or grow the window, so a large factor risks
- * clipping sidebar content against the window edge.
+ * preference, for the same underlying reason: JavaFX exposes no bridge to
+ * the OS's own text-scale accessibility setting, so it has to be an
+ * explicit in-app control.
+ *
+ * <p><b>This class only stores the value.</b> Actually applying it is
+ * {@code navigation.SceneRouter}'s job, because scaling is a layout
+ * concern and the router owns the layout root — see {@code
+ * SceneRouter#applyScaling} for how the zoom is made to reflow instead of
+ * clipping. Changing the value here notifies listeners; the router is one
+ * of them.
  */
 public final class ThemeManager {
 
@@ -56,6 +52,11 @@ public final class ThemeManager {
     private static final String PREF_KEY_COLORBLIND_SAFE = "colorBlindSafePalette";
     private static final String PREF_KEY_FONT_SCALE       = "fontScale";
 
+    // Bounds for the interface scale. The ceiling is a readability/usable-area
+    // trade-off, NOT a clipping guard: navigation.SceneRouter reflows the UI
+    // into a smaller logical area before magnifying, so a larger factor loses
+    // working space rather than pushing controls off-screen. It can be raised
+    // safely if a bigger option is wanted.
     public static final double MIN_FONT_SCALE = 1.0;
     public static final double MAX_FONT_SCALE = 1.2;
 
@@ -82,10 +83,12 @@ public final class ThemeManager {
         this.fontScale             = clampFontScale(prefs.getDouble(PREF_KEY_FONT_SCALE, MIN_FONT_SCALE));
     }
 
+    /** The single shared instance. One theme is a genuinely global, app-wide property, which is what justifies a singleton here. */
     public static ThemeManager getInstance() {
         return INSTANCE;
     }
 
+    /** The active theme. */
     public Theme getCurrent() {
         return current;
     }
@@ -106,6 +109,7 @@ public final class ThemeManager {
         listeners.add(onChange);
     }
 
+    /** Switches theme, persists the choice, restyles the visible screen, and notifies listeners. No-ops if already active, so listeners don't fire spuriously. */
     public void setTheme(Theme theme) {
         if (theme == current) return;
         this.current = theme;
@@ -114,12 +118,15 @@ public final class ThemeManager {
         listeners.forEach(Runnable::run);
     }
 
+    /** Flips between the two themes — what the Settings button calls. */
     public void toggle() {
         setTheme(current == Theme.DARK ? Theme.LIGHT : Theme.DARK);
     }
 
+    /** Whether animations should be suppressed. Read by the router, nav cards, and the pendulum canvas. */
     public boolean isReducedMotion() { return reducedMotion; }
 
+    /** Sets and persists the reduced-motion preference. */
     public void setReducedMotion(boolean reducedMotion) {
         if (reducedMotion == this.reducedMotion) return;
         this.reducedMotion = reducedMotion;
@@ -127,8 +134,10 @@ public final class ThemeManager {
         listeners.forEach(Runnable::run);
     }
 
+    /** Whether the Okabe-Ito colour-blind-safe bob palette should be used. */
     public boolean isColorBlindSafePalette() { return colorBlindSafePalette; }
 
+    /** Sets and persists the colour-blind palette preference. */
     public void setColorBlindSafePalette(boolean colorBlindSafe) {
         if (colorBlindSafe == this.colorBlindSafePalette) return;
         this.colorBlindSafePalette = colorBlindSafe;
@@ -136,35 +145,30 @@ public final class ThemeManager {
         listeners.forEach(Runnable::run);
     }
 
+    /** Current UI zoom factor, between {@link #MIN_FONT_SCALE} and {@link #MAX_FONT_SCALE}. */
     public double getFontScale() { return fontScale; }
 
+    /** Sets and persists the UI zoom, clamped to the supported range, and re-applies it to the visible screen immediately. */
     public void setFontScale(double scale) {
         double clamped = clampFontScale(scale);
         if (clamped == this.fontScale) return;
         this.fontScale = clamped;
         prefs.putDouble(PREF_KEY_FONT_SCALE, clamped);
-        if (activeRoot != null) applyFontScale(activeRoot);
+        // Deliberately does NOT touch the scene graph: navigation.SceneRouter
+        // owns layout and listens for this notification. Applying a transform
+        // from here as well would compound with the router's and double-scale.
         listeners.forEach(Runnable::run);
     }
 
+    /** Forces any value — including a corrupted stored preference — into the supported range. */
     private static double clampFontScale(double scale) {
         return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, scale));
     }
 
+    /** Swaps the theme style class on a screen root: remove every theme class, add the active one. This single class swap is what repaints the whole app. */
     private void applyTo(Parent root) {
         for (Theme t : Theme.values()) root.getStyleClass().remove(t.styleClass());
         root.getStyleClass().add(current.styleClass());
-        applyFontScale(root);
     }
 
-    private void applyFontScale(Parent root) {
-        root.getTransforms().removeIf(t -> t instanceof Scale);
-        if (fontScale != MIN_FONT_SCALE) {
-            // Pivot at the origin (top-left): the scene's own top-left
-            // corner is the one edge every screen in this app keeps clear
-            // (padding, not controls), so that's the direction least likely
-            // to clip something under the modest cap above.
-            root.getTransforms().add(new Scale(fontScale, fontScale, 0, 0));
-        }
-    }
 }

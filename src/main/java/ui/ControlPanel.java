@@ -112,12 +112,17 @@ public final class ControlPanel extends VBox {
     private Consumer<Integer> onScrubTo;
     private Runnable onScrubEnd;
 
+    /** Creates the empty sidebar shell. Controls are added later by {@link #build}, once the caller has wired its callbacks. */
     public ControlPanel() {
         super(10);
         setPadding(new Insets(14, 12, 14, 12));
         getStyleClass().add("sidebar-panel");
-        setMinWidth(210);
-        setMaxWidth(230);
+        // Sized to the type, not the other way round: these track
+        // theme.css's .sidebar-* font sizes, so bumping those for
+        // readability without widening here would clip the longest labels
+        // ("🌀 Generate Bifurcation Map") rather than wrap them.
+        setMinWidth(248);
+        setMaxWidth(268);
 
         lblInstabilityWarning.getStyleClass().add("sidebar-warning-banner");
         lblInstabilityWarning.setWrapText(true);
@@ -429,9 +434,13 @@ public final class ControlPanel extends VBox {
 
     /** Called with {@code true}/{@code false} when the butterfly-effect toggle is clicked. */
     public void setOnEnsembleToggle(Consumer<Boolean> callback) { this.onEnsembleToggle = callback; }
+    /** Called with {@code true}/{@code false} when the sonify toggle is clicked. */
     public void setOnSonifyToggle(Consumer<Boolean> callback)   { this.onSonifyToggle = callback; }
+    /** Called when "Generate Bifurcation Map" is clicked. */
     public void setOnGenerateBifurcation(Runnable callback)     { this.onGenerateBifurcation = callback; }
+    /** Called when "Reset Gravity Direction" is clicked. */
     public void setOnResetGravityDirection(Runnable callback)   { this.onResetGravityDirection = callback; }
+    /** Called with (enabled, Δθ₁ offset) when the A/B compare toggle is clicked — two values, hence {@code BiConsumer}. */
     public void setOnCompareToggle(BiConsumer<Boolean, Double> callback) { this.onCompareToggle = callback; }
 
     /** Resets the A/B compare button's visual state — used when a structural edit drops an active compare (see controller.SimulationController#applyStructuralEdit). */
@@ -489,6 +498,7 @@ public final class ControlPanel extends VBox {
         historyLabel.setText(String.format("-%.1fs", secondsAgo));
     }
 
+    /** Updates the live Lyapunov readout. A {@code null} lambda means "not measurable yet" and shows dashes rather than a misleading number. */
     public void updateLyapunov(Double lambda) {
         lblLyapunov.setText(lambda == null ? "λ  = ---" : String.format("λ  ≈ %+.3f /s", lambda));
     }
@@ -511,6 +521,16 @@ public final class ControlPanel extends VBox {
         btnSonify.setText(on ? "🔊  Sonify: On" : "🔊  Sonify: Off");
     }
 
+    /**
+     * Refreshes the live status block and the instability banner.
+     *
+     * <p>Energy drift is expressed as a percentage of the STARTING energy,
+     * not an absolute figure, so the number is comparable across scenarios
+     * of wildly different scale. Guarded by {@code |initialEnergy| > 1e-6}
+     * because a configuration that happens to start at nearly zero total
+     * energy would otherwise divide by ~0 and report a meaningless
+     * astronomical drift.
+     */
     public void updateStatus(SimState state, Double initialEnergy) {
         if (state == null) return;
         lblTime.setText(String.format("t  = %8.2f s", state.time));
@@ -542,6 +562,7 @@ public final class ControlPanel extends VBox {
         lblInstabilityWarning.setManaged(unstable);
     }
 
+    /** Keeps the trail button's label showing the mode that is actually active on the canvas. */
     private void refreshTrailModeLabel(PendulumCanvas.TrailMode mode) {
         btnTrailMode.setText(switch (mode) {
             case OFF       -> "〜  Trail: Off";
@@ -561,19 +582,22 @@ public final class ControlPanel extends VBox {
         return l;
     }
 
+    /** A monospaced status line — monospace so digits stay column-aligned as values change and don't jitter. */
     private static Label styledLabel(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("sidebar-status-label");
         return l;
     }
 
+    /** The right-hand history readout ("LIVE" or "-3.4s"). Fixed minimum width and right alignment stop it shifting as the text length changes. */
     private static Label historyValueLabel() {
         Label l = styledLabel("LIVE");
-        l.setMinWidth(50);
+        l.setMinWidth(58);
         l.setAlignment(Pos.CENTER_RIGHT);
         return l;
     }
 
+    /** Small wrapped explanatory text under a control. */
     private static Label hintLabel(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("sidebar-hint");
@@ -581,6 +605,7 @@ public final class ControlPanel extends VBox {
         return l;
     }
 
+    /** A themed, full-width slider. */
     private static Slider slider(double min, double max, double val) {
         Slider s = new Slider(min, max, val);
         s.setMaxWidth(Double.MAX_VALUE);
@@ -588,10 +613,11 @@ public final class ControlPanel extends VBox {
         return s;
     }
 
+    /** The small right-aligned number box paired with a slider. */
     private static TextField numericField(double initial) {
         TextField f = new TextField(String.format("%.2f", initial));
         f.getStyleClass().add("sidebar-numeric-field");
-        f.setPrefWidth(52);
+        f.setPrefWidth(60);
         f.setAlignment(Pos.CENTER_RIGHT);
         return f;
     }
@@ -608,6 +634,7 @@ public final class ControlPanel extends VBox {
         });
     }
 
+    /** Lays a slider beside its value label, with the slider taking all spare width so the label stays a fixed size. */
     private static HBox hRow(Slider slider, Node value) {
         HBox box = new HBox(6, slider, value);
         box.setAlignment(Pos.CENTER_LEFT);
@@ -615,11 +642,13 @@ public final class ControlPanel extends VBox {
         return box;
     }
 
+    /** Applies the shared sidebar button styling. Takes {@code ButtonBase} so it serves both {@code Button} and {@code ToggleButton}. */
     private static void styleButton(ButtonBase b) {
         b.setMaxWidth(Double.MAX_VALUE);
         b.getStyleClass().add("sidebar-button");
     }
 
+    /** A themed radio button in {@code group} — the group is what makes the graph-mode options mutually exclusive. */
     private static RadioButton radioBtn(String text, ToggleGroup group) {
         RadioButton rb = new RadioButton(text);
         rb.setToggleGroup(group);
@@ -627,6 +656,7 @@ public final class ControlPanel extends VBox {
         return rb;
     }
 
+    /** A thin divider between sidebar sections. A new instance each call, since a JavaFX node can only occupy one place in the scene graph. */
     private static Separator sep() {
         Separator s = new Separator();
         s.getStyleClass().add("sidebar-separator");

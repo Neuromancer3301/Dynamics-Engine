@@ -46,13 +46,27 @@ public final class GraphPanel extends Canvas {
     public record ComparisonSeries(String name, double[] times, double[] energyDrift, Color color) {}
 
     // ---- Layout constants ----
-    private static final int    MARGIN  = 52;
+    // MARGIN is the gutter holding the axis tick labels; it tracks
+    // AXIS_FONT_SIZE below, since a wider label in a fixed gutter would
+    // collide with the plot area rather than sit beside it.
+    private static final int    MARGIN  = 60;
     private static final int    MAX_PTS = 800;
     private static final double TIME_WINDOW = 12.0; // seconds visible in time-series modes
 
     // Poincaré points accumulate for the life of the run (cleared only by
     // clear()), so this bounds memory rather than controlling what's visible.
     private static final int MAX_POINCARE_POINTS = 5000;
+
+    // Canvas-drawn text sizes. Named because MARGIN, legend spacing, and
+    // caption baselines are all derived from them — see PendulumCanvas's
+    // equivalent block for the full reasoning.
+    private static final double AXIS_FONT_SIZE    = 11;
+    private static final double LEGEND_FONT_SIZE  = 12;
+    private static final double CAPTION_FONT_SIZE = 11;
+    private static final double MESSAGE_FONT_SIZE = 13;
+    private static final double TITLE_FONT_SIZE   = 14;
+    private static final double MINI_TITLE_SIZE   = 11;
+    private static final double LEGEND_LINE_H     = 15;
 
     // ---- Colors ----
     // "Signal" palette: any single-focus mode (one live trace or one
@@ -100,10 +114,12 @@ public final class GraphPanel extends Canvas {
     // own frame-skipping to avoid redrawing an unchanged ~800-point series.
     private boolean dirty = true;
 
+    /** @param width,height initial size; later bound to the host pane so the graph fills its column. */
     public GraphPanel(double width, double height) {
         super(width, height);
     }
 
+    /** Switches which analysis view is drawn. Deliberately does NOT clear the buffer — see the inline note. */
     public void setMode(Mode newMode) {
         // No data.clear() here: every mode reads from the same ring buffer
         // entry — recorded on every addDataPoint() call regardless of which
@@ -200,6 +216,7 @@ public final class GraphPanel extends Canvas {
         drawTitle(gc, plotW);
     }
 
+    /** Discards all accumulated data — the scrolling buffer, the Poincaré point cloud, and the crossing detector's memory. */
     public void clear() {
         data.clear();
         poincarePoints.clear();
@@ -245,6 +262,7 @@ public final class GraphPanel extends Canvas {
         gc.fillRect(0, 0, W, H);
     }
 
+    /** Paints the inner plot rectangle and its 5×5 reference grid. Drawn before any series so the data sits on top. */
     private void drawPlotArea(GraphicsContext gc, double plotW, double plotH) {
         // Plot background
         gc.setFill(Color.web("#101014"));
@@ -319,10 +337,10 @@ public final class GraphPanel extends Canvas {
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 5, C_PE,     1.2); // PE
 
         // Legend
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(C_ENERGY); gc.fillText("─ Total", MARGIN + 6, MARGIN + 30);
-        gc.setFill(C_KE);     gc.fillText("─ KE",    MARGIN + 6, MARGIN + 42);
-        gc.setFill(C_PE);     gc.fillText("─ PE",    MARGIN + 6, MARGIN + 54);
+        gc.setFont(Font.font("Monospaced", LEGEND_FONT_SIZE));
+        gc.setFill(C_ENERGY); gc.fillText("─ Total", MARGIN + 6, MARGIN + 36);
+        gc.setFill(C_KE);     gc.fillText("─ KE",    MARGIN + 6, MARGIN + 36 + LEGEND_LINE_H);
+        gc.setFill(C_PE);     gc.fillText("─ PE",    MARGIN + 6, MARGIN + 36 + LEGEND_LINE_H * 2);
     }
 
     private void drawSeries(GraphicsContext gc, double tMin, double tMax,
@@ -389,23 +407,23 @@ public final class GraphPanel extends Canvas {
         }
 
         // Axis labels for phase portrait
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", CAPTION_FONT_SIZE));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("θ  [%.2f, %.2f] rad", thetaMin, thetaMax),
-                    MARGIN + 4, MARGIN + 20 + plotH + 15);
+                    MARGIN + 4, MARGIN + 20 + plotH + 18);
         gc.fillText(String.format("ω  [%.2f, %.2f] rad/s", omegaMin, omegaMax),
-                    MARGIN + 4, MARGIN + 20 + plotH + 26);
+                    MARGIN + 4, MARGIN + 20 + plotH + 33);
     }
 
     // ---- Mode: Poincaré Section ----
     private void drawPoincareSection(GraphicsContext gc, double plotW, double plotH) {
         if (poincarePoints.isEmpty()) {
-            gc.setFont(Font.font("System", 11));
+            gc.setFont(Font.font("System", MESSAGE_FONT_SIZE));
             gc.setFill(Color.web("#8A8A96"));
             gc.fillText("Accumulating — a point is plotted each time θ₁",
-                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 8);
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
             gc.fillText("crosses zero moving forward (needs N ≥ 2)",
-                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 + 8);
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 + 10);
             return;
         }
 
@@ -429,17 +447,17 @@ public final class GraphPanel extends Canvas {
             gc.fillOval(sx - 1.5, sy - 1.5, 3, 3);
         }
 
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", CAPTION_FONT_SIZE));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("%d crossings   θ₂ [%.2f, %.2f]   ω₂ [%.2f, %.2f]",
                         poincarePoints.size(), thetaMin, thetaMax, omegaMin, omegaMax),
-                MARGIN + 4, MARGIN + 20 + plotH + 15);
+                MARGIN + 4, MARGIN + 20 + plotH + 18);
     }
 
     // ---- Mode: Integrator Comparison ----
     private void drawComparison(GraphicsContext gc, double plotW, double plotH) {
         if (comparisonSeries.isEmpty()) {
-            gc.setFont(Font.font("System", 11));
+            gc.setFont(Font.font("System", MESSAGE_FONT_SIZE));
             gc.setFill(Color.web("#8A8A96"));
             gc.fillText("Press \"Compare Integrators\" in the sidebar to run this.",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0);
@@ -457,8 +475,8 @@ public final class GraphPanel extends Canvas {
 
         drawAxisTicks(gc, plotW, plotH, tMin, tMax, yMin, yMax);
 
-        double legendY = MARGIN + 30;
-        gc.setFont(Font.font("Monospaced", 10));
+        double legendY = MARGIN + 36;
+        gc.setFont(Font.font("Monospaced", LEGEND_FONT_SIZE));
         for (ComparisonSeries s : comparisonSeries) {
             gc.setStroke(s.color());
             gc.setLineWidth(1.6);
@@ -473,19 +491,19 @@ public final class GraphPanel extends Canvas {
 
             gc.setFill(s.color());
             gc.fillText("─ " + s.name(), MARGIN + 6, legendY);
-            legendY += 12;
+            legendY += LEGEND_LINE_H;
         }
     }
 
     // ---- Mode: Bifurcation Diagram ----
     private void drawBifurcation(GraphicsContext gc, double plotW, double plotH) {
         if (bifurcationParams.length == 0) {
-            gc.setFont(Font.font("System", 11));
+            gc.setFont(Font.font("System", MESSAGE_FONT_SIZE));
             gc.setFill(Color.web("#8A8A96"));
             gc.fillText("Press \"Generate Bifurcation Map\" in the sidebar to run this.",
-                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 8);
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
             gc.fillText("Sweeps the first link's initial angle — takes a while.",
-                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 + 8);
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 + 10);
             return;
         }
 
@@ -504,11 +522,11 @@ public final class GraphPanel extends Canvas {
             }
         }
 
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", CAPTION_FONT_SIZE));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("θ₁ initial swept [%.2f, %.2f] rad · y = last link's angle at each θ₁ crossing",
                         xMin, xMax),
-                MARGIN + 4, MARGIN + 20 + plotH + 15);
+                MARGIN + 4, MARGIN + 20 + plotH + 18);
     }
 
     // -------------------------------------------------------------------------
@@ -524,8 +542,14 @@ public final class GraphPanel extends Canvas {
     // here, scoped to an explicit (x0, y0, w, h) band.
 
     private static final double MINI_MARGIN   = 6;
-    private static final double MINI_TITLE_H  = 14;
+    private static final double MINI_TITLE_H  = 17;
 
+    /**
+     * Draws the ALL mode: angle, energy, and phase portrait stacked in three
+     * equal horizontal bands. "Small multiples" is the standard data-viz term
+     * for repeating one chart shape across several variables so they can be
+     * compared at a glance.
+     */
     private void renderSmallMultiples(GraphicsContext gc, double W, double H) {
         double bandH = H / 3.0;
         drawMiniAngle(gc, 0, bandH, W);
@@ -538,6 +562,7 @@ public final class GraphPanel extends Canvas {
         gc.strokeLine(0, bandH * 2, W, bandH * 2);
     }
 
+    /** The angle band of the small-multiples view, drawn into its own (y0, h) strip. */
     private void drawMiniAngle(GraphicsContext gc, double y0, double h, double W) {
         drawMiniBackground(gc, y0, h, W, "θ₁(t)");
         if (data.size() < 2) return;
@@ -557,6 +582,7 @@ public final class GraphPanel extends Canvas {
         drawMiniSeries(gc, tMin, tMax, yMin, yMax, plotX, plotY, plotW, plotH, 1, C_ANGLE, 1.2);
     }
 
+    /** The energy band of the small-multiples view — all three energy series, auto-scaled to the visible window. */
     private void drawMiniEnergy(GraphicsContext gc, double y0, double h, double W) {
         drawMiniBackground(gc, y0, h, W, "E(t)");
         if (data.size() < 2) return;
@@ -581,6 +607,7 @@ public final class GraphPanel extends Canvas {
         drawMiniSeries(gc, tMin, tMax, yMin, yMax, plotX, plotY, plotW, plotH, 5, C_PE,     1.0);
     }
 
+    /** The phase-portrait band of the small-multiples view, with the same age-fade and current-point marker as the full-size version. */
     private void drawMiniPhase(GraphicsContext gc, double y0, double h, double W) {
         drawMiniBackground(gc, y0, h, W, "Phase (θ₁,ω₁)");
         if (data.size() < 2) return;
@@ -620,14 +647,16 @@ public final class GraphPanel extends Canvas {
         }
     }
 
+    /** Fills one small-multiples band and labels it. */
     private void drawMiniBackground(GraphicsContext gc, double y0, double h, double W, String title) {
         gc.setFill(Color.web("#101014"));
         gc.fillRect(0, y0, W, h);
-        gc.setFont(Font.font("System", FontWeight.BOLD, 9));
+        gc.setFont(Font.font("System", FontWeight.BOLD, MINI_TITLE_SIZE));
         gc.setFill(Color.web("#C7C7D1"));
-        gc.fillText(title, MINI_MARGIN, y0 + 10);
+        gc.fillText(title, MINI_MARGIN, y0 + 12);
     }
 
+    /** Plots one field of the ring buffer inside a small-multiples band. The band-local equivalent of {@link #drawSeries}. */
     private void drawMiniSeries(GraphicsContext gc, double tMin, double tMax, double yMin, double yMax,
                                 double x0, double y0, double w, double h, int fieldIdx, Color color, double lineWidth) {
         gc.setStroke(color);
@@ -643,11 +672,13 @@ public final class GraphPanel extends Canvas {
         gc.stroke();
     }
 
+    /** Maps a value to an x pixel inside a small-multiples band: normalise to 0..1, then scale into the band's own width. */
     private double miniX(double val, double vMin, double vMax, double x0, double w) {
         double frac = (val - vMin) / Math.max(vMax - vMin, 1e-10);
         return x0 + frac * w;
     }
 
+    /** Maps a value to a y pixel inside a band. The {@code (1.0 - frac)} inverts the axis, because screen y grows downward but graphs grow upward. */
     private double miniY(double val, double yMin, double yMax, double y0, double h) {
         double frac = (val - yMin) / Math.max(yMax - yMin, 1e-10);
         return y0 + (1.0 - frac) * h;
@@ -663,6 +694,7 @@ public final class GraphPanel extends Canvas {
         gc.strokeRect(MARGIN, MARGIN + 20, plotW, plotH);
     }
 
+    /** Draws the heading naming the active mode, above the plot area. */
     private void drawTitle(GraphicsContext gc, double plotW) {
         String title = switch (mode) {
             case ANGLE      -> "θ₁(t) — First Link Angle";
@@ -673,9 +705,9 @@ public final class GraphPanel extends Canvas {
             case BIFURCATION -> "Bifurcation Diagram — swept θ₁ initial angle";
             case ALL        -> ""; // render() returns before this is ever reached for ALL
         };
-        gc.setFont(Font.font("System", FontWeight.BOLD, 12));
+        gc.setFont(Font.font("System", FontWeight.BOLD, TITLE_FONT_SIZE));
         gc.setFill(Color.web("#C7C7D1"));
-        gc.fillText(title, MARGIN + 4, MARGIN + 14);
+        gc.fillText(title, MARGIN + 4, MARGIN + 16);
     }
 
     /**
@@ -686,7 +718,7 @@ public final class GraphPanel extends Canvas {
      */
     private void drawAxisTicks(GraphicsContext gc, double plotW, double plotH,
                                double tMin, double tMax, double yMin, double yMax) {
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", AXIS_FONT_SIZE));
         gc.setFill(Color.web("#8A8A96"));
 
         int gridN = 5;
@@ -695,7 +727,7 @@ public final class GraphPanel extends Canvas {
             double frac  = (double) i / gridN;
             double value = yMax - frac * (yMax - yMin); // frac=0 -> top -> yMax
             double sy    = MARGIN + 20 + frac * plotH;
-            gc.fillText(formatAxisValue(value), 3, sy + 3);
+            gc.fillText(formatAxisValue(value), 4, sy + 4);
         }
 
         // X-axis time labels, evenly spaced across the visible window.
@@ -703,10 +735,11 @@ public final class GraphPanel extends Canvas {
             double frac = (double) i / gridN;
             double t    = tMin + frac * (tMax - tMin);
             double sx   = MARGIN + frac * plotW;
-            gc.fillText(String.format("%.1fs", t), sx - 12, MARGIN + 20 + plotH + 14);
+            gc.fillText(String.format("%.1fs", t), sx - 16, MARGIN + 20 + plotH + 17);
         }
     }
 
+    /** Formats an axis tick, collapsing values that round to zero into a bare "0" rather than "-0.00" or "0.00". */
     private static String formatAxisValue(double v) {
         return (Math.abs(v) < 0.005) ? "0" : String.format("%.2f", v);
     }
@@ -722,22 +755,26 @@ public final class GraphPanel extends Canvas {
 
     // ---- Coordinate helpers ----
 
+    /** Maps a data value to an x pixel in the main plot area. The {@code max(..., 1e-10)} guards against a zero-width range dividing by zero. */
     private double toScreenX(double val, double vMin, double vMax, double plotW) {
         double frac = (val - vMin) / Math.max(vMax - vMin, 1e-10);
         return MARGIN + frac * plotW;
     }
 
+    /** Maps a data value to a y pixel in the main plot area. */
     private double toScreenY(double val, double yMin, double yMax, double plotH) {
         double frac = (val - yMin) / Math.max(yMax - yMin, 1e-10);
         return toScreenYFromFrac(frac, plotH);
     }
 
+    /** Converts a 0..1 fraction to a y pixel, flipping the axis and clamping to the plot rectangle so an out-of-range value cannot draw outside the frame. */
     private double toScreenYFromFrac(double frac, double plotH) {
         // Flip: frac=0 → bottom, frac=1 → top
         double sy = MARGIN + 20 + (1.0 - frac) * plotH;
         return Math.max(MARGIN + 20, Math.min(MARGIN + 20 + plotH, sy));
     }
 
+    /** The most recent sample, or {@code null} if none. The cast is safe — {@code data} is always the {@link ArrayDeque} declared above. */
     private double[] peekLast() {
         if (data.isEmpty()) return null;
         return ((ArrayDeque<double[]>) data).peekLast();

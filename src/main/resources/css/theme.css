@@ -66,26 +66,26 @@
 
 .eyebrow {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
     -fx-text-fill: -accent;
 }
 
 .app-title {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 34px;
+    -fx-font-size: 38px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
 }
 
 .app-tagline {
-    -fx-font-size: 14px;
+    -fx-font-size: 16px;
     -fx-text-fill: -ink-2;
 }
 
 .footer-text {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 10px;
+    -fx-font-size: 11px;
     -fx-text-fill: -ink-3;
 }
 
@@ -94,7 +94,7 @@
    simulation grid below. */
 .menu-utility-link {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11.5px;
+    -fx-font-size: 13px;
     -fx-text-fill: -ink-3;
     -fx-cursor: hand;
     -fx-padding: 4px 2px;
@@ -109,7 +109,7 @@
    competing with .app-title. */
 .menu-section-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
     -fx-letter-spacing: 0.14em;
     -fx-text-fill: -ink-3;
@@ -124,8 +124,8 @@
     -fx-border-radius: 4px;
     -fx-border-width: 1px;
     -fx-padding: 22px;
-    -fx-pref-width: 240px;
-    -fx-min-height: 160px;
+    -fx-pref-width: 264px;
+    -fx-min-height: 178px;
     -fx-cursor: hand;
 }
 
@@ -136,28 +136,28 @@
 
 .nav-card-index {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 10px;
+    -fx-font-size: 11px;
     -fx-font-weight: bold;
     -fx-letter-spacing: 0.1em;
     -fx-text-fill: -accent;
 }
 
 .nav-card-icon {
-    -fx-font-size: 26px;
+    -fx-font-size: 30px;
     -fx-text-fill: -accent;
 }
 
 .nav-card-title {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 16px;
+    -fx-font-size: 19px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
 }
 
 .nav-card-desc {
-    -fx-font-size: 12px;
+    -fx-font-size: 13.5px;
     -fx-text-fill: -ink-2;
-    -fx-max-width: 200px;
+    -fx-max-width: 220px;
 }
 
 /* A reserved-but-unbuilt simulation slot: dashed border (an empty exhibit
@@ -183,7 +183,7 @@
 
 .sim-title {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 13px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink-3;
     -fx-letter-spacing: 0.06em;
@@ -249,27 +249,27 @@
 
 .sidebar-header {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 14px;
+    -fx-font-size: 16px;
     -fx-font-weight: bold;
     -fx-text-fill: -accent;
     -fx-letter-spacing: 0.03em;
 }
 
 .sidebar-section-label {
-    -fx-font-size: 11px;
+    -fx-font-size: 12.5px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink-2;
 }
 
 .sidebar-value-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 12px;
     -fx-text-fill: -ink-2;
 }
 
 .sidebar-status-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 11px;
+    -fx-font-size: 12.5px;
     -fx-text-fill: -ink;
 }
 
@@ -283,14 +283,14 @@
 
 .sidebar-hint {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 9px;
+    -fx-font-size: 10.5px;
     -fx-text-fill: -ink-3;
 }
 
 .sidebar-button {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
-    -fx-font-size: 11px;
+    -fx-font-size: 12.5px;
     -fx-border-color: -line;
     -fx-border-width: 1px;
     -fx-border-radius: 2px;
@@ -307,30 +307,30 @@
     -fx-background-color: -bg-base;
     -fx-text-fill: -ink;
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 10px;
+    -fx-font-size: 11.5px;
     -fx-border-color: -line;
     -fx-border-radius: 2px;
     -fx-background-radius: 2px;
 }
 
-.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 10px; }
-.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 10px; }
+.sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 11.5px; }
+.sidebar-success-label { -fx-text-fill: -success; -fx-font-size: 11.5px; }
 
 .sidebar-warning-banner {
     -fx-background-color: -danger;
     -fx-text-fill: white;
-    -fx-font-size: 10px;
+    -fx-font-size: 11.5px;
     -fx-font-weight: bold;
     -fx-padding: 6 8;
     -fx-background-radius: 2px;
 }
 
-.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 11px; }
+.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 12.5px; }
 
 .link-delete-button {
     -fx-background-color: transparent;
     -fx-text-fill: -danger;
-    -fx-font-size: 10px;
+    -fx-font-size: 12px;
     -fx-cursor: hand;
 }
 
@@ -339,7 +339,7 @@
 .back-button, .primary-button {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
-    -fx-font-size: 11px;
+    -fx-font-size: 12.5px;
     -fx-background-radius: 2px;
     -fx-border-color: -line;
     -fx-border-radius: 2px;
@@ -361,13 +361,13 @@
 
 .stub-title {
     -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
-    -fx-font-size: 24px;
+    -fx-font-size: 27px;
     -fx-font-weight: bold;
     -fx-text-fill: -ink;
 }
 
 .stub-body {
-    -fx-font-size: 13px;
+    -fx-font-size: 14.5px;
     -fx-text-fill: -ink-2;
     -fx-wrap-text: true;
     -fx-max-width: 480px;

@@ -48,6 +48,7 @@ public final class Sonifier {
     private volatile boolean running = false;
     private Thread thread;
 
+    /** Opens an audio line, or degrades to an inert no-op if none is available — see the class javadoc for why this must never throw. */
     public Sonifier() {
         SourceDataLine openedLine;
         boolean ok;
@@ -65,6 +66,7 @@ public final class Sonifier {
         this.available = ok;
     }
 
+    /** Whether a real audio line was opened. False means every method here is a silent no-op. */
     public boolean isAvailable() { return available; }
 
     /** Sets the tone's frequency in Hz. Safe to call from any thread, at any rate — see the class javadoc. */
@@ -72,6 +74,7 @@ public final class Sonifier {
         this.frequencyHz = Math.max(20.0, Math.min(4000.0, hz));
     }
 
+    /** Starts the synthesis thread. {@code synchronized} and idempotent, so a double-click cannot spawn two threads writing to one line. */
     public synchronized void start() {
         if (!available || running) return;
         running = true;
@@ -81,6 +84,7 @@ public final class Sonifier {
         thread.start();
     }
 
+    /** Stops synthesis and flushes any buffered audio. Joins with a timeout so a stuck audio device cannot hang the caller indefinitely. */
     public synchronized void stop() {
         if (!available || !running) return;
         running = false;
@@ -91,6 +95,17 @@ public final class Sonifier {
         line.stop();
     }
 
+    /**
+     * The audio thread's loop: fills a buffer with sine samples and writes it
+     * to the sound card, forever, until stopped.
+     *
+     * <p><b>Phase accumulates and is never reset</b>, even as the frequency
+     * changes — restarting the wave mid-cycle produces an audible click.
+     * Each 16-bit sample is split into two bytes by hand because the format
+     * is big-endian PCM. {@code line.write} blocks when the card's buffer is
+     * full, which is what naturally paces this loop to real time without any
+     * explicit sleep.
+     */
     private void synthesize() {
         byte[] buffer = new byte[BUFFER_FRAMES * 2]; // 16-bit mono => 2 bytes/frame
         double phase = 0.0;

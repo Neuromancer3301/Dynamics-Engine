@@ -52,12 +52,14 @@ public final class SettingsController implements Initializable, Navigable {
         fontScaleBox.setOnAction(e -> ThemeManager.getInstance().setFontScale(scaleForLabel(fontScaleBox.getValue())));
     }
 
+    /** Maps a stored numeric scale back to its dropdown label, so the picker opens showing the value actually in effect. */
     private static String labelForScale(double scale) {
         if (scale >= 1.2) return SCALE_XLARGE;
         if (scale >= 1.1) return SCALE_LARGE;
         return SCALE_NORMAL;
     }
 
+    /** Maps a dropdown label to the numeric scale factor it represents. */
     private static double scaleForLabel(String label) {
         if (SCALE_XLARGE.equals(label)) return 1.2;
         if (SCALE_LARGE.equals(label))  return 1.1;
@@ -85,6 +87,7 @@ public final class SettingsController implements Initializable, Navigable {
         router.back();
     }
 
+    /** Updates the theme caption and the toggle button's text so the button always names the theme it will switch TO, not the current one. */
     private void refreshThemeLabel() {
         Theme current = ThemeManager.getInstance().getCurrent();
         currentThemeLabel.setText("Current theme: " + current.name().toLowerCase());

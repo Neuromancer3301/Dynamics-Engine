@@ -81,6 +81,7 @@ public final class LinkEditorPanel extends VBox {
     private Supplier<Double> gravitySupplier = () -> 9.81;
     private Supplier<Double> speedSupplier   = () -> 1.0;
 
+    /** Builds the whole editor: preset picker, save/load, the text parser, the link rows, and the apply button. */
     public LinkEditorPanel() {
         super(8);
         setPadding(new Insets(10, 0, 4, 0));
@@ -197,10 +198,12 @@ public final class LinkEditorPanel extends VBox {
         this.speedSupplier   = speedSupplier;
     }
 
+    /** Registers the callback that receives a validated config whenever the user applies, picks a preset, loads a file, or uses the text parser. */
     public void setOnApply(Consumer<PendulumConfig> onApply) {
         this.onApply = onApply;
     }
 
+    /** Seeds a newly added link from the last row's length, so extending a chain keeps a consistent look instead of jumping to a default size. */
     private double[] defaultsFromLastRow() {
         if (rows.isEmpty()) return new double[]{DEFAULT_NEW_LENGTH, DEFAULT_NEW_MASS, DEFAULT_NEW_ANGLE};
         LinkRow last = rows.get(rows.size() - 1);
@@ -211,6 +214,7 @@ public final class LinkEditorPanel extends VBox {
         }
     }
 
+    /** Appends one editable link row, refusing past {@link #maxLinks} with an inline explanation rather than silently ignoring the click. */
     private void addRow(double[] initialRadians) {
         if (rows.size() >= maxLinks) {
             showError("Maximum of " + maxLinks + " links — this machine's own measured real-time limit.");
@@ -225,6 +229,7 @@ public final class LinkEditorPanel extends VBox {
         clearError();
     }
 
+    /** Deletes a link row, refusing to remove the last one — a zero-link chain is not a valid {@link PendulumConfig}. */
     private void removeRow(LinkRow row) {
         if (rows.size() <= 1) {
             showError("At least one link is required.");
@@ -236,6 +241,7 @@ public final class LinkEditorPanel extends VBox {
         clearError();
     }
 
+    /** Re-labels every row #1..#N after an insertion or deletion, so the visible numbering always matches the actual link indices. */
     private void renumberRows() {
         for (int i = 0; i < rows.size(); i++) rows.get(i).setIndex(i + 1);
     }
@@ -260,12 +266,17 @@ public final class LinkEditorPanel extends VBox {
         columnHints.setText(columnHintsText());
     }
 
+    /** Radians (the internal unit) to whatever unit is currently displayed. */
     private double radiansToDisplay(double radians) { return useDegrees ? Math.toDegrees(radians) : radians; }
+    /** Displayed unit back to radians. Every value leaving this panel goes through here, so the rest of the app only ever sees radians. */
     private double displayToRadians(double display)  { return useDegrees ? Math.toRadians(display) : display; }
 
+    /** Text for the unit-toggle button. */
     private String angleUnitLabel()  { return useDegrees ? "θ: deg" : "θ: rad"; }
+    /** Column header above the rows, naming the current angle unit so a bare number is never ambiguous. */
     private String columnHintsText() { return "       L        m        θ (" + (useDegrees ? "deg" : "rad") + ")"; }
 
+    /** Validates and hands a new config to {@link #onApply}. Does nothing if validation failed — {@link #buildConfigFromRows} has already shown why. */
     private void applyChanges() {
         PendulumConfig newConfig = buildConfigFromRows();
         if (newConfig == null) return; // buildConfigFromRows already showed the error
@@ -310,6 +321,7 @@ public final class LinkEditorPanel extends VBox {
         }
     }
 
+    /** Validates, then writes to a user-chosen {@code .pendulum} file. Validation first, deliberately: never write a file that would fail on load. */
     private void handleSave() {
         PendulumConfig config = buildConfigFromRows();
         if (config == null) return;
@@ -331,6 +343,7 @@ public final class LinkEditorPanel extends VBox {
         }
     }
 
+    /** Reads a user-chosen scenario file, repopulates the rows, and applies it immediately. Malformed files surface as an inline error, never a crash. */
     private void handleLoad() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Load Scenario");
@@ -353,6 +366,7 @@ public final class LinkEditorPanel extends VBox {
         }
     }
 
+    /** Parses one numeric field, returning {@code null} and showing a named error on failure. {@code label} is the human-readable field name used in that message. */
     private Double parseField(TextField field, String label) {
         try {
             double value = Double.parseDouble(field.getText().trim());
@@ -373,6 +387,7 @@ public final class LinkEditorPanel extends VBox {
         return (display == null) ? null : displayToRadians(display);
     }
 
+    /** Shows a red inline error. {@code setAll} replaces the style class outright, so an error never renders with leftover success styling. */
     private void showError(String message) {
         errorLabel.getStyleClass().setAll("sidebar-error-label");
         errorLabel.setText(message);
@@ -388,11 +403,13 @@ public final class LinkEditorPanel extends VBox {
         errorLabel.setManaged(true);
     }
 
+    /** Hides the message row. Also un-manages it so it stops occupying vertical space rather than leaving a gap. */
     private void clearError() {
         errorLabel.setVisible(false);
         errorLabel.setManaged(false);
     }
 
+    /** Formats a value for display in a field, trimming trailing zeros so "1.0" doesn't read as "1.000000". */
     private static String formatNumber(double value) {
         return (Math.abs(value - Math.rint(value)) < 1e-9)
                 ? String.valueOf((long) value)
@@ -411,10 +428,11 @@ public final class LinkEditorPanel extends VBox {
         final TextField angle;
         final Button deleteButton;
 
+        /** Builds one row's controls. {@code angleDisplay} is already in the current display unit, not radians. */
         LinkRow(int index, double length, double mass, double angleDisplay) {
             indexLabel = new Label("#" + index);
             indexLabel.getStyleClass().add("sidebar-hint");
-            indexLabel.setMinWidth(20);
+            indexLabel.setMinWidth(24);
 
             this.length = smallField(length);
             this.mass   = smallField(mass);
@@ -447,10 +465,11 @@ public final class LinkEditorPanel extends VBox {
             angle.setAccessibleText("Link " + index + " initial angle");
         }
 
+        /** One narrow numeric cell in a link row. */
         private static TextField smallField(double value) {
             TextField field = new TextField(formatNumber(value));
             field.getStyleClass().add("sidebar-numeric-field");
-            field.setPrefWidth(50);
+            field.setPrefWidth(58);
             return field;
         }
     }
@@ -465,6 +484,7 @@ public final class LinkEditorPanel extends VBox {
         return l;
     }
 
+    /** Small wrapped explanatory text. */
     private static Label hintLabel(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("sidebar-hint");
@@ -472,12 +492,14 @@ public final class LinkEditorPanel extends VBox {
         return l;
     }
 
+    /** A compact themed button used throughout this panel. */
     private static Button smallButton(String text) {
         Button b = new Button(text);
         b.getStyleClass().add("sidebar-button");
         return b;
     }
 
+    /** A divider between sections. New instance per call — a node can occupy only one place in the scene graph. */
     private static Separator sep() {
         Separator s = new Separator();
         s.getStyleClass().add("sidebar-separator");

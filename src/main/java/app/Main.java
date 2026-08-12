@@ -16,13 +16,15 @@ import navigation.SceneRouter;
  */
 public final class Main extends Application {
 
+    /** JavaFX calls this on the Application Thread once the toolkit is ready. */
     @Override
     public void start(Stage primaryStage) {
         SceneRouter router = new SceneRouter(primaryStage);
         router.navigate(Route.MAIN_MENU);
         primaryStage.show();
     }
-
+    
+    /** Standard JVM entry point; hands straight over to the JavaFX launcher. */
     public static void main(String[] args) {
         launch(args);
     }

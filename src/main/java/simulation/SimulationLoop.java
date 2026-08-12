@@ -94,6 +94,10 @@ public final class SimulationLoop implements Runnable {
 
     private Thread thread;
 
+    /**
+     * Builds the loop and immediately publishes the engine's initial state,
+     * so the UI has something to render before the thread is even started.
+     */
     public SimulationLoop(PendulumConfig config, StateBuffer buffer) {
         this.config = config;
         this.engine = new PhysicsEngine(config);
@@ -102,6 +106,12 @@ public final class SimulationLoop implements Runnable {
         buffer.write(engine.getState());
     }
 
+    /**
+     * Starts the physics thread. Marked <b>daemon</b> so it cannot keep the
+     * JVM alive after the window closes — a non-daemon thread spinning in
+     * {@link #run} would leave the process running invisibly forever.
+     * Named "PhysicsThread" so it is identifiable in a debugger or profiler.
+     */
     public void start() {
         running = true;
         thread  = new Thread(this, "PhysicsThread");
@@ -109,11 +119,23 @@ public final class SimulationLoop implements Runnable {
         thread.start();
     }
 
+    /**
+     * Signals the loop to exit and interrupts the thread so it wakes from
+     * its {@code Thread.sleep} immediately rather than after the remaining
+     * millisecond. Called when leaving the simulation screen.
+     */
     public void stop() { running = false; if (thread != null) thread.interrupt(); }
 
+    /** Freezes stepping without stopping the thread; the loop keeps spinning and stays responsive to commands. */
     public void setPaused(boolean paused)       { this.paused = paused; }
+
+    /** Whether stepping is currently frozen — read by the Space-key shortcut to toggle. */
     public boolean isPaused()                   { return paused; }
+
+    /** Sets how fast simulated time advances relative to wall-clock time. Clamped above zero so the loop can never stall. */
     public void setSpeedMultiplier(double s)    { this.speed  = Math.max(0.01, s); }
+
+    /** Current speed multiplier — pulled by the link editor at apply time so a slider change is never silently reverted. */
     public double getSpeedMultiplier()          { return speed; }
 
     /**
@@ -132,6 +154,8 @@ public final class SimulationLoop implements Runnable {
      * irreversibility and chaotic sensitivity, not a bug to hide.
      */
     public void setTimeReversed(boolean reversed) { this.timeReversed = reversed; }
+
+    /** Whether the simulation is currently integrating backward. */
     public boolean isTimeReversed()               { return timeReversed; }
 
     /** Current gravity, read from whichever engine is live right now. Safe cross-thread — see the field's javadoc. */
@@ -148,6 +172,7 @@ public final class SimulationLoop implements Runnable {
         submitRebuild(old -> new PhysicsEngine(newConfig));
     }
 
+    /** Queues a gravity-magnitude change. Goes through the command queue rather than a direct setter so it lands between steps, never mid-step. */
     public void setGravity(double g) { submit(e -> e.setGravity(g)); }
 
     /** Queues a gravity-direction change — see {@link PhysicsEngine#setGravityAngle}. */
@@ -155,6 +180,7 @@ public final class SimulationLoop implements Runnable {
 
     /** Current gravity direction, read from whichever engine is live right now. Safe cross-thread — see {@link #engine}'s javadoc. */
     public double getGravityAngle() { return engine.getGravityAngle(); }
+    /** Queues a reset to the configured initial angles at rest. */
     public void reset()              { submit(new ResetCommand()); }
 
     /** Swaps the active integration strategy — see {@link Integrator}. A {@code SimCommand}: mutates the current engine, no rebuild needed. */
@@ -162,10 +188,14 @@ public final class SimulationLoop implements Runnable {
 
     /** Activates the butterfly-effect ensemble; {@code null} deactivates it. See {@link Ensemble}. */
     public void setEnsemble(Ensemble ensemble) { this.ensemble = ensemble; }
+
+    /** The active ensemble, or {@code null}. Read each frame by the renderer to draw ghost chains. */
     public Ensemble getEnsemble()              { return ensemble; }
 
     /** Activates A/B compare with a fully-built "B" engine; {@code null} deactivates it. See {@link #compareEngine}. */
     public void setCompareEngine(PhysicsEngine compareEngine) { this.compareEngine = compareEngine; }
+
+    /** The active A/B "B" engine, or {@code null}. Read each frame by the renderer to draw the comparison chain. */
     public PhysicsEngine getCompareEngine()                   { return compareEngine; }
 
     /**
@@ -195,14 +225,50 @@ public final class SimulationLoop implements Runnable {
         });
     }
 
+    /**
+     * <b>The physics thread's main loop.</b> Runs continuously from {@link
+     * #start} until {@link #stop}, and is the only place the engine is ever
+     * advanced or mutated.
+     *
+     * <p><b>Each iteration does four things, in this order:</b>
+     * <ol>
+     *   <li><b>Drain the queues</b> — apply any structural rebuilds, then
+     *       any pending commands. Doing this at the TOP of the iteration is
+     *       what guarantees a mutation can never land midway through a
+     *       partially-computed integration step.</li>
+     *   <li><b>Measure elapsed wall-clock time</b> since the last iteration,
+     *       capped at {@link #MAX_WALL_DT}.</li>
+     *   <li><b>Advance the simulation</b> by that much simulated time,
+     *       subdivided into fixed {@link #FIXED_DT} steps.</li>
+     *   <li><b>Publish</b> the new state for the renderer.</li>
+     * </ol>
+     *
+     * <p><b>Why fixed-timestep subdivision instead of one variable step?</b>
+     * Numerical integrators become inaccurate — and eventually unstable —
+     * as the step grows. Rather than take one big step when a frame runs
+     * long, the loop takes several small ones of a known-good size. This
+     * keeps accuracy independent of machine speed and frame timing.
+     *
+     * <p><b>Why {@code MAX_WALL_DT} exists.</b> If the app is paused by the
+     * OS, or the window is dragged, or a breakpoint is hit, the elapsed
+     * time could be many seconds. Without the cap the loop would try to
+     * catch up all at once, freezing the app — the classic "spiral of
+     * death". Capping it means the simulation simply loses that time
+     * instead, which is the right trade.
+     *
+     * <p>The trailing {@code Thread.sleep(1)} yields the CPU so this loop
+     * does not spin at 100% on one core.
+     */
     @Override
     public void run() {
         long lastNanos = System.nanoTime();
         while (running) {
+            // (1) Apply queued mutations BEFORE stepping — never mid-step.
             boolean changed = drainRebuilds();
             changed |= drainCommands();
-            if (changed) buffer.write(engine.getState());
+            if (changed) buffer.write(engine.getState()); // publish so the UI sees the edit immediately, even while paused
 
+            // (2) How much real time passed? Capped to avoid a catch-up spiral.
             long now      = System.nanoTime();
             double wallDt = Math.min((now - lastNanos) / 1_000_000_000.0, MAX_WALL_DT);
             lastNanos     = now;
@@ -222,6 +288,11 @@ public final class SimulationLoop implements Runnable {
 
                 buffer.write(engine.getState());
             } else if (!paused && wallDt > 0) {
+                // (3) Normal advance. Convert real time to simulated time via
+                // the speed multiplier, then subdivide into however many
+                // fixed-size steps that needs — this is what keeps accuracy
+                // independent of frame rate. abs() because simDt is negative
+                // when running in reverse, and a step COUNT must be positive.
                 double simDt = direction * wallDt * speed;
                 int    steps = Math.max(1, (int) Math.ceil(Math.abs(simDt) / FIXED_DT));
                 double dt    = simDt / steps;

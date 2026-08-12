@@ -29,20 +29,29 @@ public final class HistoryBuffer {
     private final int capacity;
     private final Deque<SimState> samples = new ArrayDeque<>();
 
+    /** @param capacity maximum snapshots retained; the oldest is discarded once full. */
     public HistoryBuffer(int capacity) {
         this.capacity = capacity;
     }
 
+    /**
+     * Appends a snapshot, evicting the oldest once {@link #capacity} is
+     * exceeded — the rolling-window behaviour that bounds memory. Null is
+     * ignored so the caller need not guard against the very first frames,
+     * before the physics thread has published anything.
+     */
     public void record(SimState state) {
         if (state == null) return;
-        samples.addLast(state);
-        while (samples.size() > capacity) samples.removeFirst();
+        samples.addLast(state);                                   // newest at the tail
+        while (samples.size() > capacity) samples.removeFirst();   // drop the oldest
     }
 
+    /** Discards all history. Called on reset and after a structural rebuild, where old samples describe a chain that no longer exists. */
     public void clear() {
         samples.clear();
     }
 
+    /** Number of snapshots currently retained — drives the history slider's maximum. */
     public int size() {
         return samples.size();
     }

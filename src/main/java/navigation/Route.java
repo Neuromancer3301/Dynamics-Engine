@@ -21,10 +21,12 @@ public enum Route {
         this.title = title;
     }
 
+    /** Classpath location of this screen's FXML file. */
     public String fxmlPath() {
         return fxmlPath;
     }
 
+    /** Human-readable name shown in the window title bar. */
     public String title() {
         return title;
     }

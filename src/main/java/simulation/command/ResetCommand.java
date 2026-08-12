@@ -13,6 +13,7 @@ import physics.PhysicsEngine;
  */
 public final class ResetCommand implements SimCommand {
 
+    /** Runs on the physics thread, between integration steps. */
     @Override
     public void apply(PhysicsEngine engine) {
         engine.reset();

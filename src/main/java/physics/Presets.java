@@ -15,6 +15,7 @@ public final class Presets {
         @Override public String toString() { return name; } // so a plain ComboBox<Preset> displays the name
     }
 
+    /** Every preset, in the order shown in the picker. Returned as a fresh array so a caller cannot reorder the shared list. */
     public static Preset[] all() {
         return new Preset[] {
             new Preset("Classic Double Pendulum", classicDouble()),

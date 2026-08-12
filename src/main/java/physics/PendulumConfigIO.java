@@ -81,6 +81,7 @@ public final class PendulumConfigIO {
         }
     }
 
+    /** Serialises a config to the five-field JSON text written by {@link #save}. Hand-built rather than templated — the schema is fixed and tiny. */
     static String toJson(PendulumConfig config) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
@@ -94,6 +95,7 @@ public final class PendulumConfigIO {
         return sb.toString();
     }
 
+    /** Formats a double array as a JSON array literal, e.g. {@code [1.0, 0.8, 0.6]}. */
     private static String arrayJson(double[] values) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < values.length; i++) {
@@ -132,16 +134,24 @@ public final class PendulumConfigIO {
         }
     }
 
+    /** Reads an integer field. JSON has only one number type, so this narrows the parsed {@code Double}. */
     private static int requireInt(Map<String, Object> obj, String key) throws IOException {
         return (int) requireDouble(obj, key);
     }
 
+    /** Reads a required numeric field, failing with a named error if it is absent or of the wrong type. */
     private static double requireDouble(Map<String, Object> obj, String key) throws IOException {
         Object v = obj.get(key);
         if (!(v instanceof Double d)) throw new IOException("Missing or invalid field: " + key);
         return d;
     }
 
+    /**
+     * Reads a required numeric array and verifies its length matches the
+     * declared {@code n}. This cross-check matters: a file claiming
+     * {@code n = 3} but supplying two lengths would otherwise produce an
+     * array-index crash deep inside the engine instead of a clear message here.
+     */
     private static double[] requireDoubleArray(Map<String, Object> obj, String key, int expectedLength) throws IOException {
         Object v = obj.get(key);
         if (!(v instanceof List<?> list)) throw new IOException("Missing or invalid field: " + key);

@@ -35,6 +35,12 @@ public final class BifurcationSweep {
 
     private BifurcationSweep() {}
 
+    /**
+     * One completed sweep. Parallel collections: {@code paramValues[c]} is
+     * the swept initial angle for column {@code c}, and {@code samples.get(c)}
+     * holds every sample collected at that value — the vertical smear of
+     * dots the diagram draws in that column.
+     */
     public record Result(double[] paramValues, List<double[]> samples) {}
 
     /**

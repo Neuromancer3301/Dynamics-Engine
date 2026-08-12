@@ -19,6 +19,13 @@ public enum IntegratorType {
     SYMPLECTIC_EULER,
     VELOCITY_VERLET;
 
+    /**
+     * Builds a fresh integrator of this type, sized for a {@code stateSize}-
+     * length state vector (2n for an n-link chain). A new instance is
+     * required on every structural rebuild because each integrator's
+     * scratch buffers are allocated once at a fixed size — see this enum's
+     * class javadoc.
+     */
     public Integrator create(int stateSize) {
         return switch (this) {
             case RK4              -> new Rk4Integrator(stateSize);

@@ -5,7 +5,10 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.RowConstraints?>
 <?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 
@@ -24,7 +27,32 @@
     </top>
 
     <center>
-        <HBox spacing="0" BorderPane.alignment="CENTER">
+        <!--
+            A GridPane with explicit percentages rather than an HBox: two
+            hgrow="ALWAYS" children split leftover space *equally*, which
+            is what pinned this to 50/50 before. Percentages express the
+            intended 60/40 ratio directly — the pendulum is the thing being
+            watched, and PendulumCanvas's render scale is width-limited in a
+            typical window (see its coordinate-mapping comment), so the
+            extra width becomes a visibly larger pendulum rather than
+            padding. Not pushed further than 60 because GraphPanel's axis
+            gutters (MARGIN) grew with its labels, and the plot area is
+            what's left over after subtracting them.
+        -->
+        <GridPane BorderPane.alignment="CENTER">
+            <columnConstraints>
+                <!--
+                    minWidth=0 for the same reason the hosts below pin it:
+                    without it a column refuses to shrink past its content's
+                    minimum and pushes the layout off-screen.
+                -->
+                <ColumnConstraints percentWidth="60.0" minWidth="0.0"/>
+                <ColumnConstraints percentWidth="40.0" minWidth="0.0"/>
+            </columnConstraints>
+            <rowConstraints>
+                <RowConstraints vgrow="ALWAYS"/>
+            </rowConstraints>
+
             <!--
                 minWidth/prefWidth are pinned to 0 rather than left to the
                 default "size to children" computation. The host contains an
@@ -34,10 +62,12 @@
                 reintroduce the same overflow-off-screen failure mode.
             -->
             <StackPane fx:id="canvasHost" styleClass="canvas-host"
-                       minWidth="0.0" prefWidth="0.0" HBox.hgrow="ALWAYS"/>
+                       minWidth="0.0" prefWidth="0.0"
+                       GridPane.columnIndex="0" GridPane.rowIndex="0"/>
             <StackPane fx:id="graphHost" styleClass="canvas-host"
-                       minWidth="0.0" prefWidth="0.0" HBox.hgrow="ALWAYS"/>
-        </HBox>
+                       minWidth="0.0" prefWidth="0.0"
+                       GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+        </GridPane>
     </center>
 
     <right>

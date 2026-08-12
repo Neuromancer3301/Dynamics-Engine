@@ -18,6 +18,7 @@ public enum Theme {
         this.styleClass = styleClass;
     }
 
+    /** The CSS class this theme maps to in {@code theme.css}, e.g. {@code theme-dark}. */
     public String styleClass() {
         return styleClass;
     }

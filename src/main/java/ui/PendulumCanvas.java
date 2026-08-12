@@ -54,6 +54,19 @@ public final class PendulumCanvas extends Canvas {
     private static final double ROD_WIDTH    = 2.5;
     private static final double PIVOT_RADIUS = 6.0;
 
+    // Canvas-drawn text. Named rather than inlined because the overlay
+    // boxes' width/height and per-line baselines are derived from them (see
+    // drawBobInspector / drawInfoOverlay) — changing a size in one place
+    // without the other is exactly how text ends up clipped by its own
+    // background. These deliberately track theme.css's .sidebar-* sizes so
+    // Canvas text and styled chrome read at the same scale, even though
+    // JavaFX CSS can't reach a Canvas to enforce it.
+    private static final double LABEL_FONT_SIZE     = 11;  // scale bar, gravity handle, compare marker
+    private static final double INSPECTOR_FONT_SIZE = 12;
+    private static final double INSPECTOR_LINE_H    = 17;
+    private static final double OVERLAY_FONT_SIZE   = 13;
+    private static final double OVERLAY_LINE_H      = 18;
+
     // Bob radius is no longer a constant: it shrinks with N (so a wide chain
     // doesn't render as a solid caterpillar — the runtime N control makes
     // this a real, reachable case, not a hypothetical one) and varies per
@@ -190,10 +203,15 @@ public final class PendulumCanvas extends Canvas {
     private double gravityAngle = 0.0;
     private boolean draggingGravity = false;
 
+    /**
+     * @param width       initial canvas width (later bound to the host pane's width)
+     * @param height      initial canvas height (likewise)
+     * @param totalLength the chain's fully-extended reach, used to pick a render scale
+     */
     public PendulumCanvas(double width, double height, double totalLength) {
         super(width, height);
         this.totalLength = totalLength;
-        wireInteraction();
+        wireInteraction(); // attach the mouse handlers once, at construction
     }
 
     /** Registers the listener notified of grab/drag/release. {@code null} disables interaction. */
@@ -231,9 +249,13 @@ public final class PendulumCanvas extends Canvas {
         if (trailMode == TrailMode.OFF) clearTrail();
     }
 
+    /** Current trail mode — read by the sidebar to keep its button label in sync. */
     public TrailMode getTrailMode() { return trailMode; }
 
+    /** Enables colouring trail segments by speed instead of by link. See {@link #velocityColor}. */
     public void setVelocityTint(boolean on) { this.velocityTint = on; }
+
+    /** Whether velocity tinting is active. */
     public boolean isVelocityTint() { return velocityTint; }
 
     /** Swaps the per-bob color palette. See {@link #BOB_COLORS_COLORBLIND_SAFE}'s javadoc for why this replaces the whole set. */
@@ -279,10 +301,15 @@ public final class PendulumCanvas extends Canvas {
         }
 
         // ---- Coordinate mapping ----
-        // scale: fit full arm length in ~45% of canvas width (allows full swing)
-        this.scale  = Math.min(W * 0.44, H * 0.80) / Math.max(totalLength, 0.1);
+        // scale: the fully-extended arm spans min(W*0.46, H*0.84) px, so it
+        // fits whether laid out horizontally or vertically. The width term
+        // allows a full swing without clipping — at 0.46 the tip reaches
+        // 0.04..0.96 of the width from a centred pivot. The height term is
+        // bounded by the pivot sitting at 0.12*H, putting a straight-down
+        // tip at 0.96*H, which leaves room for the bob's own radius.
+        this.scale  = Math.min(W * 0.46, H * 0.84) / Math.max(totalLength, 0.1);
         this.pivotX = W / 2.0;
-        this.pivotY = H * 0.14;   // pivot near top-centre
+        this.pivotY = H * 0.12;   // pivot near top-centre
         this.bobBaseRadius = baseRadiusForN(state.getN());
 
         ensureTrailCapacity(state.getN());
@@ -314,6 +341,7 @@ public final class PendulumCanvas extends Canvas {
         drawBobInspector(gc, state, inspected, scale, pivotX, pivotY, W);
     }
 
+    /** Erases every link's trail history. Called on reset and after a structural rebuild, where old points describe a chain that no longer exists. */
     public void clearTrail() { trails.forEach(Deque::clear); }
 
     /**
@@ -348,6 +376,7 @@ public final class PendulumCanvas extends Canvas {
         while (trails.size() < n) trails.add(new ArrayDeque<>());
     }
 
+    /** Appends this frame's trail point(s) — one for the tip, or one per link, depending on {@link #trailMode}. */
     private void recordTrailPoints(SimState state, double scale, double pivotX, double pivotY) {
         if (reducedMotion || trailMode == TrailMode.OFF || state.getN() == 0) return;
 
@@ -358,6 +387,16 @@ public final class PendulumCanvas extends Canvas {
         }
     }
 
+    /**
+     * Stores one trail point as {@code {screenX, screenY, |angularVelocity|}}.
+     *
+     * <p>Note the points are stored in SCREEN coordinates, already
+     * transformed — so drawing a trail is a straight line-to-line walk with
+     * no per-point maths. The trade-off is that a resize leaves older points
+     * at their old scale until they age out, which is imperceptible at 600
+     * points and far cheaper than re-transforming every point every frame.
+     * The speed is carried along so velocity tinting needs no second lookup.
+     */
     private void recordTrailPoint(SimState state, int link, double scale, double pivotX, double pivotY) {
         double tx = pivotX + state.bobX[link] * scale;
         double ty = pivotY - state.bobY[link] * scale; // flip Y (screen Y down)
@@ -431,6 +470,7 @@ public final class PendulumCanvas extends Canvas {
         });
     }
 
+    /** True if the point is within {@link #GRAVITY_HANDLE_HIT_RADIUS} of the gravity handle. Squared-distance comparison avoids a needless sqrt. */
     private boolean hitTestGravityHandle(double screenX, double screenY) {
         double dx = screenX - gravityHandleX(pivotX), dy = screenY - gravityHandleY(pivotY);
         double r = GRAVITY_HANDLE_HIT_RADIUS;
@@ -442,7 +482,17 @@ public final class PendulumCanvas extends Canvas {
         return Math.atan2(screenX - pivotX, screenY - pivotY);
     }
 
-    /** Returns the topmost bob under the given screen point, or -1. Later-drawn (higher-index) bobs win on overlap. */
+    /**
+     * Returns the index of the bob under the given screen point, or −1 for
+     * empty space.
+     *
+     * <p>Iterates <b>backwards</b> from the tip on purpose: bobs are drawn
+     * in ascending order, so later ones appear on top. Searching in reverse
+     * means the visually topmost bob is found first, matching what the user
+     * sees when two overlap. The target is padded by {@link #HIT_RADIUS_PAD}
+     * because hitting an exact 4-pixel circle with a mouse is unpleasant.
+     * Uses squared distance to avoid a square root per bob per event.
+     */
     private int hitTestBob(double screenX, double screenY) {
         if (lastState == null) return -1;
         for (int i = lastState.getN() - 1; i >= 0; i--) {
@@ -469,11 +519,29 @@ public final class PendulumCanvas extends Canvas {
     }
 
     /**
-     * Converts a screen point into the angle {@code linkIndex} would need to
-     * point its bob there, measured from that link's parent joint (the
-     * previous bob, or the pivot for link 0) — the inverse of the forward
-     * mapping in {@link physics.PhysicsEngine#getState()}
-     * ({@code x = L sin(theta), y = -L cos(theta)}).
+     * <b>The inverse coordinate transform — this is what makes dragging
+     * possible.</b>
+     *
+     * <p>Rendering goes one way: angle → screen position. Dragging needs the
+     * other: the user gives a screen position, and we must work out what
+     * angle would put the bob there. This method is that inverse.
+     *
+     * <p><b>Three steps:</b>
+     * <ol>
+     *   <li><b>Find the parent joint.</b> A link's angle is measured from
+     *       where it is attached — the previous bob, or the pivot for link 0
+     *       — not from the canvas origin.</li>
+     *   <li><b>Convert to world units.</b> Subtract the parent's position to
+     *       get a relative offset, divide by {@code scale} to undo the
+     *       zoom, and negate y to undo the screen flip (screen y grows
+     *       downward, world y grows upward).</li>
+     *   <li><b>Take the arctangent.</b> {@code atan2(dx, -dy)} — note the
+     *       deliberately unusual argument order and sign. It is exactly the
+     *       inverse of the forward mapping in {@link
+     *       physics.PhysicsEngine#getState()} ({@code x = L·sin(theta)},
+     *       {@code y = −L·cos(theta)}), which is why the convention
+     *       "theta = 0 means straight down" survives the round trip.</li>
+     * </ol>
      */
     private double angleFromScreen(int linkIndex, double screenX, double screenY) {
         double parentX, parentY;
@@ -489,6 +557,13 @@ public final class PendulumCanvas extends Canvas {
         return Math.atan2(worldDX, -worldDY);
     }
 
+    /**
+     * Records a timestamped angle sample during a drag, discarding anything
+     * older than {@link #FLING_WINDOW_NANOS}. This rolling window is what
+     * {@link #estimateAngularVelocity} differentiates to produce a fling —
+     * keeping it short means the throw reflects the motion just before
+     * release, not the whole drag.
+     */
     private void recordDragSample(double angle) {
         long now = System.nanoTime();
         dragSamples.addLast(new double[]{now, angle});
@@ -507,6 +582,14 @@ public final class PendulumCanvas extends Canvas {
         return wrapDelta(last[1] - first[1]) / dt;
     }
 
+    /**
+     * Normalises an angle DIFFERENCE into (−π, π].
+     *
+     * <p>Essential for the fling calculation: if a drag crosses the ±π
+     * wrap-around boundary, the raw difference is about 2π (a full turn)
+     * even though the bob barely moved. Without this, releasing near that
+     * boundary would launch the bob at an enormous fictitious speed.
+     */
     private static double wrapDelta(double delta) {
         while (delta >  Math.PI) delta -= 2 * Math.PI;
         while (delta < -Math.PI) delta += 2 * Math.PI;
@@ -596,11 +679,12 @@ public final class PendulumCanvas extends Canvas {
         gc.setLineWidth(1.0);
         gc.strokeOval(prevX - r, prevY - r, r * 2, r * 2);
 
-        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, 9));
+        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, LABEL_FONT_SIZE));
         gc.setFill(compareColor);
         gc.fillText("B", prevX + r + 3, prevY + 3);
     }
 
+    /** Draws whichever trails the current mode calls for — the tip only, or every link in its own colour. */
     private void drawTrails(GraphicsContext gc, int n) {
         if (trailMode == TrailMode.OFF) return;
 
@@ -614,6 +698,13 @@ public final class PendulumCanvas extends Canvas {
         }
     }
 
+    /**
+     * Draws one trail as a series of short segments whose alpha and width
+     * both ramp up with age index — so the path fades out behind the bob
+     * and thickens toward it, reading as motion rather than as a static
+     * line. Per-segment styling is why this is a loop of {@code strokeLine}
+     * calls rather than one {@code strokePolyline}.
+     */
     private void drawOneTrail(GraphicsContext gc, Deque<double[]> trail, Color color) {
         if (trail.size() < 2) return;
 
@@ -680,7 +771,7 @@ public final class PendulumCanvas extends Canvas {
         gc.strokeLine(barX + barPx, barY - 4, barX + barPx, barY + 4);
 
         gc.setFill(Color.web("#8A8A94"));
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", LABEL_FONT_SIZE));
         gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
         String label = (referenceLength == Math.floor(referenceLength))
                 ? String.format("%d m", (int) referenceLength)
@@ -691,6 +782,10 @@ public final class PendulumCanvas extends Canvas {
 
     /** Handle position for the current {@link #gravityAngle} — same (sin, cos) convention {@code render()} uses for every bob, at a fixed pixel radius instead of a scaled world length. */
     private double gravityHandleX(double pivotX) { return pivotX + GRAVITY_HANDLE_RADIUS * Math.sin(gravityAngle); }
+    // Note: +cos here, whereas bobs use -cos. The handle points ALONG gravity
+    // (downward at angle 0); a bob at angle 0 hangs down but is drawn from a
+    // pivot using screen coordinates where +y is down. Both are consistent
+    // with their own reference point.
     private double gravityHandleY(double pivotY) { return pivotY + GRAVITY_HANDLE_RADIUS * Math.cos(gravityAngle); }
 
     /**
@@ -719,7 +814,7 @@ public final class PendulumCanvas extends Canvas {
         gc.setLineWidth(1.0);
         gc.strokeOval(hx - 5, hy - 5, 10, 10);
 
-        gc.setFont(Font.font("Monospaced", 9));
+        gc.setFont(Font.font("Monospaced", LABEL_FONT_SIZE));
         gc.setFill(Color.web("#EA3F8C"));
         gc.fillText("g", hx + 8, hy + 3);
     }
@@ -738,6 +833,7 @@ public final class PendulumCanvas extends Canvas {
         return best;
     }
 
+    /** Draws the fixed anchor the chain hangs from: a shadowed disc with a crosshair, so the origin of the coordinate system is visually unambiguous. */
     private void drawPivot(GraphicsContext gc, double px, double py) {
         // Neutral, not accent: the pivot is structural (it never moves,
         // never carries live data), so it stays plain grey — the accent is
@@ -840,8 +936,12 @@ public final class PendulumCanvas extends Canvas {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && link < state.masses.length) ? state.masses[link] : Double.NaN;
 
-        gc.setFont(Font.font("Monospaced", 10));
-        double boxW = 176, boxH = 48;
+        // Box geometry is sized to the font, not fixed: the widest line
+        // ("θ=+0.000 rad  ω=+0.000 rad/s", 28 monospace chars) sets boxW,
+        // and the three baselines are one INSPECTOR_LINE_H apart. Bumping
+        // the font size alone would overflow a hardcoded box.
+        gc.setFont(Font.font("Monospaced", INSPECTOR_FONT_SIZE));
+        double boxW = 220, boxH = 62;
         double boxX = Math.min(bx + 14, canvasW - boxW - 4);
         double boxY = Math.max(by - boxH - 14, 4);
 
@@ -851,34 +951,41 @@ public final class PendulumCanvas extends Canvas {
         gc.setLineWidth(1.0);
         gc.strokeRoundRect(boxX, boxY, boxW, boxH, 3, 3);
 
+        double textY = boxY + 19;
         gc.setFill(Color.web("#FFFFFF"));
-        gc.fillText("Link #" + (link + 1), boxX + 8, boxY + 15);
+        gc.fillText("Link #" + (link + 1), boxX + 9, textY);
         gc.setFill(Color.web("#C7C7D1"));
         gc.fillText(String.format("θ=%+.3f rad  ω=%+.3f rad/s", state.angles[link], state.angularVelocities[link]),
-                boxX + 8, boxY + 30);
-        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength), boxX + 8, boxY + 44);
+                boxX + 9, textY + INSPECTOR_LINE_H);
+        gc.fillText(String.format("m=%.3f kg   L=%.3f m", mass, rodLength),
+                boxX + 9, textY + INSPECTOR_LINE_H * 2);
     }
 
+    /** Draws the always-on telemetry pill (time, total energy, KE/PE split) in the canvas's top-left corner. */
     private void drawInfoOverlay(GraphicsContext gc, SimState state, double W) {
-        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, 11));
+        // Same font-drives-geometry reasoning as drawBobInspector above.
+        gc.setFont(Font.font("Monospaced", FontWeight.NORMAL, OVERLAY_FONT_SIZE));
 
         // Semi-transparent pill background
         gc.setFill(Color.web("#000000", 0.45));
-        gc.fillRoundRect(8, 8, 190, 46, 3, 3);
+        gc.fillRoundRect(8, 8, 218, 62, 3, 3);
 
         // Live telemetry gets the accent — the same "one hue for anything
         // actively reporting a current value" rule as the tip trail and the
         // gravity handle.
+        double textY = 27;
         gc.setFill(Color.web("#EA3F8C"));
-        gc.fillText(String.format("t  = %7.2f s",   state.time),         14, 23);
-        gc.fillText(String.format("E  = %7.3f J",   state.totalEnergy),  14, 37);
+        gc.fillText(String.format("t  = %7.2f s",   state.time),        15, textY);
+        gc.fillText(String.format("E  = %7.3f J",   state.totalEnergy), 15, textY + OVERLAY_LINE_H);
         gc.fillText(String.format("KE = %6.3f  PE = %7.3f",
-                                   state.kineticEnergy, state.potentialEnergy), 14, 51);
+                                   state.kineticEnergy, state.potentialEnergy),
+                    15, textY + OVERLAY_LINE_H * 2);
     }
 
+    /** Shown for the brief window between the screen opening and the physics thread publishing its first state, instead of an empty canvas. */
     private void drawWaitingMessage(GraphicsContext gc, double W, double H) {
         gc.setFill(Color.web("#5C5C66", 0.85));
-        gc.setFont(Font.font("System", FontWeight.NORMAL, 14));
-        gc.fillText("Initialising physics engine...", W / 2 - 100, H / 2);
+        gc.setFont(Font.font("System", FontWeight.NORMAL, 16));
+        gc.fillText("Initialising physics engine...", W / 2 - 112, H / 2);
     }
 }

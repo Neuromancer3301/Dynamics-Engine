@@ -52,6 +52,20 @@ public final class PerformanceCalibrator {
         }
     }
 
+    /**
+     * Runs the actual benchmark and extrapolates a safe maximum N.
+     *
+     * <p><b>Why warm up first.</b> The JVM interprets bytecode initially and
+     * only compiles hot methods to native code after a few thousand
+     * executions. Timing before that finishes would measure the interpreter,
+     * not the real steady-state speed, and badly underestimate the machine.
+     *
+     * <p><b>Why extrapolate rather than measure every N.</b> The dominant
+     * cost per step is the Cholesky solve, which is O(N³). So if the machine
+     * manages some rate at the reference N, the rate at any other N follows
+     * by cube scaling — one benchmark answers for all N, instead of
+     * benchmarking dozens of sizes at startup.
+     */
     private static int calibrate() {
         PhysicsEngine engine = new PhysicsEngine(uniformConfig(REFERENCE_N));
 
@@ -70,6 +84,7 @@ public final class PerformanceCalibrator {
         return Math.max(MIN_SAFE_N, Math.min(ABSOLUTE_MAX_N, (int) Math.floor(maxN)));
     }
 
+    /** A neutral, uniform test chain for benchmarking — deliberately plain, since only the arithmetic cost matters, not the physics. */
     private static PendulumConfig uniformConfig(int n) {
         double[] lengths = new double[n], masses = new double[n], angles = new double[n];
         for (int i = 0; i < n; i++) {

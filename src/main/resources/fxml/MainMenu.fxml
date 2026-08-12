@@ -17,7 +17,7 @@
             </padding>
 
             <VBox styleClass="menu-header" spacing="6.0" HBox.hgrow="ALWAYS">
-                <Label styleClass="eyebrow" text="JAVAFX · RK4 · LAGRANGIAN MECHANICS"/>
+                
                 <Label styleClass="app-title" text="Dynamics Engine"/>
                 <Label styleClass="app-tagline"
                        text="An instrument for exploring chaotic dynamical systems in real time."/>

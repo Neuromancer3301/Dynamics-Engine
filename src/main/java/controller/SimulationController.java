@@ -194,6 +194,15 @@ public final class SimulationController implements Initializable, Navigable {
     // silently accumulate one extra copy every time this screen is revisited.
     private EventHandler<KeyEvent> keyHandler;
 
+        /**
+     * Builds the entire simulation screen. Called once by {@code FXMLLoader}
+     * after the FXML is parsed and {@code @FXML} fields are injected.
+     *
+     * <p>Assembly order: engine and loop, then the two canvases, then the
+     * sidebar panels, then callback wiring, then the render timer. Nothing
+     * is STARTED here — the physics thread and render loop only begin in
+     * {@link #onShow()}, so the screen consumes no CPU until it is visible.
+     */
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         PendulumConfig config = PendulumConfig.defaultConfig();
@@ -229,16 +238,19 @@ public final class SimulationController implements Initializable, Navigable {
         graphHost.getChildren().add(graphPanel);
 
         pendulumCanvas.setDragListener(new PendulumCanvas.DragListener() {
+                        /** Every bob is grabbable, so this always accepts. Returning false would let the canvas veto a drag. */
             @Override
             public boolean onGrab(int linkIndex) {
                 return true; // every rendered bob accepts a grab
             }
 
+                        /** While held: pin the link to the pointer's angle with ZERO velocity, so it follows the mouse instead of fighting it. */
             @Override
             public void onDrag(int linkIndex, double angle) {
                 simLoop.submit(e -> e.setLinkState(linkIndex, angle, 0.0));
             }
 
+                        /** On release: hand back the estimated fling velocity, so letting go mid-swing throws the bob rather than dropping it. */
             @Override
             public void onRelease(int linkIndex, double angle, double angularVelocity) {
                 simLoop.submit(e -> e.setLinkState(linkIndex, angle, angularVelocity));
@@ -377,6 +389,7 @@ public final class SimulationController implements Initializable, Navigable {
         simLoop.setCompareEngine(compareEngine);
     }
 
+    /** Starts or stops the audio tone. The render loop feeds it a frequency each frame while active. */
     private void setSonifyActive(boolean active) {
         sonifyActive = active;
         if (active) sonifier.start();
@@ -476,6 +489,22 @@ public final class SimulationController implements Initializable, Navigable {
         graphPanel.setMode(GraphPanel.Mode.COMPARISON);
     }
 
+    /**
+     * Creates the 60 fps render loop.
+     *
+     * <p>{@code AnimationTimer.handle()} is called by JavaFX once per screen
+     * refresh, on the UI thread. It reads whatever the physics thread last
+     * published — it never waits for it, which is what keeps rendering and
+     * physics independent.
+     *
+     * <p><b>Not everything runs every frame.</b> Work is spread across
+     * frames by counting them: the graph ingests and redraws every 2nd
+     * frame, the status text updates every 4th, history samples every 3rd.
+     * The pendulum itself redraws every frame, because that is the one thing
+     * a viewer would notice stuttering. This staggering is a deliberate
+     * budget: full-rate updates of all of it would waste time re-rendering
+     * text and charts far faster than anyone can read them.
+     */
     private AnimationTimer buildRenderTimer() {
         return new AnimationTimer() {
             @Override
@@ -566,12 +595,14 @@ public final class SimulationController implements Initializable, Navigable {
         return Math.log(separation / ENSEMBLE_EPSILON) / elapsed;
     }
 
+    /** Normalises an angle difference into (−π, π], so a separation measured across the wrap boundary isn't reported as nearly a full turn. */
     private static double wrapAngleDelta(double delta) {
         while (delta >  Math.PI) delta -= 2 * Math.PI;
         while (delta < -Math.PI) delta += 2 * Math.PI;
         return delta;
     }
 
+    /** Wired to the "← Menu" button in {@code Simulation.fxml}. */
     @FXML
     private void handleBack() {
         router.back();
@@ -582,6 +613,12 @@ public final class SimulationController implements Initializable, Navigable {
         this.router = router;
     }
 
+    /**
+     * Starts everything this screen owns: the physics thread, the render
+     * loop, and the keyboard shortcuts. Paired exactly with {@link #onHide}
+     * — anything started here must be stopped there, or it keeps running
+     * invisibly after the user navigates away.
+     */
     @Override
     public void onShow() {
         simLoop.start();
@@ -592,6 +629,14 @@ public final class SimulationController implements Initializable, Navigable {
         if (scene != null) scene.addEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
     }
 
+    /**
+     * Stops everything {@link #onShow} started. Every line here exists to
+     * prevent a specific leak: an orphaned physics thread, a render loop
+     * drawing an invisible canvas, a tone still playing, a background sweep
+     * computing a diagram nobody can see, and — because the {@code Scene}
+     * outlives this screen — a key filter that would otherwise accumulate
+     * one extra copy per visit.
+     */
     @Override
     public void onHide() {
         renderTimer.stop();

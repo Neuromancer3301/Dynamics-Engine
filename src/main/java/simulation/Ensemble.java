@@ -66,5 +66,6 @@ public final class Ensemble {
         return states;
     }
 
+    /** Number of copies in this ensemble. */
     public int size() { return members.size(); }
 }

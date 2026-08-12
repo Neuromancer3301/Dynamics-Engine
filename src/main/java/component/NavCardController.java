@@ -29,6 +29,7 @@ public final class NavCardController {
 
     private Runnable onActivate;
 
+    /** Wires hover, click, and keyboard activation once, at load. Content arrives later via {@link #configure}. */
     @FXML
     private void initialize() {
         root.setFocusTraversable(true);
@@ -79,10 +80,12 @@ public final class NavCardController {
         root.setDisable(true);
     }
 
+    /** Runs the configured action, if any. A coming-soon card has none — though it is also disabled, so this is a second line of defence. */
     private void activate() {
         if (onActivate != null) onActivate.run();
     }
 
+    /** Builds a short scale animation used for the hover grow/shrink effect. */
     private ScaleTransition scaleTransition(double target) {
         ScaleTransition t = new ScaleTransition(Duration.millis(120), root);
         t.setToX(target);

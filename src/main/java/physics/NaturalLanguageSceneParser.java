@@ -90,6 +90,7 @@ public final class NaturalLanguageSceneParser {
         return new PendulumConfig(n, lengths, masses, angles, gravity, fallback.getSpeedMultiplier());
     }
 
+    /** Finds a phrase like "5 links" / "3 pendulums" and clamps it to {@code [1, maxN]}. Falls back to the current count when nothing matches. */
     private static int parseLinkCount(String t, int fallbackN, int maxN) {
         Matcher m = LINK_COUNT.matcher(t);
         if (!m.find()) return fallbackN;
@@ -101,6 +102,11 @@ public final class NaturalLanguageSceneParser {
         }
     }
 
+    /**
+     * Resolves a starting angle. Named orientations are checked first
+     * ("horizontal", "vertical", "inverted"), then an explicit "N degrees".
+     * Order matters: named phrases are more specific, so they win.
+     */
     private static double parseAngle(String t, double fallbackAngle) {
         if (t.contains("horizontal")) return Math.PI / 2.0;
         if (t.contains("vertical") || t.contains("straight down") || t.contains("at rest")) return 0.0;
@@ -116,6 +122,11 @@ public final class NaturalLanguageSceneParser {
         return fallbackAngle;
     }
 
+    /**
+     * Resolves gravity. Named bodies (moon/mars/jupiter/earth) use real
+     * measured values rather than invented round numbers, then qualitative
+     * terms (zero/low/high), then an explicit numeric "gravity of N".
+     */
     private static double parseGravity(String t, double fallbackGravity) {
         if (t.contains("moon gravity") || t.contains("lunar gravity")) return GRAVITY_MOON;
         if (t.contains("mars gravity")) return GRAVITY_MARS;
