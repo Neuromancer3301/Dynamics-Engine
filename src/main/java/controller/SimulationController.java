@@ -18,6 +18,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -74,24 +75,25 @@ import java.util.logging.Logger;
  * read {@code getWidth()}/{@code getHeight()} fresh every frame.
  *
  * <p><b>Interaction:</b> grabbing and dragging a bob (wired below via {@link
- * PendulumCanvas.DragListener}) does not pause the simulation — each drag
- * event submits a {@code SimCommand} that overwrites just the grabbed
- * link's angle and zeroes its velocity, while the physics thread keeps
- * integrating every link, grabbed one included, in between those events.
- * Because the mass matrix couples every link's derivative to every other
- * link's angle, the rest of the chain visibly reacts to the forced one in
- * real time rather than sitting frozen — a standard "kinematic forcing"
- * technique for interactive physics, not a special case bolted onto the
- * integrator. Releasing submits one final command with an angular velocity
- * estimated from the last ~150ms of motion, producing the "fling", and
- * selects the dragged link (see {@link #setPaused} and {@link
- * PendulumCanvas.SelectionListener}).
+ * PendulumCanvas.DragListener}) doesn't itself pause the simulation — press
+ * already did that via selection (see below) — and each drag event submits a
+ * {@code SimCommand} that overwrites just the grabbed link's angle and
+ * zeroes its velocity, while the physics thread keeps integrating every
+ * link, grabbed one included, in between those events. Because the mass
+ * matrix couples every link's derivative to every other link's angle, the
+ * rest of the chain visibly reacts to the forced one in real time rather
+ * than sitting frozen — a standard "kinematic forcing" technique for
+ * interactive physics, not a special case bolted onto the integrator.
+ * Releasing submits one final command with an angular velocity estimated
+ * from the last ~150ms of motion, producing the "fling."
  *
- * <p><b>Selection (§7.1 of the UI overhaul spec):</b> completing a click or
- * click-drag-release on a bob selects it and pauses the simulation; picking
- * a different bob switches the selection without an intermediate resume;
- * resuming — from any cause, this button or the Space shortcut — always
- * clears the current selection. See {@link #setPaused}.
+ * <p><b>Selection (§7.1 of the UI overhaul spec, press-timing per round 3
+ * §4-a):</b> pressing a bob — left or right button, click or the start of a
+ * drag — selects it and pauses the simulation immediately, before any
+ * drag/double-click branching (see {@link PendulumCanvas.SelectionListener}
+ * and {@link #setPaused}); picking a different bob switches the selection
+ * without an intermediate resume; resuming — from any cause, this button or
+ * the Space shortcut — always clears the current selection.
  *
  * <p><b>Right-click length editing and double-click parameters (§7.3,
  * §7.4):</b> both are structural edits and are routed through the exact
@@ -209,6 +211,18 @@ public final class SimulationController implements Initializable, Navigable {
     // members with the right structure without re-deriving it from the UI.
     private PendulumConfig currentConfig;
 
+    // Round 3 §4-f: the shape Reset returns to — a preset pick, a file load,
+    // or the sidebar's own "Apply Changes" are deliberate "start fresh from
+    // here"s and move this baseline; the action-bar tools (length drag,
+    // parameter dialog, Add) stack on top of it without moving it. See
+    // applyStructuralEdit's two-arg overload.
+    private PendulumConfig originalConfig;
+
+    // Round 3 §4-e: which rail tool governs press/double-click behavior on
+    // the pendulum canvas. See buildActionRail/setActiveTool.
+    private enum RailTool { EDIT, ADD }
+    private RailTool activeTool = RailTool.EDIT;
+
     // physics.PhysicsEngine's constructor always starts with a fresh RK4
     // sized for its own N — an Integrator's scratch buffers are fixed-size,
     // so the previous selection can't just carry over a rebuild. Kept here
@@ -268,6 +282,7 @@ public final class SimulationController implements Initializable, Navigable {
     public void initialize(URL location, ResourceBundle resources) {
         PendulumConfig config = PendulumConfig.defaultConfig();
         currentConfig = config;
+        originalConfig = config;
         stateBuffer = new StateBuffer();
         simLoop = new SimulationLoop(config, stateBuffer);
 
@@ -347,14 +362,21 @@ public final class SimulationController implements Initializable, Navigable {
             }
         });
 
-        // §7.4
-        pendulumCanvas.setDoubleClickListener(this::showLinkParameterDialog);
+        // §7.4 / round 3 §4-e — which dialog opens depends on the active
+        // rail tool (Edit poses one link's parameters, Add inserts a new one).
+        pendulumCanvas.setDoubleClickListener(link -> {
+            if (activeTool == RailTool.ADD) showAddLinkDialog(link);
+            else showLinkParameterDialog(link);
+        });
 
         controlPanel = new ControlPanel();
+        // Round 3 §4-f: Reset rebuilds all the way back to the pre-stacking
+        // baseline, not just wherever currentConfig currently sits — a full
+        // rebuild, since Add may have changed N. applyStructuralEdit already
+        // clears initialEnergy/history/ensemble/compare/trails/selection, so
+        // nothing else needs repeating here.
         controlPanel.setOnResetCallback(() -> {
-            initialEnergy = null;
-            history.clear();
-            scrubbing = false;
+            if (originalConfig != null) applyStructuralEdit(originalConfig);
         });
         controlPanel.setOnEnsembleToggle(this::setEnsembleActive);
         controlPanel.setOnSonifyToggle(this::setSonifyActive);
@@ -382,7 +404,9 @@ public final class SimulationController implements Initializable, Navigable {
         linkEditorPanel = new LinkEditorPanel();
         linkEditorPanel.loadFrom(config);
         linkEditorPanel.setLiveParameterSuppliers(simLoop::getGravity, simLoop::getSpeedMultiplier);
-        linkEditorPanel.setOnApply(this::applyStructuralEdit);
+        // A preset/file load or the sidebar's own "Apply Changes" is a
+        // deliberate "start fresh from here" — see originalConfig's javadoc.
+        linkEditorPanel.setOnApply(cfg -> applyStructuralEdit(cfg, true));
 
         // §9 — the tabbed sidebar shell: Live Status always visible, one
         // group's controls shown at a time.
@@ -418,27 +442,24 @@ public final class SimulationController implements Initializable, Navigable {
     // §5 layout shell — left action rail, sidebar/graph collapse
     // -------------------------------------------------------------------------
 
-    /** Builds the always-present left action rail: Select (locked active), Add (reserved), Snap-to-Unit (§6). */
+    /** Builds the always-present left action rail: Edit / Add (mutually exclusive, §4-e), Snap-to-Unit (§6). */
     private void buildActionRail() {
         Theme theme = ThemeManager.getInstance().getCurrent();
 
-        Button selectButton = new Button();
-        selectButton.getStyleClass().addAll("rail-button", "rail-button-locked-active");
-        Icons.IconView selectIcon = Icons.create(Icons.Glyph.SELECT, 20, Icons.activeColor(theme));
-        selectButton.setGraphic(selectIcon);
-        Tooltip.install(selectButton, new Tooltip("Select — click a link to pose it; drag to pose live."));
-        // Permanently "on": the only functional tool today, so it's
-        // rendered as locked-active rather than a normal toggle that could
-        // be switched off — a click is intentionally a no-op.
+        Button editButton = new Button();
+        editButton.getStyleClass().addAll("rail-button", "rail-button-locked-active"); // starts active
+        Icons.IconView editIcon = Icons.create(Icons.Glyph.SELECT, 20, Icons.activeColor(theme));
+        editButton.setGraphic(editIcon);
+        Tooltip.install(editButton, new Tooltip("Edit — click a link to pose it; drag to pose live."));
 
         Button addButton = new Button();
-        addButton.getStyleClass().addAll("rail-button", "rail-button-reserved");
+        addButton.getStyleClass().add("rail-button");
         Icons.IconView addIcon = Icons.create(Icons.Glyph.ADD, 20, Icons.idleColor(theme));
         addButton.setGraphic(addIcon);
-        Tooltip.install(addButton, new Tooltip("Not available right now."));
-        // No onAction — present but inert by design; theme.css's
-        // .rail-button-reserved dims it and gives it a dashed outline so it
-        // reads as "reserved for later," not "broken."
+        Tooltip.install(addButton, new Tooltip("Add — double-click a link to insert a new one right after it."));
+
+        editButton.setOnAction(e -> setActiveTool(RailTool.EDIT, editButton, editIcon, addButton, addIcon));
+        addButton.setOnAction(e -> setActiveTool(RailTool.ADD, editButton, editIcon, addButton, addIcon));
 
         Separator sep = new Separator();
         sep.getStyleClass().add("rail-separator");
@@ -455,21 +476,50 @@ public final class SimulationController implements Initializable, Navigable {
             snapIcon.setColor(on ? Icons.activeColor(t) : Icons.idleColor(t));
         });
 
-        actionRail.getChildren().addAll(selectButton, addButton, sep, snapButton);
+        actionRail.getChildren().addAll(editButton, addButton, sep, snapButton);
 
         ThemeManager.getInstance().addListener(() -> {
             Theme t = ThemeManager.getInstance().getCurrent();
-            selectIcon.setColor(Icons.activeColor(t));
-            addIcon.setColor(Icons.idleColor(t));
+            editIcon.setColor(activeTool == RailTool.EDIT ? Icons.activeColor(t) : Icons.idleColor(t));
+            addIcon.setColor(activeTool == RailTool.ADD ? Icons.activeColor(t) : Icons.idleColor(t));
             snapIcon.setColor(snapButton.isSelected() ? Icons.activeColor(t) : Icons.idleColor(t));
         });
+    }
+
+    /**
+     * Switches the active rail tool (§4-e): moves the "locked-active" style
+     * to whichever button is now current, recolors both icons, and gates
+     * {@link PendulumCanvas}'s drag-posing accordingly — Add's only job is
+     * inserting a link, not posing the chain, so left/right-drag are
+     * intentionally no-ops while it's active.
+     */
+    private void setActiveTool(RailTool tool, Button editButton, Icons.IconView editIcon,
+                                Button addButton, Icons.IconView addIcon) {
+        activeTool = tool;
+        boolean editActive = tool == RailTool.EDIT;
+
+        editButton.getStyleClass().remove("rail-button-locked-active");
+        addButton.getStyleClass().remove("rail-button-locked-active");
+        (editActive ? editButton : addButton).getStyleClass().add("rail-button-locked-active");
+
+        Theme t = ThemeManager.getInstance().getCurrent();
+        editIcon.setColor(editActive ? Icons.activeColor(t) : Icons.idleColor(t));
+        addIcon.setColor(editActive ? Icons.idleColor(t) : Icons.activeColor(t));
+
+        pendulumCanvas.setDragEditingEnabled(editActive);
     }
 
     /** Builds the overlay chevron button (top-right of the canvas/graph area) that toggles the sidebar. */
     private void buildSidebarToggle() {
         Button toggle = new Button();
         toggle.getStyleClass().add("canvas-overlay-button");
-        sidebarToggleIcon = Icons.create(Icons.Glyph.CHEVRON, 18, Icons.hoverColor(ThemeManager.getInstance().getCurrent()));
+        // Round 3 §2: a fixed, theme-independent tint, not Icons.hoverColor
+        // (near-black in light theme) — this button's chip is always dark
+        // regardless of app theme (see .canvas-overlay-button's own CSS
+        // comment), so the icon has to ignore the app theme the same way,
+        // or it goes invisible in light mode. No ThemeManager listener
+        // needed anymore since the color is now genuinely constant.
+        sidebarToggleIcon = Icons.create(Icons.Glyph.CHEVRON, 18, Icons.onDarkOverlayColor());
         sidebarToggleIcon.setRotate(sidebarExpanded ? 0 : 180);
         toggle.setGraphic(sidebarToggleIcon);
         Tooltip.install(toggle, new Tooltip("Toggle sidebar"));
@@ -478,9 +528,6 @@ public final class SimulationController implements Initializable, Navigable {
         StackPane.setAlignment(toggle, Pos.TOP_RIGHT);
         StackPane.setMargin(toggle, new Insets(10));
         canvasGraphStack.getChildren().add(toggle);
-
-        ThemeManager.getInstance().addListener(() ->
-                sidebarToggleIcon.setColor(Icons.hoverColor(ThemeManager.getInstance().getCurrent())));
     }
 
     /**
@@ -555,6 +602,20 @@ public final class SimulationController implements Initializable, Navigable {
         if (!paused) pendulumCanvas.setSelectedLink(-1);
     }
 
+    /**
+     * The live angle of every link right now, read from the physics thread's
+     * latest published state — not {@code currentConfig}'s (possibly stale)
+     * initAngles. Used by every action-bar edit path (§4-f) so a structural
+     * rebuild only changes the one link actually being edited, instead of
+     * silently reverting every other link's live drift/prior drag back to
+     * whatever currentConfig last held. Falls back to currentConfig only if
+     * no state has been published yet.
+     */
+    private double[] liveAngles() {
+        SimState s = stateBuffer.read();
+        return (s != null) ? s.angles.clone() : currentConfig.getInitAngles();
+    }
+
     /** Commits a right-click length drag (§7.3) through the same structural-edit path as every other length change. */
     private void commitLinkLength(int linkIndex, double newLength) {
         if (currentConfig == null || linkIndex < 0 || linkIndex >= currentConfig.getN()) return;
@@ -563,7 +624,7 @@ public final class SimulationController implements Initializable, Navigable {
         lengths[linkIndex] = newLength;
         try {
             PendulumConfig edited = new PendulumConfig(currentConfig.getN(), lengths, currentConfig.getMasses(),
-                    currentConfig.getInitAngles(), currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
+                    liveAngles(), currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
             applyStructuralEdit(edited);
         } catch (IllegalArgumentException ex) {
             // PendulumConfig rejected it — shouldn't happen given the canvas
@@ -578,16 +639,11 @@ public final class SimulationController implements Initializable, Navigable {
      * Opens the double-click parameter dialog (§7.4): angle/length/mass for
      * one link, validated the same way {@link LinkEditorPanel} validates its
      * own rows, committing through {@link #applyStructuralEdit} on "Apply."
-     * Editing implies focus, so this selects the link (if not already
-     * selected) and pauses, same as a click would.
+     * Selection/pause is already handled by the press that preceded this
+     * double-click (§4-a) — nothing to do here for that.
      */
     private void showLinkParameterDialog(int link) {
         if (currentConfig == null || link < 0 || link >= currentConfig.getN()) return;
-
-        if (pendulumCanvas.getSelectedLink() != link) {
-            pendulumCanvas.setSelectedLink(link);
-            setPaused(true);
-        }
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Edit Link #" + (link + 1));
@@ -628,7 +684,7 @@ public final class SimulationController implements Initializable, Navigable {
 
             double[] lengths = currentConfig.getLengths();
             double[] masses  = currentConfig.getMasses();
-            double[] angles  = currentConfig.getInitAngles();
+            double[] angles  = liveAngles(); // every other link's live pose, not currentConfig's stale one (§4-f)
             lengths[link] = length;
             masses[link]  = mass;
             angles[link]  = angle;
@@ -636,6 +692,101 @@ public final class SimulationController implements Initializable, Navigable {
                 PendulumConfig edited = new PendulumConfig(currentConfig.getN(), lengths, masses, angles,
                         currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
                 applyStructuralEdit(edited);
+            } catch (IllegalArgumentException ex) {
+                showDialogError(error, ex.getMessage());
+                evt.consume();
+            }
+        });
+
+        if (btnBack.getScene() != null) dialog.initOwner(btnBack.getScene().getWindow());
+        dialog.showAndWait();
+    }
+
+    /**
+     * Opens the Add-link dialog (§4-e): double-clicking link {@code k} while
+     * the Add tool is active. Splices a new link in as index {@code k+1};
+     * every surviving link keeps its live pose (§4-f's {@link #liveAngles},
+     * not currentConfig's stale one). The new link's angle is either the
+     * entered value taken as-is (global-frame, matching every other link's
+     * convention — see {@link physics.PhysicsEngine#getState()}) or, if the
+     * "relative" checkbox is checked, {@code k}'s current live angle plus
+     * the entered offset. Selects the newly-added link on confirm, and
+     * leaves the Add tool active so more links can be added in a row.
+     */
+    private void showAddLinkDialog(int k) {
+        if (currentConfig == null || k < 0 || k >= currentConfig.getN()) return;
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Add Link After #" + (k + 1));
+        dialog.getDialogPane().getStylesheets().add(getClass().getResource("/css/theme.css").toExternalForm());
+        dialog.getDialogPane().getStyleClass().addAll("themed-dialog", ThemeManager.getInstance().getCurrent().styleClass());
+
+        ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
+
+        TextField lengthField = dialogField(String.format("%.4f", currentConfig.getLength(k)));
+        TextField massField   = dialogField(String.format("%.4f", currentConfig.getMass(k)));
+        TextField angleField  = dialogField("0.0000");
+        CheckBox relativeCheck = new CheckBox("Relative angle (offset from Link #" + (k + 1) + ")");
+        relativeCheck.getStyleClass().add("sidebar-checkbox");
+
+        Label error = new Label();
+        error.getStyleClass().add("sidebar-error-label");
+        error.setWrapText(true);
+        error.setVisible(false);
+        error.setManaged(false);
+
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("dialog-grid");
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.addRow(0, new Label("Length (m)"), lengthField);
+        grid.addRow(1, new Label("Mass (kg)"), massField);
+        grid.addRow(2, new Label("Angle (rad)"), angleField);
+        grid.add(relativeCheck, 0, 3, 2, 1);
+        grid.add(error, 0, 4, 2, 1);
+        dialog.getDialogPane().setContent(grid);
+
+        Node addButtonNode = dialog.getDialogPane().lookupButton(addButtonType);
+        addButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {
+            Double length     = parsePositive(lengthField.getText());
+            Double mass       = parsePositive(massField.getText());
+            Double angleInput = parseFinite(angleField.getText());
+            if (length == null)     { showDialogError(error, "Length must be a positive, finite number."); evt.consume(); return; }
+            if (mass == null)       { showDialogError(error, "Mass must be a positive, finite number."); evt.consume(); return; }
+            if (angleInput == null) { showDialogError(error, "Angle must be a finite number."); evt.consume(); return; }
+
+            double[] liveAngles = liveAngles();
+            double newAngle = relativeCheck.isSelected() ? liveAngles[k] + angleInput : angleInput;
+
+            int n = currentConfig.getN();
+            int newN = n + 1;
+            double[] oldLengths = currentConfig.getLengths();
+            double[] oldMasses  = currentConfig.getMasses();
+
+            double[] lengths = new double[newN];
+            double[] masses  = new double[newN];
+            double[] angles  = new double[newN];
+
+            for (int i = 0; i <= k; i++) {
+                lengths[i] = oldLengths[i];
+                masses[i]  = oldMasses[i];
+                angles[i]  = liveAngles[i];
+            }
+            lengths[k + 1] = length;
+            masses[k + 1]  = mass;
+            angles[k + 1]  = newAngle;
+            for (int i = k + 1; i < n; i++) {
+                lengths[i + 1] = oldLengths[i];
+                masses[i + 1]  = oldMasses[i];
+                angles[i + 1]  = liveAngles[i];
+            }
+
+            try {
+                PendulumConfig edited = new PendulumConfig(newN, lengths, masses, angles,
+                        currentConfig.getGravity(), currentConfig.getSpeedMultiplier());
+                applyStructuralEdit(edited);
+                pendulumCanvas.setSelectedLink(k + 1); // override applyStructuralEdit's default (re-selects k)
             } catch (IllegalArgumentException ex) {
                 showDialogError(error, ex.getMessage());
                 evt.consume();
@@ -676,13 +827,27 @@ public final class SimulationController implements Initializable, Navigable {
 
     /**
      * Handles a validated {@link PendulumConfig} from the link editor, the
-     * length-drag commit, or the parameter dialog: swaps the engine via
-     * {@link SimulationLoop#rebuildWithConfig}, then refreshes everything
-     * downstream that was sized or labeled for the old N/length — the
-     * canvas's render scale, its stale trail, the graph's history, and the
-     * two sidebar headers that display N.
+     * length-drag commit, the parameter dialog, or the add-link dialog:
+     * swaps the engine via {@link SimulationLoop#rebuildWithConfig}, then
+     * refreshes everything downstream that was sized or labeled for the old
+     * N/length — the canvas's render scale, its stale trail, the graph's
+     * history, and the two sidebar headers that display N. The action-bar
+     * tools (length drag, parameter dialog, Add) call this one-arg overload,
+     * which never moves the Reset baseline — see the two-arg overload below.
      */
     private void applyStructuralEdit(PendulumConfig newConfig) {
+        applyStructuralEdit(newConfig, false);
+    }
+
+    /**
+     * @param establishesNewBaseline whether this edit is a deliberate
+     *        "start fresh from here" (a preset pick, a file load, the
+     *        sidebar's own "Apply Changes") that should move where the
+     *        Reset button returns to — see {@link #originalConfig}.
+     */
+    private void applyStructuralEdit(PendulumConfig newConfig, boolean establishesNewBaseline) {
+        if (establishesNewBaseline) originalConfig = newConfig;
+
         int selectedBefore = pendulumCanvas.getSelectedLink();
 
         currentConfig = newConfig;

@@ -65,6 +65,23 @@ public final class Icons {
     }
 
     /**
+     * Fixed, theme-independent near-white — for an icon drawn on {@code
+     * .canvas-overlay-button}'s chip (see
+     * controller.SimulationController#buildSidebarToggle), which always sits
+     * on {@code ui.PendulumCanvas}'s permanently-dark background and so
+     * paints a fixed dark chip regardless of the app's own light/dark theme
+     * (see that class's own CSS comment). The icon needs to follow the same
+     * "ignore the app theme" logic, or it goes invisible in light mode where
+     * {@link #hoverColor} would otherwise return a near-black. Deliberately
+     * a hardcoded constant, not a re-lookup of {@code Theme.DARK}'s own
+     * {@link #hoverColor} — so it reads as an intentional fixed value here,
+     * not a leftover theme reference.
+     */
+    public static Color onDarkOverlayColor() {
+        return Color.web("#F2F2F6");
+    }
+
+    /**
      * A single glyph, redrawn in place whenever {@link #setColor} is called —
      * cheap enough (a handful of stroke calls on a tiny canvas) to repaint on
      * every hover/selection change without needing a cache.

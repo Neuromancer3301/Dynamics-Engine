@@ -123,9 +123,6 @@
 .menu-utility-button {
     -fx-cursor: hand;
 }
-.menu-utility-button:focused {
-    -fx-effect: dropshadow(gaussian, -accent, 10, 0.6, 0, 0);
-}
 .menu-utility-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
     -fx-font-size: 14px;
@@ -165,7 +162,6 @@
 
 .nav-card:hover, .nav-card:focused {
     -fx-border-color: -accent;
-    -fx-effect: dropshadow(gaussian, rgba(242, 72, 154, 0.35), 18, 0.15, 0, 4);
 }
 
 .nav-card-index {
@@ -205,9 +201,8 @@
 
 /* Placeholder demo-video slot revealed on card hover-expand — see
    component/NavCard.fxml and NavCardController#setExpanded. Same "reserved
-   slot, not broken" visual language as .nav-card-coming-soon and the
-   action-rail's .rail-button-reserved: a bordered box in -bg-base/-line,
-   dimmed -ink-3 text. */
+   slot, not broken" visual language as .nav-card-coming-soon: a bordered box
+   in -bg-base/-line, dimmed -ink-3 text. */
 .nav-card-video-box {
     -fx-background-color: -bg-base;
     -fx-border-color: -line;
@@ -277,26 +272,16 @@
     -fx-padding: 8px;
     -fx-cursor: hand;
 }
-.rail-button:hover { -fx-background-color: -bg-base; }
+.rail-button:hover, .rail-button:focused { -fx-background-color: -bg-base; }
 
-/* Select is permanently "locked on" — a persistent accent-tinted
-   background, not a normal toggle that can be switched off (it's the only
-   functional tool right now). */
+/* The currently-active rail tool (Edit or Add — see
+   controller.SimulationController#buildActionRail) — a persistent
+   accent-tinted background, toggled between the two mutually-exclusive
+   tool buttons rather than a normal on/off toggle. */
 .rail-button-locked-active {
     -fx-background-color: -accent-soft;
 }
-.rail-button-locked-active:hover { -fx-background-color: -accent-soft; }
-
-/* Add: visibly present but non-functional — dimmer, dashed outline, same
-   "reserved for later, not broken" convention as .nav-card-coming-soon. */
-.rail-button-reserved {
-    -fx-opacity: 0.5;
-    -fx-border-color: -line;
-    -fx-border-style: dashed;
-    -fx-border-radius: 3px;
-    -fx-cursor: default;
-}
-.rail-button-reserved:hover { -fx-background-color: transparent; }
+.rail-button-locked-active:hover, .rail-button-locked-active:focused { -fx-background-color: -accent-soft; }
 
 .rail-separator {
     -fx-background-color: -line-soft;
@@ -332,7 +317,7 @@
     -fx-padding: 10 0 10 0;
     -fx-cursor: hand;
 }
-.sidebar-tab-button:hover {
+.sidebar-tab-button:hover, .sidebar-tab-button:focused {
     -fx-background-color: -bg-base;
 }
 .sidebar-tab-button-active {
@@ -453,7 +438,7 @@
     -fx-background-radius: 2px;
     -fx-cursor: hand;
 }
-.sidebar-button:hover { -fx-border-color: -accent; }
+.sidebar-button:hover, .sidebar-button:focused { -fx-border-color: -accent; }
 
 .sidebar-slider { -fx-accent: -accent; }
 
@@ -503,7 +488,8 @@
     -fx-cursor: hand;
 }
 
-.back-button:hover, .primary-button:hover {
+.back-button:hover, .primary-button:hover,
+.back-button:focused, .primary-button:focused {
     -fx-border-color: -accent;
 }
 
@@ -525,7 +511,7 @@
     -fx-padding: 6px;
     -fx-cursor: hand;
 }
-.canvas-overlay-button:hover {
+.canvas-overlay-button:hover, .canvas-overlay-button:focused {
     -fx-background-color: rgba(234, 63, 140, 0.28);
 }
 
@@ -572,7 +558,8 @@
     -fx-text-fill: white;
     -fx-border-color: transparent;
 }
-.dialog-pane.themed-dialog .button-bar .button:hover {
+.dialog-pane.themed-dialog .button-bar .button:hover,
+.dialog-pane.themed-dialog .button-bar .button:focused {
     -fx-border-color: -accent;
 }
 
@@ -590,10 +577,4 @@
     -fx-text-fill: -ink-2;
     -fx-wrap-text: true;
     -fx-max-width: 480px;
-}
-
-/* ---------- Focus visibility (accessibility) ---------- */
-
-.button:focused {
-    -fx-effect: dropshadow(gaussian, -accent, 10, 0.6, 0, 0);
 }
