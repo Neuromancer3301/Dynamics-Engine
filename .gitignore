@@ -1,6 +1,9 @@
 # Build output
 target/
 
+# Claude Code local state (worktrees, jobs, settings)
+.claude/
+
 # macOS
 .DS_Store
 

@@ -56,6 +56,16 @@ public final class SceneRouter {
         stage.setTitle(AppConfig.APP_NAME);
         stage.setMinWidth(AppConfig.MIN_WIDTH);
         stage.setMinHeight(AppConfig.MIN_HEIGHT);
+
+        // Scene.fill defaults to white and paints underneath the whole scene
+        // graph. Without this, a theme switch made from Settings wouldn't
+        // affect the flash color (see fadeIn/load below) until the *next*
+        // app launch — this keeps it in sync with a live toggle too.
+        ThemeManager.getInstance().addListener(() -> {
+            if (scene != null) {
+                scene.setFill(ThemeManager.getInstance().getCurrent().backgroundColor());
+            }
+        });
     }
 
     /** Navigates forward to {@code route}, pushing the current screen onto the back-stack. */
@@ -103,6 +113,11 @@ public final class SceneRouter {
                 scaleHost = new Group(root);
                 scene = new Scene(scaleHost, AppConfig.DEFAULT_WIDTH, AppConfig.DEFAULT_HEIGHT);
                 scene.getStylesheets().add(getClass().getResource("/css/theme.css").toExternalForm());
+                // Scene.fill defaults to white; without this the ~180ms
+                // fadeIn below lets it show through as a white flash while
+                // the new (semi-transparent) root doesn't yet fully cover
+                // the scene. Set once here for the first screen...
+                scene.setFill(ThemeManager.getInstance().getCurrent().backgroundColor());
                 stage.setScene(scene);
 
                 // Re-scale whenever the window resizes or the preference
@@ -113,7 +128,11 @@ public final class SceneRouter {
                 ThemeManager.getInstance().addListener(this::applyScaling);
             } else {
                 if (pushCurrent) history.push(activeRoute);
-                scaleHost.getChildren().setAll(root);
+                // ...and again here, every subsequent navigation, in case the
+                // theme changed since the last one (the constructor listener
+                // above only covers a toggle while a scene already exists).
+                scene.setFill(ThemeManager.getInstance().getCurrent().backgroundColor());
+                scene.setRoot(root);
             }
             uiRoot = root;
             applyScaling();

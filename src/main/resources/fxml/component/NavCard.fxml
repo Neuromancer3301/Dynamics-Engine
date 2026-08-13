@@ -1,13 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
 
 <VBox fx:id="root" styleClass="nav-card" alignment="TOP_LEFT" spacing="8.0"
       xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
       fx:controller="component.NavCardController">
     <Label fx:id="indexLabel" styleClass="nav-card-index" text="01"/>
-    <Label fx:id="iconLabel" styleClass="nav-card-icon" text="⚛"/>
-    <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title"/>
+    <!-- Icon is a hand-rolled Canvas glyph (ui.icon.Icons.Glyph.PENDULUM),
+         built and colored in NavCardController#initialize the same way
+         component.UtilityIconButton and ui.SidebarTabs build theirs — not a
+         styleable node, so this is just the placeholder it's added into.
+         See theme.css's sidebar-section comment for why Canvas pixels sit
+         outside the CSS token system. -->
+    <StackPane fx:id="iconHost" alignment="TOP_LEFT"/>
+    <Label fx:id="titleLabel" styleClass="nav-card-title" text="Title" wrapText="true"/>
     <Label fx:id="descriptionLabel" styleClass="nav-card-desc" text="Description" wrapText="true"/>
+    <!-- Extra hover-reveal detail line — see NavCardController#configure's
+         optional detail parameter. Collapsed (invisible/unmanaged) until
+         the card expands on hover; a disabled/coming-soon card never
+         reveals this since it never expands. -->
+    <Label fx:id="detailLabel" styleClass="nav-card-detail" text="" wrapText="true"
+           visible="false" managed="false"/>
+    <!-- Placeholder demo-video slot — revealed together with detailLabel by
+         the same expand/collapse animation (see
+         NavCardController#setExpanded). Same "reserved slot, not broken"
+         visual language as .nav-card-coming-soon: a bordered box, dimmed
+         placeholder text, reads as intentionally empty. -->
+    <StackPane fx:id="videoBox" styleClass="nav-card-video-box"
+               visible="false" managed="false">
+        <Label styleClass="nav-card-video-label" text="Demo not available right now — will be added later."
+               wrapText="true" textAlignment="CENTER"/>
+    </StackPane>
 </VBox>

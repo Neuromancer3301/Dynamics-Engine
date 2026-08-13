@@ -73,7 +73,7 @@ public final class LinkEditorPanel extends VBox {
     private final List<LinkRow> rows = new ArrayList<>();
 
     private Consumer<PendulumConfig> onApply;
-    private boolean useDegrees = false;
+    private boolean useDegrees = true;
 
     // Pulled fresh at apply-time rather than cached, so editing gravity or
     // speed via ControlPanel's sliders after opening this panel is never
