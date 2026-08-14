@@ -20,7 +20,7 @@ public final class AppConfig {
     public static final double MIN_HEIGHT = 640;
     public static final double DEFAULT_WIDTH  = 1280;
     public static final double DEFAULT_HEIGHT = 800;
-
+    
     /** java.util.prefs node used by {@link theme.ThemeManager} to persist the user's theme choice. */
     public static final String PREFS_NODE = "engine.dynamics.app";
 }

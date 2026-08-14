@@ -47,7 +47,7 @@ public final class Sonifier {
     private volatile double frequencyHz = 440.0;
     private volatile boolean running = false;
     private Thread thread;
-
+    
     /** Opens an audio line, or degrades to an inert no-op if none is available — see the class javadoc for why this must never throw. */
     public Sonifier() {
         SourceDataLine openedLine;

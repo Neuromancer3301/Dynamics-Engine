@@ -22,7 +22,7 @@ import java.util.logging.Logger;
 
 /**
  * Builder for the simulation sidebar's controls — parameter sliders, the
- * graph-mode selector, playback controls, and live status.
+ * graph-mode selector, playback controls, and live status.```
  *
  * <p>This class no longer displays its own controls directly (it stopped
  * extending a shown container's role once the sidebar became a tabbed
@@ -106,6 +106,9 @@ public final class ControlPanel extends VBox {
     // background Task — see setBifurcationProgress/setBifurcationRunning.
     private ProgressBar bifurcationProgressBar;
     private Button bifurcationButton;
+    private ProgressBar fractalProgressBar;
+    private Button fractalButton;
+    private ToggleButton fractalToggle;
 
     // Graph-mode picker — independent ToggleButtons (not a ToggleGroup) so
     // clicking the already-active one can deselect it: §10.2 requires "no
@@ -129,6 +132,7 @@ public final class ControlPanel extends VBox {
     private Consumer<Boolean> onEnsembleToggle;
     private Consumer<Boolean> onSonifyToggle;
     private Runnable onGenerateBifurcation;
+    private Runnable onGenerateFractal;
     private Runnable onResetGravityDirection;
     private BiConsumer<Boolean, Double> onCompareToggle;
     private Consumer<IntegratorType> onIntegratorChange;
@@ -240,7 +244,7 @@ public final class ControlPanel extends VBox {
             btnReverse.setText(on ? "⏪  Reverse Time: On" : "⏪  Reverse Time: Off");
         });
         Label reverseHint = hintLabel(
-            "Genuinely integrates backward (not a replay) — watch a single pendulum "
+            "Genuinely integrates backward. Watch a single pendulum "
           + "retrace itself almost exactly, and a chaotic chain fail to.");
 
         btnReset.setOnAction(e -> {
@@ -376,8 +380,10 @@ public final class ControlPanel extends VBox {
         ToggleButton tbPoincare    = graphModeButton("Poincaré Section (θ₂,ω₂)");
         ToggleButton tbCompare     = graphModeButton("Integrator Comparison");
         ToggleButton tbBifurcation = graphModeButton("Bifurcation Map");
-        this.graphModeButtons = new ToggleButton[]{tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation};
+        ToggleButton tbFractal     = graphModeButton("Basin Fractal");
+        this.graphModeButtons = new ToggleButton[]{tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation, tbFractal};
         this.bifurcationToggle = tbBifurcation;
+        this.fractalToggle = tbFractal;
 
         tbAngle      .setOnAction(e -> toggleGraphMode(tbAngle, GraphPanel.Mode.ANGLE, graphPanel));
         tbEnergy     .setOnAction(e -> toggleGraphMode(tbEnergy, GraphPanel.Mode.ENERGY, graphPanel));
@@ -386,6 +392,7 @@ public final class ControlPanel extends VBox {
         tbPoincare   .setOnAction(e -> toggleGraphMode(tbPoincare, GraphPanel.Mode.POINCARE, graphPanel));
         tbCompare    .setOnAction(e -> toggleGraphMode(tbCompare, GraphPanel.Mode.COMPARISON, graphPanel));
         tbBifurcation.setOnAction(e -> toggleGraphMode(tbBifurcation, GraphPanel.Mode.BIFURCATION, graphPanel));
+        tbFractal    .setOnAction(e -> toggleGraphMode(tbFractal, GraphPanel.Mode.FRACTAL, graphPanel));
 
         Button btnBifurcation = new Button("🌀  Generate Bifurcation Map");
         styleButton(btnBifurcation);
@@ -401,6 +408,22 @@ public final class ControlPanel extends VBox {
         });
         this.bifurcationProgressBar = bifurcationProgress;
         this.bifurcationButton = btnBifurcation;
+
+        Button btnFractal = new Button("❋  Generate Basin Fractal");
+        styleButton(btnFractal);
+        ProgressBar fractalProgress = new ProgressBar(0);
+        fractalProgress.setMaxWidth(Double.MAX_VALUE);
+        fractalProgress.setVisible(false);
+        fractalProgress.setManaged(false);
+        Label fractalHint = hintLabel(
+            "Runs a 2-link chain from every pair of starting angles and colours each by "
+          + "how fast it flips. Smooth areas never flip; the intricate boundary is the fractal. "
+          + "~40,000 simulations, run across all CPU cores.");
+        btnFractal.setOnAction(e -> {
+            if (onGenerateFractal != null) onGenerateFractal.run();
+        });
+        this.fractalProgressBar = fractalProgress;
+        this.fractalButton = btnFractal;
 
         Button btnExportCsv = new Button("⬇  Export CSV");
         styleButton(btnExportCsv);
@@ -432,7 +455,7 @@ public final class ControlPanel extends VBox {
         statusBox.setPadding(new Insets(6, 8, 6, 8));
 
         // ---- Hints ----
-        Label hint = hintLabel("dt = 2 ms · Space: pause · R: reset · →: step");
+        Label hint = hintLabel("dt = 2 ms");
 
         // ---- Assemble into groups (see the class javadoc) ----
         statusBlock = new VBox(8, header, lblInstabilityWarning, lStatus, statusBox, hint);
@@ -451,8 +474,9 @@ public final class ControlPanel extends VBox {
         );
 
         graphsGroup = new VBox(10,
-            lGraph, tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation,
+            lGraph, tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation, tbFractal,
             btnBifurcation, bifurcationProgress, bifurcationHint,
+            btnFractal, fractalProgress, fractalHint,
             btnExportCsv, exportHint
         );
 
@@ -495,6 +519,27 @@ public final class ControlPanel extends VBox {
     public void setOnSonifyToggle(Consumer<Boolean> callback)   { this.onSonifyToggle = callback; }
     /** Called when "Generate Bifurcation Map" is clicked. */
     public void setOnGenerateBifurcation(Runnable callback)     { this.onGenerateBifurcation = callback; }
+
+    /** Called when "Generate Basin Fractal" is clicked. */
+    public void setOnGenerateFractal(Runnable callback)         { this.onGenerateFractal = callback; }
+
+    /** Drives the progress bar while a basin sweep runs — see {@code physics.FractalBasinSweep}. */
+    public void setFractalProgress(double fraction) {
+        fractalProgressBar.setProgress(fraction);
+    }
+
+    /** Toggles the fractal button/progress-bar between idle and running; disables re-entrancy. */
+    public void setFractalRunning(boolean running) {
+        fractalButton.setDisable(running);
+        fractalProgressBar.setVisible(running);
+        fractalProgressBar.setManaged(running);
+        if (!running) fractalProgressBar.setProgress(0);
+    }
+
+    /** Selects the Basin Fractal mode once a sweep finishes, so the result is immediately visible. */
+    public void selectFractalMode() {
+        if (!fractalToggle.isSelected()) fractalToggle.fire();
+    }
     /** Called when "Reset Gravity Direction" is clicked. */
     public void setOnResetGravityDirection(Runnable callback)   { this.onResetGravityDirection = callback; }
     /** Called with (enabled, Δθ₁ offset) when the A/B compare toggle is clicked — two values, hence {@code BiConsumer}. */

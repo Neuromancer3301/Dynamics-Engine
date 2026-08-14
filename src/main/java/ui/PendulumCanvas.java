@@ -55,19 +55,6 @@ public final class PendulumCanvas extends Canvas {
     private static final double ROD_WIDTH    = 2.5;
     private static final double PIVOT_RADIUS = 6.0;
 
-    // Canvas-drawn text. Named rather than inlined because the overlay
-    // boxes' width/height and per-line baselines are derived from them (see
-    // drawBobInspector / drawInfoOverlay) — changing a size in one place
-    // without the other is exactly how text ends up clipped by its own
-    // background. These deliberately track theme.css's .sidebar-* sizes so
-    // Canvas text and styled chrome read at the same scale, even though
-    // JavaFX CSS can't reach a Canvas to enforce it.
-    private static final double LABEL_FONT_SIZE     = 11;  // scale bar, gravity handle, compare marker
-    private static final double INSPECTOR_FONT_SIZE = 12;
-    private static final double INSPECTOR_LINE_H    = 17;
-    private static final double OVERLAY_FONT_SIZE   = 13;
-    private static final double OVERLAY_LINE_H      = 18;
-
     // Bob radius is no longer a constant: it shrinks with N (so a wide chain
     // doesn't render as a solid caterpillar — the runtime N control makes
     // this a real, reachable case, not a hypothetical one) and varies per
@@ -1258,8 +1245,7 @@ public final class PendulumCanvas extends Canvas {
      * regardless of the current angle since {@code bobX}/{@code bobY} are
      * cumulative positions and consecutive ones isolate exactly one rod.
      */
-    private void drawBobInspector(GraphicsContext gc, SimState state, int link,
-                                  double scale, double pivotX, double pivotY, double canvasW) {
+    private void drawBobInspector(GraphicsContext gc, SimState state, int link, double scale, double pivotX, double pivotY, double canvasW) {
         if (link < 0 || link >= state.getN()) return;
 
         double bx = pivotX + state.bobX[link] * scale;
@@ -1294,7 +1280,6 @@ public final class PendulumCanvas extends Canvas {
         gc.setLineWidth(1.0);
         gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
-        double textY = boxY + 19;
         gc.setFill(Color.web("#FFFFFF"));
         gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 18);
         gc.setFill(Color.web("#D6D6DC"));
@@ -1328,7 +1313,6 @@ public final class PendulumCanvas extends Canvas {
         // Live telemetry gets the accent — the same "one hue for anything
         // actively reporting a current value" rule as the tip trail and the
         // gravity handle.
-        double textY = 27;
         gc.setFill(Color.web("#EA3F8C"));
         gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 19);
         gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 35);

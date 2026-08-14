@@ -30,7 +30,7 @@ public final class StateBuffer {
     // Single slot. Writes from the physics thread, reads from the JavaFX
     // thread; AtomicReference makes the reference swap atomic and visible.
     private final AtomicReference<SimState> slot = new AtomicReference<>();
-
+    
     /** Publishes a new snapshot, discarding whatever was there. Called from the physics thread. */
     public void write(SimState state) {
         slot.set(state);

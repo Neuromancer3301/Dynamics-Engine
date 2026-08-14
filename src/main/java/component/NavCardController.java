@@ -92,7 +92,7 @@ public final class NavCardController {
         // own Canvas glyphs.
         ThemeManager.getInstance().addListener(this::refreshIconColor);
     }
-
+    
     /** Configures a live, clickable card with no extra hover-reveal detail. */
     public void configure(String index, Icons.Glyph icon, String title, String description, Runnable onActivate) {
         configure(index, icon, title, description, null, onActivate);

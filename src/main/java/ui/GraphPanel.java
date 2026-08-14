@@ -3,6 +3,8 @@ package ui;
 import physics.SimState;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
@@ -40,15 +42,14 @@ import java.util.List;
 public final class GraphPanel extends Canvas {
 
     /** Graph display modes. */
-    public enum Mode { ANGLE, ENERGY, PHASE, ALL, POINCARE, COMPARISON, BIFURCATION }
+    public enum Mode { ANGLE, ENERGY, PHASE, ALL, POINCARE, COMPARISON, BIFURCATION, FRACTAL }
 
     /** One integrator's energy-drift-over-time trace for {@link Mode#COMPARISON}. */
     public record ComparisonSeries(String name, double[] times, double[] energyDrift, Color color) {}
 
     // ---- Layout constants ----
-    // MARGIN is the gutter holding the axis tick labels; it tracks
-    // AXIS_FONT_SIZE below, since a wider label in a fixed gutter would
-    // collide with the plot area rather than sit beside it.
+    // MARGIN is the gutter holding the axis tick labels — wide enough that a
+    // long label sits beside the plot area rather than colliding with it.
     private static final int    MARGIN  = 60;
     private static final int    MAX_PTS = 800;
     private static final double TIME_WINDOW = 12.0; // seconds visible in time-series modes
@@ -57,15 +58,7 @@ public final class GraphPanel extends Canvas {
     // clear()), so this bounds memory rather than controlling what's visible.
     private static final int MAX_POINCARE_POINTS = 5000;
 
-    // Canvas-drawn text sizes. Named because MARGIN, legend spacing, and
-    // caption baselines are all derived from them — see PendulumCanvas's
-    // equivalent block for the full reasoning.
-    private static final double AXIS_FONT_SIZE    = 11;
-    private static final double LEGEND_FONT_SIZE  = 12;
-    private static final double CAPTION_FONT_SIZE = 11;
-    private static final double MESSAGE_FONT_SIZE = 13;
-    private static final double TITLE_FONT_SIZE   = 14;
-    private static final double MINI_TITLE_SIZE   = 11;
+    // Vertical gap between entries in the energy/comparison legends.
     private static final double LEGEND_LINE_H     = 15;
 
     // ---- Colors ----
@@ -99,12 +92,19 @@ public final class GraphPanel extends Canvas {
     private double prevTheta1 = Double.NaN;
 
     private List<ComparisonSeries> comparisonSeries = List.of();
-
+    
     // Bifurcation diagram data — see setBifurcationData. Parallel arrays:
     // bifurcationParams[c] is the swept initial angle for column c,
     // bifurcationSamples.get(c) is that column's collected sample points.
     private double[] bifurcationParams = new double[0];
     private List<double[]> bifurcationSamples = List.of();
+
+    // Basin-of-attraction fractal. Rendered once into a WritableImage when
+    // the data arrives rather than per-frame: at the default resolution
+    // that's 40,000 cells, far too many to redraw as individual rectangles
+    // every repaint. Null until a sweep completes.
+    private WritableImage fractalImage;
+    private double fractalMaxSeconds = 1.0;
 
     // Decouples "how often render() is called" from "how often it actually
     // redraws." Every mutator below sets this; render() clears it after
@@ -170,6 +170,22 @@ public final class GraphPanel extends Canvas {
         dirty = true;
     }
 
+    /**
+     * Supplies the grid {@link Mode#FRACTAL} draws, converting it to an
+     * image immediately — see {@link #fractalImage} for why this happens
+     * once here rather than on every repaint.
+     */
+    public void setFractalData(double[][] timeToFlip, double maxSeconds) {
+        this.fractalMaxSeconds = Math.max(maxSeconds, 1e-9);
+        this.fractalImage = buildFractalImage(timeToFlip);
+        dirty = true;
+    }
+
+    /** True once a fractal sweep has produced an image — gates the empty-state message. */
+    public boolean hasFractalData() {
+        return fractalImage != null;
+    }
+
     /** Supplies the columns {@link Mode#BIFURCATION} draws. See {@code physics.BifurcationSweep}. */
     public void setBifurcationData(double[] paramValues, List<double[]> samples) {
         this.bifurcationParams = paramValues;
@@ -209,6 +225,7 @@ public final class GraphPanel extends Canvas {
             case POINCARE     -> drawPoincareSection(gc, plotW, plotH);
             case COMPARISON   -> drawComparison(gc, plotW, plotH);
             case BIFURCATION  -> drawBifurcation(gc, plotW, plotH);
+            case FRACTAL      -> drawFractal(gc, plotW, plotH);
             case ALL          -> { /* handled above, before the early return */ }
         }
 
@@ -529,6 +546,75 @@ public final class GraphPanel extends Canvas {
                 MARGIN + 4, MARGIN + 20 + plotH + 18);
     }
 
+    // ---- Mode: Basin Fractal ----
+
+    /**
+     * Draws the precomputed basin image, scaled to fill the plot area and
+     * kept square so the (θ₁, θ₂) grid isn't visually distorted.
+     */
+    private void drawFractal(GraphicsContext gc, double plotW, double plotH) {
+        if (fractalImage == null) {
+            gc.setFont(Font.font("System", 12));
+            gc.setFill(Color.web("#8A8A96"));
+            gc.fillText("Press \"Generate Basin Fractal\" in the sidebar to run this.",
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
+            gc.fillText("Sweeps every pair of starting angles — takes a few seconds.",
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 + 10);
+            return;
+        }
+
+        // Square, centred: the two axes are the same quantity (an angle over
+        // the full circle), so a stretched aspect ratio would misrepresent it.
+        double side = Math.min(plotW, plotH);
+        double x = MARGIN + (plotW - side) / 2.0;
+        double y = MARGIN + 20 + (plotH - side) / 2.0;
+        gc.drawImage(fractalImage, x, y, side, side);
+
+        gc.setStroke(Color.web("#2E2E36"));
+        gc.setLineWidth(1.0);
+        gc.strokeRect(x, y, side, side);
+
+        gc.setFont(Font.font("Monospaced", 10));
+        gc.setFill(Color.web("#8A8A96"));
+        gc.fillText("x = θ₁ start, y = θ₂ start, both −π..π · bright = flips fast · dark = never flips",
+                MARGIN + 4, MARGIN + 20 + plotH + 18);
+    }
+
+    /**
+     * Converts the sweep's time-to-flip grid into a colour image.
+     *
+     * <p>Cells that never flipped are painted near-black: those are the
+     * smooth, predictable regions, and leaving them dark makes the
+     * intricate boundary read as the subject. Everything else ramps from
+     * magenta (flips almost immediately) through to deep blue (took nearly
+     * the whole budget), using the app's own accent hue at the hot end for
+     * the same reason the velocity tint does.
+     */
+    private WritableImage buildFractalImage(double[][] timeToFlip) {
+        int h = timeToFlip.length;
+        int w = timeToFlip[0].length;
+        WritableImage image = new WritableImage(w, h);
+        PixelWriter pixels = image.getPixelWriter();
+
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                double t = timeToFlip[row][col];
+                Color c;
+                if (t >= fractalMaxSeconds) {
+                    c = Color.web("#0B0B10"); // never flipped — stable region
+                } else {
+                    double frac = t / fractalMaxSeconds;      // 0 = instant, 1 = only just
+                    double hue = 330.0 - frac * 110.0;        // 330 magenta -> 220 blue
+                    c = Color.hsb(hue, 0.85, 1.0 - 0.35 * frac);
+                }
+                // Row 0 is theta2 = -pi. Flipped vertically so +theta2 points
+                // up on screen, matching how every other plot here reads.
+                pixels.setColor(col, h - 1 - row, c);
+            }
+        }
+        return image;
+    }
+
     // -------------------------------------------------------------------------
     // Mode: ALL — small multiples
     // -------------------------------------------------------------------------
@@ -703,6 +789,7 @@ public final class GraphPanel extends Canvas {
             case POINCARE   -> "Poincaré Section  (θ₂, ω₂ at θ₁=0⁺)";
             case COMPARISON -> "Integrator Comparison — |E(t) − E₀|";
             case BIFURCATION -> "Bifurcation Diagram — swept θ₁ initial angle";
+            case FRACTAL     -> "Basin Fractal — time until link 2 flips";
             case ALL        -> ""; // render() returns before this is ever reached for ALL
         };
         gc.setFont(Font.font("System", FontWeight.BOLD, 14));

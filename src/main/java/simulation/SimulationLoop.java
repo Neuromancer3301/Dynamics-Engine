@@ -50,7 +50,6 @@ public final class SimulationLoop implements Runnable {
     private static final double MAX_WALL_DT = 0.1;
 
     private final StateBuffer    buffer;
-    private final PendulumConfig config;
     private final Queue<SimCommand>     commandQueue  = new ConcurrentLinkedQueue<>();
     private final Queue<EngineRebuilder> rebuildQueue = new ConcurrentLinkedQueue<>();
 
@@ -99,7 +98,6 @@ public final class SimulationLoop implements Runnable {
      * so the UI has something to render before the thread is even started.
      */
     public SimulationLoop(PendulumConfig config, StateBuffer buffer) {
-        this.config = config;
         this.engine = new PhysicsEngine(config);
         this.buffer = buffer;
         this.speed  = config.getSpeedMultiplier();

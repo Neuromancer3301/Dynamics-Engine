@@ -26,14 +26,9 @@
               onAction="#handleToggleReducedMotion"/>
     <CheckBox fx:id="colorBlindCheck" text="Colour-blind-safe bob palette (Okabe-Ito)"
               onAction="#handleToggleColorBlindSafe"/>
-    <Label styleClass="stub-body"
-           text="Takes effect the next time the simulation screen opens."/>
+   
 
     <Label styleClass="stub-body" text="Text size"/>
     <ComboBox fx:id="fontScaleBox"/>
-    <Label styleClass="stub-body"
-           text="JavaFX can't read the OS's own text-scale setting directly, so this is a manual stand-in — a uniform zoom applied on top of everything, capped modestly to avoid clipping."/>
 
-    <Label styleClass="stub-body"
-           text="More preferences — default link count, gravity, angle units — land here in a future phase."/>
 </VBox>

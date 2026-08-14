@@ -35,7 +35,7 @@ public final class Icons {
 
     /** Every glyph this app currently needs. See each draw method below for what it looks like. */
     public enum Glyph {
-        SETTINGS, INFO, CHEVRON, SELECT, ADD, SNAP,
+        SETTINGS, INFO, MANUAL, CHEVRON, SELECT, ADD, SNAP,
         MOTION, CHAOS, GRAPHS, HISTORY, LINKS, DISPLAY, PENDULUM, RESERVED
     }
 
@@ -116,6 +116,7 @@ public final class Icons {
             switch (glyph) {
                 case SETTINGS -> drawSettings(gc, w, h);
                 case INFO     -> drawInfo(gc, w, h);
+                case MANUAL   -> drawManual(gc, w, h);
                 case CHEVRON  -> drawChevron(gc, w, h);
                 case SELECT   -> drawSelect(gc, w, h);
                 case ADD      -> drawAdd(gc, w, h);
@@ -159,6 +160,25 @@ public final class Icons {
             double dotR = w * 0.045;
             gc.fillOval(cx - dotR, cy - r * 0.5 - dotR, dotR * 2, dotR * 2);
             gc.strokeLine(cx, cy - r * 0.1, cx, cy + r * 0.5);
+        }
+
+        /** An open book, seen face-on: two pages meeting at a central spine. */
+        private static void drawManual(GraphicsContext gc, double w, double h) {
+            double cx = w / 2.0;
+            double top = h * 0.24, bottom = h * 0.78;
+            double outer = w * 0.14;
+
+            // Left page: spine down to the outer edge and back, with the
+            // outer corner dropped slightly so it reads as a curved page.
+            gc.strokePolyline(
+                    new double[]{cx, outer, outer, cx},
+                    new double[]{top + h * 0.04, top, bottom - h * 0.02, bottom}, 4);
+            // Right page: the same shape mirrored about the spine.
+            gc.strokePolyline(
+                    new double[]{cx, w - outer, w - outer, cx},
+                    new double[]{top + h * 0.04, top, bottom - h * 0.02, bottom}, 4);
+            // Spine.
+            gc.strokeLine(cx, top + h * 0.04, cx, bottom);
         }
 
         /** A single right-pointing chevron — callers rotate the node 180° to flip its meaning (see class javadoc). */
