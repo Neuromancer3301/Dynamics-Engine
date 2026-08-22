@@ -140,8 +140,8 @@ final class PendulumChainRenderer {
         this.bobBaseRadius = baseRadiusForN(state.getN());
 
         ensureTrailCapacity(state.getN());
-        recordTrailPoints(state, scale, pivotX, pivotY);
-        drawTrails(gc, state.getN());
+        recordTrailPoints(state);
+        drawTrails(gc, state.getN(), scale, pivotX, pivotY);
 
         if (ghostStates != null) {
             for (SimState ghost : ghostStates) drawGhostChain(gc, ghost, scale, pivotX, pivotY);
@@ -175,21 +175,26 @@ final class PendulumChainRenderer {
         while (trails.size() < n) trails.add(new ArrayDeque<>());
     }
 
-    private void recordTrailPoints(SimState state, double scale, double pivotX, double pivotY) {
+    /**
+     * Records each link's current <em>world</em>-space position, not a
+     * screen-space one — see {@link #drawOneTrail}'s javadoc for why: a
+     * trail spans many frames, and the camera can pan/zoom between any two
+     * of them, so baking a screen position in at record time would freeze
+     * that point wherever the camera happened to be when it was recorded.
+     */
+    private void recordTrailPoints(SimState state) {
         if (reducedMotion || trailMode == PendulumCanvas.TrailMode.OFF || state.getN() == 0) return;
 
         if (trailMode == PendulumCanvas.TrailMode.TIP_ONLY) {
-            recordTrailPoint(state, state.getN() - 1, scale, pivotX, pivotY);
+            recordTrailPoint(state, state.getN() - 1);
         } else { // ALL_LINKS
-            for (int i = 0; i < state.getN(); i++) recordTrailPoint(state, i, scale, pivotX, pivotY);
+            for (int i = 0; i < state.getN(); i++) recordTrailPoint(state, i);
         }
     }
 
-    private void recordTrailPoint(SimState state, int link, double scale, double pivotX, double pivotY) {
-        double tx = pivotX + state.bobX[link] * scale;
-        double ty = pivotY - state.bobY[link] * scale;
+    private void recordTrailPoint(SimState state, int link) {
         Deque<double[]> t = trails.get(link);
-        t.addLast(new double[]{tx, ty, Math.abs(state.angularVelocities[link])});
+        t.addLast(new double[]{state.bobX[link], state.bobY[link], Math.abs(state.angularVelocities[link])});
         while (t.size() > TRAIL_MAX) t.removeFirst();
     }
 
@@ -237,33 +242,46 @@ final class PendulumChainRenderer {
         gc.fillText("B", prevX + r + 3, prevY + 3);
     }
 
-    private void drawTrails(GraphicsContext gc, int n) {
+    private void drawTrails(GraphicsContext gc, int n, double scale, double pivotX, double pivotY) {
         if (trailMode == PendulumCanvas.TrailMode.OFF) return;
 
         if (trailMode == PendulumCanvas.TrailMode.TIP_ONLY) {
-            if (n > 0) drawOneTrail(gc, trails.get(n - 1), Color.web("#EA3F8C"));
+            if (n > 0) drawOneTrail(gc, trails.get(n - 1), Color.web("#EA3F8C"), scale, pivotX, pivotY);
         } else { // ALL_LINKS
-            for (int i = 0; i < n; i++) drawOneTrail(gc, trails.get(i), bobColors[i % bobColors.length]);
+            for (int i = 0; i < n; i++) drawOneTrail(gc, trails.get(i), bobColors[i % bobColors.length], scale, pivotX, pivotY);
         }
     }
 
-    private void drawOneTrail(GraphicsContext gc, Deque<double[]> trail, Color color) {
+    /**
+     * Re-projects each recorded world-space point through the <em>current</em>
+     * camera every call, rather than trusting a screen position baked in
+     * back when the point was recorded — otherwise a pan or zoom mid-trail
+     * would tear old segments away from the chain instead of moving with it,
+     * since every other frame the pivot/scale used here moves right along
+     * with dragging/scrolling but a stale baked-in screen point wouldn't.
+     */
+    private void drawOneTrail(GraphicsContext gc, Deque<double[]> trail, Color color, double scale, double pivotX, double pivotY) {
         if (trail.size() < 2) return;
 
         int total = trail.size();
         int idx   = 0;
-        double[] prev = null;
+        double prevX = 0, prevY = 0;
+        boolean havePrev = false;
 
         for (double[] pt : trail) {
-            if (prev != null) {
+            double x = pivotX + pt[0] * scale;
+            double y = pivotY - pt[1] * scale;
+            if (havePrev) {
                 double alpha = 0.05 + 0.65 * ((double) idx / total);
                 double width = 0.5 + 2.0 * ((double) idx / total);
                 Color segmentColor = velocityTint ? velocityColor(pt[2]) : color;
                 gc.setStroke(segmentColor.deriveColor(0, 1, 1, alpha));
                 gc.setLineWidth(width);
-                gc.strokeLine(prev[0], prev[1], pt[0], pt[1]);
+                gc.strokeLine(prevX, prevY, x, y);
             }
-            prev = pt;
+            prevX = x;
+            prevY = y;
+            havePrev = true;
             idx++;
         }
     }

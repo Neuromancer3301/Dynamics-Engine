@@ -603,10 +603,10 @@ public final class PendulumGraphPanel extends ChartCanvas {
 
     // ---- Buffer window helpers ----
 
-    /** The most recent sample, or {@code null} if none. The cast is safe — {@code data} is always the {@link ArrayDeque} declared above. */
+    /** The most recent sample, or {@code null} if none. */
     private double[] peekLast() {
         if (data.isEmpty()) return null;
-        return ((ArrayDeque<double[]>) data).peekLast();
+        return data.peekLast();
     }
 
     /**
@@ -617,7 +617,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
      * decrease over a run, so this always returns a properly ordered pair.
      */
     private double[] windowBounds() {
-        double[] first = data.isEmpty() ? null : ((ArrayDeque<double[]>) data).peekFirst();
+        double[] first = data.isEmpty() ? null : data.peekFirst();
         double[] last  = peekLast();
         if (first == null || last == null) return new double[]{0, 0};
 

@@ -686,6 +686,7 @@ public final class SimulationController implements Initializable, Navigable,
             case R -> {
                 simLoop.reset();
                 pendulumCanvas.clearTrail();
+                pendulumCanvas.fitToContent();
                 graphPanel.clear();
                 initialEnergy = null;
                 history.clear();

@@ -24,7 +24,6 @@ import javafx.scene.text.TextAlignment;
 public abstract class SimCanvas extends Canvas {
 
     protected final Camera camera = new Camera();
-    private boolean hasFitted = false;
 
     // Candidate reference lengths for the scale bar, in the same world units
     // a simulation's own content uses. "Nice" values, map-legend style, so
@@ -40,7 +39,7 @@ public abstract class SimCanvas extends Canvas {
 
     private void handleScroll(ScrollEvent e) {
         double factor = e.getDeltaY() > 0 ? 1.1 : (1 / 1.1);
-        camera.zoomBy(factor, e.getX(), e.getY());
+        camera.zoomBy(factor, e.getX(), e.getY(), getWidth(), getHeight());
         e.consume();
     }
 
@@ -53,12 +52,30 @@ public abstract class SimCanvas extends Canvas {
     /** Whether there's anything to draw yet — while false, {@link #renderFrame} shows the waiting message instead. */
     protected abstract boolean hasContent();
 
-    /** Re-fits the camera to the current content and viewport size. Never called automatically except once, on the first real frame. */
+    /** Re-fits the camera to the current content and viewport size. */
     public final void fitToContent() {
         camera.fitToContent(getWidth(), getHeight(), contentExtent());
     }
 
-    /** Draws one full frame: background, then either the waiting message or the real content plus the scale indicator. */
+    /**
+     * Draws one full frame: background (including the world-origin axes),
+     * then either the waiting message or the real content plus the scale
+     * indicator.
+     *
+     * <p>Round 1.1 §1/§4: the camera keeps auto-refitting — every frame,
+     * cheap to repeat — for as long as {@link Camera#isIdentity} says the
+     * user hasn't manually panned or zoomed it away from that. This is what
+     * makes a resize (sidebar/graph column toggle, window resize) rescale
+     * content smoothly again like the old per-frame renderer did, and also
+     * what makes the very first frame self-correct if it fires before the
+     * canvas's bound width/height have settled from layout — instead of
+     * that transient bad size (e.g. before the host pane's first layout
+     * pass) getting permanently baked into {@code baseScale}, which used to
+     * show as the whole chain collapsed into a single blob at the pivot
+     * until the next Reset/Apply Changes explicitly re-fit it. The instant
+     * the user pans or zooms (or a baseline edit resets the camera and the
+     * user hasn't touched it since), this resumes governing until they do.
+     */
     protected final void renderFrame() {
         GraphicsContext gc = getGraphicsContext2D();
         double w = getWidth(), h = getHeight();
@@ -69,15 +86,14 @@ public abstract class SimCanvas extends Canvas {
             drawWaitingMessage(gc, w, h);
             return;
         }
-        if (!hasFitted) {
-            fitToContent(); // first real frame only — never again automatically
-            hasFitted = true;
+        if (camera.isIdentity()) {
+            fitToContent();
         }
         drawContent(gc, w, h);
         drawScaleIndicator(gc, w, h);
     }
 
-    /** Near-void, neutral grey grid — moved verbatim from {@code ui.PendulumCanvas}. */
+    /** Near-void, neutral grey grid plus the world-origin axes — moved verbatim from {@code ui.PendulumCanvas}, minus the old fixed-center line (see {@link #drawOriginAxes}). */
     protected void drawBackground(GraphicsContext gc, double w, double h) {
         gc.setFill(Color.web("#08080B"));
         gc.fillRect(0, 0, w, h);
@@ -87,10 +103,25 @@ public abstract class SimCanvas extends Canvas {
         for (double x = 0; x < w; x += 45) gc.strokeLine(x, 0, x, h);
         for (double y = 0; y < h; y += 45) gc.strokeLine(0, y, w, y);
 
-        double cx = w / 2.0;
+        drawOriginAxes(gc, w, h);
+    }
+
+    /**
+     * The X and Y axes through the world origin (0, 0) — simulation-agnostic
+     * so every {@code SimCanvas} subclass gets them for free, not just the
+     * pendulum. Anchored to {@link Camera#originX}/{@link Camera#originY}
+     * rather than a fixed screen point, so — unlike the single fixed-center
+     * vertical line this replaces — both lines pan (and re-center on a
+     * resize) exactly in step with everything else drawn in world space.
+     */
+    protected void drawOriginAxes(GraphicsContext gc, double w, double h) {
+        double originX = camera.originX(w);
+        double originY = camera.originY(h);
+
         gc.setStroke(Color.web("#2E2E36", 0.6));
         gc.setLineWidth(1.0);
-        gc.strokeLine(cx, 0, cx, h);
+        gc.strokeLine(originX, 0, originX, h);
+        gc.strokeLine(0, originY, w, originY);
     }
 
     /** Shown for the brief window before the first real frame is available. Moved verbatim from {@code ui.PendulumCanvas}. */
