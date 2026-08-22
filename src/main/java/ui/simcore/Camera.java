@@ -7,16 +7,17 @@ package ui.simcore;
  *
  * <p><b>Resize behaviour:</b> {@link #getScale} and the pan offset never
  * react to a width/height change on their own — a resize is not a refit.
- * {@link #fitToContent} is the only thing that moves them. What decides
- * whether a resize (or a first-layout settle, or ongoing content growth)
- * actually triggers a refit is {@link #isIdentity}: {@code
- * SimCanvas#renderFrame} calls {@link #fitToContent} on every frame while
- * the camera is still untouched (round 1.1 §1/§4 — see that method's
- * javadoc), and stops the moment the user pans or zooms. The origin
- * fraction ({@link #originXFraction}/{@link #originYFraction}) is stored as
- * a fraction of width/height rather than an absolute pixel offset
- * specifically so a layout column collapsing/expanding re-centers smoothly
- * instead of leaving content pinned to a stale pivot.
+ * {@link #fitToContent} is the only thing that moves them, and it's {@code
+ * SimCanvas#renderFrame} that decides when: on every frame where its own
+ * width/height actually changed since the last one, full stop — never
+ * because the content's own extent changed (round 1.2 §1; see that
+ * method's javadoc), and never gated on whether the user has manually
+ * panned/zoomed since. The origin fraction ({@link #originXFraction}/
+ * {@link #originYFraction}) is stored as a fraction of width/height rather
+ * than an absolute pixel offset so that, in the instant right after a
+ * resize-triggered {@link #fitToContent} resets pan to zero, the origin
+ * still lands at the same relative spot in the new viewport rather than a
+ * stale absolute pixel from the old one.
  */
 public final class Camera {
     private static final double MIN_ZOOM = 0.25, MAX_ZOOM = 6.0;
@@ -70,18 +71,6 @@ public final class Camera {
 
     public double originX(double width)  { return originXFraction * width  + panX; }
     public double originY(double height) { return originYFraction * height + panY; }
-
-    /**
-     * True while the camera is still exactly where {@link #fitToContent}
-     * last left it — zoom at 1 and no pan — i.e. the user hasn't manually
-     * touched it since. This is the signal {@code SimCanvas#renderFrame}
-     * uses to decide whether to keep auto-refitting: {@link #pan} and
-     * {@link #zoomBy} are the only two things that ever move away from this
-     * state, so exact equality (rather than an epsilon) is safe — nothing
-     * else perturbs {@link #zoom}/{@link #panX}/{@link #panY} by a stray
-     * fraction of a pixel.
-     */
-    public boolean isIdentity() { return zoom == 1.0 && panX == 0.0 && panY == 0.0; }
 
     public double worldToScreenX(double worldX, double width)  { return originX(width) + worldX * getScale(); }
     public double worldToScreenY(double worldY, double height) { return originY(height) - worldY * getScale(); }

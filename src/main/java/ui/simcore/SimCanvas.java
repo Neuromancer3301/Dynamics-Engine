@@ -24,6 +24,8 @@ import javafx.scene.text.TextAlignment;
 public abstract class SimCanvas extends Canvas {
 
     protected final Camera camera = new Camera();
+    private boolean everFitted = false;
+    private double lastWidth = -1, lastHeight = -1;
 
     // Candidate reference lengths for the scale bar, in the same world units
     // a simulation's own content uses. "Nice" values, map-legend style, so
@@ -62,19 +64,28 @@ public abstract class SimCanvas extends Canvas {
      * then either the waiting message or the real content plus the scale
      * indicator.
      *
-     * <p>Round 1.1 §1/§4: the camera keeps auto-refitting — every frame,
-     * cheap to repeat — for as long as {@link Camera#isIdentity} says the
-     * user hasn't manually panned or zoomed it away from that. This is what
-     * makes a resize (sidebar/graph column toggle, window resize) rescale
-     * content smoothly again like the old per-frame renderer did, and also
-     * what makes the very first frame self-correct if it fires before the
-     * canvas's bound width/height have settled from layout — instead of
-     * that transient bad size (e.g. before the host pane's first layout
-     * pass) getting permanently baked into {@code baseScale}, which used to
-     * show as the whole chain collapsed into a single blob at the pivot
-     * until the next Reset/Apply Changes explicitly re-fit it. The instant
-     * the user pans or zooms (or a baseline edit resets the camera and the
-     * user hasn't touched it since), this resumes governing until they do.
+     * <p>Round 1.2 §1: re-fitting is tied to an actual <em>viewport</em>
+     * resize (this canvas's own width/height changing frame-to-frame —
+     * sidebar/graph column toggle, window resize), never to the content's
+     * own extent changing (Add/Delete, a length edit) and never gated on
+     * whether the user has manually panned/zoomed. A resize always re-fits,
+     * full stop — that's what makes a sidebar/graph toggle rescale content
+     * smoothly like the old per-frame renderer did (and, since {@link
+     * LayoutShell}'s toggle is an animated width tween, comparing width
+     * every single frame of that tween is what makes the rescale itself
+     * read as a smooth zoom rather than one jump at the end), regardless of
+     * whether the user had already panned/zoomed — no more of the old
+     * split where a resize only rescaled before the first manual pan/zoom
+     * and just shifted the origin sideways after it. Content growing or
+     * shrinking on its own is deliberately <em>not</em> a resize — Add,
+     * Delete, and a length edit never touch this canvas's own width/height,
+     * so they never trigger this, matching round 1's original intent that
+     * only Reset/Apply Changes (via their own explicit {@link
+     * #fitToContent} calls) move the camera for a structural edit. The
+     * first real frame is always a "resize" too (from the unset {@code -1}
+     * sentinel), which is what makes it self-correct if it fires before the
+     * canvas's bound width/height have settled from layout, instead of a
+     * transient bad size getting permanently baked into {@code baseScale}.
      */
     protected final void renderFrame() {
         GraphicsContext gc = getGraphicsContext2D();
@@ -86,8 +97,11 @@ public abstract class SimCanvas extends Canvas {
             drawWaitingMessage(gc, w, h);
             return;
         }
-        if (camera.isIdentity()) {
+        if (!everFitted || w != lastWidth || h != lastHeight) {
             fitToContent();
+            everFitted = true;
+            lastWidth = w;
+            lastHeight = h;
         }
         drawContent(gc, w, h);
         drawScaleIndicator(gc, w, h);
