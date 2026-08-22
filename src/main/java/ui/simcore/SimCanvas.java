@@ -64,28 +64,43 @@ public abstract class SimCanvas extends Canvas {
      * then either the waiting message or the real content plus the scale
      * indicator.
      *
-     * <p>Round 1.2 §1: re-fitting is tied to an actual <em>viewport</em>
+     * <p>Round 1.3 §1: re-fitting is tied to an actual <em>viewport</em>
      * resize (this canvas's own width/height changing frame-to-frame —
      * sidebar/graph column toggle, window resize), never to the content's
-     * own extent changing (Add/Delete, a length edit) and never gated on
-     * whether the user has manually panned/zoomed. A resize always re-fits,
-     * full stop — that's what makes a sidebar/graph toggle rescale content
-     * smoothly like the old per-frame renderer did (and, since {@link
-     * LayoutShell}'s toggle is an animated width tween, comparing width
-     * every single frame of that tween is what makes the rescale itself
-     * read as a smooth zoom rather than one jump at the end), regardless of
-     * whether the user had already panned/zoomed — no more of the old
-     * split where a resize only rescaled before the first manual pan/zoom
-     * and just shifted the origin sideways after it. Content growing or
-     * shrinking on its own is deliberately <em>not</em> a resize — Add,
-     * Delete, and a length edit never touch this canvas's own width/height,
-     * so they never trigger this, matching round 1's original intent that
-     * only Reset/Apply Changes (via their own explicit {@link
-     * #fitToContent} calls) move the camera for a structural edit. The
-     * first real frame is always a "resize" too (from the unset {@code -1}
-     * sentinel), which is what makes it self-correct if it fires before the
-     * canvas's bound width/height have settled from layout, instead of a
-     * transient bad size getting permanently baked into {@code baseScale}.
+     * own extent changing (Add/Delete, a length edit) — that part is
+     * unchanged from round 1.2. What changed is what a detected resize
+     * <em>does</em>: the very first real frame calls {@link #fitToContent}
+     * (there's no prior view yet to preserve), but every resize after that
+     * calls {@link Camera#rescaleForViewport} instead — scaling whatever
+     * the camera currently is (fresh-fit, or however the user panned/
+     * zoomed it) by the viewport's size ratio, rather than snapping back to
+     * a fresh centered fit at zoom 1. A full {@link #fitToContent} on every
+     * resize (round 1.2's approach) looked fine before the user ever
+     * touched the camera — a centered fit and "the untouched view scaled to
+     * the new size" are the same thing — but after a manual pan/zoom it
+     * silently threw that framing away on the next sidebar toggle, which
+     * reads as the camera snapping back to origin rather than the canvas
+     * just resizing. Content growing or shrinking on its own still never
+     * triggers either path — Add, Delete, and a length edit never touch
+     * this canvas's own width/height — matching round 1's original intent
+     * that only Reset/Apply Changes (via their own explicit {@link
+     * #fitToContent} calls) move the camera for a structural edit.
+     *
+     * <p>Both paths are guarded by {@code w > 0 && h > 0}: the canvas can
+     * report a 0 width/height for a frame or two before its bound host pane
+     * has actually been laid out, and unlike a full re-fit (idempotent —
+     * garbage in, garbage out, but self-correcting the instant a real size
+     * arrives), {@link Camera#rescaleForViewport} <em>multiplies</em>
+     * whatever's already there by a ratio computed against the previous
+     * size — so a zero-sized transient at the moment {@link #everFitted}
+     * first goes true would otherwise get locked in as {@code baseScale}
+     * either directly (a 0/0 fit) or, worse, as the "old" size a later
+     * genuine resize divides by (a division blowing {@code baseScale} up
+     * towards infinity instead of self-correcting). Skipping the fit/
+     * rescale entirely on a 0-sized frame is harmless — nothing is visibly
+     * drawn into a 0×0 canvas anyway — and leaves {@link #everFitted}
+     * false, so the first frame that reports a real size is treated as the
+     * initial fit, never as a resize away from a bogus one.
      */
     protected final void renderFrame() {
         GraphicsContext gc = getGraphicsContext2D();
@@ -97,9 +112,13 @@ public abstract class SimCanvas extends Canvas {
             drawWaitingMessage(gc, w, h);
             return;
         }
-        if (!everFitted || w != lastWidth || h != lastHeight) {
-            fitToContent();
-            everFitted = true;
+        if (w > 0 && h > 0) {
+            if (!everFitted) {
+                fitToContent();
+                everFitted = true;
+            } else if (w != lastWidth || h != lastHeight) {
+                camera.rescaleForViewport(lastWidth, lastHeight, w, h);
+            }
             lastWidth = w;
             lastHeight = h;
         }
