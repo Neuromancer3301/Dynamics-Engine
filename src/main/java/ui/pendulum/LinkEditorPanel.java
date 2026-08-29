@@ -98,6 +98,20 @@ public final class LinkEditorPanel extends VBox {
             loadFrom(selected.config());
             clearError();
             if (onApply != null) onApply.accept(selected.config());
+
+            // Round 3.1: ComboBox's ON_ACTION fires from its valueProperty's
+            // invalidated() callback, which — like any JavaFX property — is
+            // a no-op if the new value equals the old one. Re-picking the
+            // *already-selected* preset (e.g. after editing rows away from
+            // it and wanting to discard those edits) is therefore a value
+            // no-op and silently does nothing: no error, no visual feedback,
+            // just nothing happens. Clearing the selection right after
+            // applying makes the next pick — of this same preset or any
+            // other — a genuine null-to-value transition every time, so it
+            // reliably re-fires. The prompt text reappearing is also more
+            // honest than leaving a stale "Preset X" label showing once the
+            // draft rows may have since diverged from it via further edits.
+            presetBox.setValue(null);
         });
 
         Button saveButton = smallButton("💾 Save");
