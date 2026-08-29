@@ -6,6 +6,9 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Group;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.ButtonBase;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
 import javafx.scene.transform.Scale;
 import javafx.stage.Stage;
@@ -126,6 +129,30 @@ public final class SceneRouter {
                 scene.widthProperty().addListener((o, a, b) -> applyScaling());
                 scene.heightProperty().addListener((o, a, b) -> applyScaling());
                 ThemeManager.getInstance().addListener(this::applyScaling);
+
+                // Round 1.5: Enter activates whatever ButtonBase (Button,
+                // ToggleButton, CheckBox, RadioButton, Hyperlink) currently
+                // has focus. JavaFX only wires this by default for a scene's
+                // one designated "default" button and, separately, Space for
+                // whichever button is merely focused — Enter on an ordinary
+                // focused button does nothing out of the box, which is why
+                // tabbing to a control and pressing Enter previously worked
+                // only on the main menu (component.NavCardController and
+                // component.UtilityIconButton each wire their own per-node
+                // Enter handler — deliberately, since neither is a
+                // ButtonBase, so this filter never double-fires them) and
+                // silently did nothing everywhere else. A filter (capturing,
+                // same reasoning as SimulationController's own Space/R/→
+                // filter below) on the one Scene every screen shares fixes
+                // every screen at once rather than needing this repeated
+                // per controller.
+                scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                    if (e.getCode() != KeyCode.ENTER) return;
+                    if (scene.getFocusOwner() instanceof ButtonBase button) {
+                        button.fire();
+                        e.consume();
+                    }
+                });
             } else {
                 if (pushCurrent) history.push(activeRoute);
                 // ...and again here, every subsequent navigation, in case the

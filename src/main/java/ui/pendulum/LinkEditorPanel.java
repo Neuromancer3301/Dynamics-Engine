@@ -1,4 +1,4 @@
-package ui;
+package ui.pendulum;
 
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
@@ -112,6 +112,7 @@ public final class LinkEditorPanel extends VBox {
         // such here too, so it reads as a shortcut for the form above
         // rather than something smarter than it is.
         TextField nlField = new TextField();
+        nlField.getStyleClass().add("sidebar-text-field");
         nlField.setPromptText("e.g. \"5 links, heavy first link, low gravity\"");
         nlField.setAccessibleText("Describe a scenario in words to fill in the form below");
         Button nlApplyButton = smallButton("✨ Parse & Apply");

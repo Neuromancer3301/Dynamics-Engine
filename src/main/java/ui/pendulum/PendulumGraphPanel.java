@@ -1,7 +1,7 @@
-package ui;
+package ui.pendulum;
 
 import physics.SimState;
-import javafx.scene.canvas.Canvas;
+import ui.simcore.ChartCanvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -17,9 +17,13 @@ import java.util.Deque;
 import java.util.List;
 
 /**
- * Real-time analytics graph panel rendered on a JavaFX Canvas.
+ * Real-time analytics graph panel for the pendulum screen. Moved from {@code
+ * ui.GraphPanel} and split the same way {@code ui.PendulumCanvas} was: the
+ * generic charting mechanics live in {@link ChartCanvas}; everything below
+ * is pendulum-specific data and per-mode drawing — see round 1 §9 of the UI
+ * restructuring plan.
  *
- * Supports six graph modes:
+ * Supports seven graph modes:
  *  1. ANGLE        — θ₁(t): first link angle vs time (scrolling window)
  *  2. ENERGY       — E(t): total, kinetic, potential energy vs time
  *  3. PHASE        — Phase portrait (θ₁, ω₁): angle vs angular velocity
@@ -37,7 +41,7 @@ import java.util.List;
  *
  * ANGLE/ENERGY/PHASE/ALL share one ring buffer of fixed capacity.
  */
-public final class GraphPanel extends Canvas {
+public final class PendulumGraphPanel extends ChartCanvas {
 
     /** Graph display modes. */
     public enum Mode { ANGLE, ENERGY, PHASE, ALL, POINCARE, COMPARISON, BIFURCATION }
@@ -45,11 +49,6 @@ public final class GraphPanel extends Canvas {
     /** One integrator's energy-drift-over-time trace for {@link Mode#COMPARISON}. */
     public record ComparisonSeries(String name, double[] times, double[] energyDrift, Color color) {}
 
-    // ---- Layout constants ----
-    // MARGIN is the gutter holding the axis tick labels; it tracks
-    // AXIS_FONT_SIZE below, since a wider label in a fixed gutter would
-    // collide with the plot area rather than sit beside it.
-    private static final int    MARGIN  = 60;
     private static final int    MAX_PTS = 800;
     private static final double TIME_WINDOW = 12.0; // seconds visible in time-series modes
 
@@ -57,16 +56,7 @@ public final class GraphPanel extends Canvas {
     // clear()), so this bounds memory rather than controlling what's visible.
     private static final int MAX_POINCARE_POINTS = 5000;
 
-    // Canvas-drawn text sizes. Named because MARGIN, legend spacing, and
-    // caption baselines are all derived from them — see PendulumCanvas's
-    // equivalent block for the full reasoning.
-    private static final double AXIS_FONT_SIZE    = 11;
-    private static final double LEGEND_FONT_SIZE  = 12;
-    private static final double CAPTION_FONT_SIZE = 11;
-    private static final double MESSAGE_FONT_SIZE = 13;
-    private static final double TITLE_FONT_SIZE   = 14;
-    private static final double MINI_TITLE_SIZE   = 11;
-    private static final double LEGEND_LINE_H     = 15;
+    private static final double LEGEND_LINE_H = 15;
 
     // ---- Colors ----
     // "Signal" palette: any single-focus mode (one live trace or one
@@ -74,8 +64,8 @@ public final class GraphPanel extends Canvas {
     // ANGLE, PHASE, POINCARE, and BIFURCATION are all exactly that. ENERGY
     // is the one graph that's genuinely multi-series (Total/KE/PE at once),
     // so it draws from the same real oscilloscope multi-channel colors
-    // (magenta/cyan/yellow) ui.PendulumCanvas's bob palette and A/B compare
-    // chain use — see this file's and that one's own comments.
+    // (magenta/cyan/yellow) ui.pendulum.PendulumChainRenderer's bob palette
+    // and A/B compare chain use.
     private static final Color C_ANGLE  = Color.web("#EA3F8C");   // magenta (accent)
     private static final Color C_ENERGY = Color.web("#EA3F8C");   // magenta — Total, the headline series
     private static final Color C_KE     = Color.web("#3DDCC7");   // cyan — matches A/B compare's "second channel"
@@ -106,16 +96,8 @@ public final class GraphPanel extends Canvas {
     private double[] bifurcationParams = new double[0];
     private List<double[]> bifurcationSamples = List.of();
 
-    // Decouples "how often render() is called" from "how often it actually
-    // redraws." Every mutator below sets this; render() clears it after
-    // drawing and bails out immediately when nothing has changed since the
-    // last frame it actually painted. This lets a caller poll render() on
-    // every AnimationTimer tick (e.g. 60Hz) without needing to hand-roll its
-    // own frame-skipping to avoid redrawing an unchanged ~800-point series.
-    private boolean dirty = true;
-
     /** @param width,height initial size; later bound to the host pane so the graph fills its column. */
-    public GraphPanel(double width, double height) {
+    public PendulumGraphPanel(double width, double height) {
         super(width, height);
     }
 
@@ -126,12 +108,10 @@ public final class GraphPanel extends Canvas {
         // mode is active — so switching modes has no reason to discard
         // history you were watching build up.
         this.mode = newMode;
-        dirty = true;
+        markDirty();
     }
 
-    /**
-     * Ingest a new state snapshot. Call from the JavaFX Application Thread.
-     */
+    /** Ingest a new state snapshot. Call from the JavaFX Application Thread. */
     public void addDataPoint(SimState state) {
         if (state == null) return;
         boolean hasSecondLink = state.getN() > 1;
@@ -151,47 +131,31 @@ public final class GraphPanel extends Canvas {
         });
         while (data.size() > MAX_PTS) data.removeFirst();
 
-        // Rising zero-crossing of theta1: prev < 0, current >= 0. Sampled at
-        // this method's call rate (~30Hz from the render loop, not the
-        // physics engine's own 500Hz) — coarser than a dedicated Poincaré
-        // integration would use, but consistent with how every other mode
-        // here already treats the same sampled buffer as its data source.
+        // Rising zero-crossing of theta1: prev < 0, current >= 0.
         if (hasSecondLink && !Double.isNaN(prevTheta1) && prevTheta1 < 0 && theta1 >= 0) {
             poincarePoints.add(new double[]{theta2, omega2});
             if (poincarePoints.size() > MAX_POINCARE_POINTS) poincarePoints.remove(0);
         }
         prevTheta1 = theta1;
-        dirty = true;
+        markDirty();
     }
 
     /** Supplies the traces {@link Mode#COMPARISON} draws. See controller.SimulationController for how these are computed. */
     public void setComparisonData(List<ComparisonSeries> series) {
         this.comparisonSeries = series;
-        dirty = true;
+        markDirty();
     }
 
     /** Supplies the columns {@link Mode#BIFURCATION} draws. See {@code physics.BifurcationSweep}. */
     public void setBifurcationData(double[] paramValues, List<double[]> samples) {
         this.bifurcationParams = paramValues;
         this.bifurcationSamples = samples;
-        dirty = true;
+        markDirty();
     }
 
-    /**
-     * Redraw, but only if something has changed since the last call actually
-     * painted a frame — see {@link #dirty}. Safe to call unconditionally
-     * from an AnimationTimer at any cadence.
-     */
-    public void render() {
-        if (!dirty) return;
-        dirty = false;
-
-        GraphicsContext gc = getGraphicsContext2D();
-        double W = getWidth();
-        double H = getHeight();
-
+    @Override
+    protected void drawModeContent(GraphicsContext gc, double W, double H) {
         if (mode == Mode.ALL) {
-            drawBackground(gc, W, H);
             renderSmallMultiples(gc, W, H);
             return;
         }
@@ -199,7 +163,6 @@ public final class GraphPanel extends Canvas {
         double plotW = W - MARGIN * 2;
         double plotH = H - MARGIN * 2 - 20; // room for title at top
 
-        drawBackground(gc, W, H);
         drawPlotArea(gc, plotW, plotH);
 
         switch (mode) {
@@ -212,8 +175,20 @@ public final class GraphPanel extends Canvas {
             case ALL          -> { /* handled above, before the early return */ }
         }
 
-        drawAxes(gc, W, H, plotW, plotH);
-        drawTitle(gc, plotW);
+        drawAxes(gc, plotW, plotH);
+        drawTitle(gc, plotW, titleFor(mode));
+    }
+
+    private static String titleFor(Mode mode) {
+        return switch (mode) {
+            case ANGLE      -> "θ₁(t) — First Link Angle";
+            case ENERGY     -> "E(t) — Energy Components";
+            case PHASE      -> "Phase Portrait  (θ₁, ω₁)";
+            case POINCARE   -> "Poincaré Section  (θ₂, ω₂ at θ₁=0⁺)";
+            case COMPARISON -> "Integrator Comparison — |E(t) − E₀|";
+            case BIFURCATION -> "Bifurcation Diagram — swept θ₁ initial angle";
+            case ALL        -> ""; // drawModeContent returns before this is ever reached for ALL
+        };
     }
 
     /** Discards all accumulated data — the scrolling buffer, the Poincaré point cloud, and the crossing detector's memory. */
@@ -221,19 +196,14 @@ public final class GraphPanel extends Canvas {
         data.clear();
         poincarePoints.clear();
         prevTheta1 = Double.NaN;
-        dirty = true;
+        markDirty();
     }
 
     /**
      * Writes the currently-buffered time series to a CSV file — whatever
      * {@link #addDataPoint} has accumulated in {@code data} (up to {@link
      * #MAX_PTS} most recent samples), independent of which {@link Mode} is
-     * currently displayed, so a user can export the raw angle/energy/omega
-     * columns even while looking at, say, the phase portrait.
-     *
-     * <p>Hand-rolled rather than pulling in a CSV library, matching this
-     * project's existing zero-third-party-dependency stance for something
-     * this small (see {@code physics.MiniJson}).
+     * currently displayed.
      */
     public void exportCsv(Path path) throws IOException {
         StringBuilder sb = new StringBuilder();
@@ -257,43 +227,14 @@ public final class GraphPanel extends Canvas {
     // Drawing sub-routines
     // -------------------------------------------------------------------------
 
-    private void drawBackground(GraphicsContext gc, double W, double H) {
-        gc.setFill(Color.web("#08080B"));
-        gc.fillRect(0, 0, W, H);
-    }
-
-    /** Paints the inner plot rectangle and its 5×5 reference grid. Drawn before any series so the data sits on top. */
-    private void drawPlotArea(GraphicsContext gc, double plotW, double plotH) {
-        // Plot background
-        gc.setFill(Color.web("#101014"));
-        gc.fillRect(MARGIN, MARGIN + 20, plotW, plotH);
-
-        // Grid lines
-        gc.setStroke(Color.web("#232329", 0.7));
-        gc.setLineWidth(0.5);
-        int gridN = 5;
-        for (int i = 0; i <= gridN; i++) {
-            double xf = (double) i / gridN;
-            double yf = (double) i / gridN;
-            gc.strokeLine(MARGIN + xf * plotW, MARGIN + 20,
-                          MARGIN + xf * plotW, MARGIN + 20 + plotH);
-            gc.strokeLine(MARGIN, MARGIN + 20 + yf * plotH,
-                          MARGIN + plotW, MARGIN + 20 + yf * plotH);
-        }
-    }
-
     // ---- Mode: Angle vs Time ----
     private void drawAngleSeries(GraphicsContext gc, double plotW, double plotH) {
         if (peekLast() == null) return;
 
         double[] bounds = windowBounds();
         double tMin = bounds[0], tMax = bounds[1];
+        double yMin = -Math.PI, yMax = Math.PI;
 
-        // Y range: θ in [−π, π]
-        double yMin = -Math.PI;
-        double yMax =  Math.PI;
-
-        // Zero line
         drawZeroLine(gc, plotW, plotH, yMin, yMax);
         drawAxisTicks(gc, plotW, plotH, tMin, tMax, yMin, yMax);
 
@@ -304,8 +245,8 @@ public final class GraphPanel extends Canvas {
         for (double[] pt : data) {
             double t = pt[0];
             if (t < tMin || t > tMax) continue;
-            double sx = toScreenX(t, tMin, tMax, plotW);
-            double sy = toScreenY(pt[1], yMin, yMax, plotH);
+            double sx = mapX(t, tMin, tMax, MARGIN, plotW);
+            double sy = mapY(pt[1], yMin, yMax, MARGIN + 20, plotH);
             if (first) { gc.moveTo(sx, sy); first = false; }
             else         gc.lineTo(sx, sy);
         }
@@ -319,7 +260,6 @@ public final class GraphPanel extends Canvas {
         double[] bounds = windowBounds();
         double tMin = bounds[0], tMax = bounds[1];
 
-        // Auto-scale Y from data in visible window
         double yMin = Double.MAX_VALUE, yMax = -Double.MAX_VALUE;
         for (double[] pt : data) {
             if (pt[0] < tMin || pt[0] > tMax) continue;
@@ -331,12 +271,10 @@ public final class GraphPanel extends Canvas {
 
         drawAxisTicks(gc, plotW, plotH, tMin, tMax, yMin, yMax);
 
-        // Draw three series: Total, KE, PE
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 3, C_ENERGY, 2.0); // total
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 4, C_KE,     1.2); // KE
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 5, C_PE,     1.2); // PE
 
-        // Legend
         gc.setFont(Font.font("Monospaced", 11));
         gc.setFill(C_ENERGY); gc.fillText("─ Total", MARGIN + 6, MARGIN + 30);
         gc.setFill(C_KE);     gc.fillText("─ KE",    MARGIN + 6, MARGIN + 42);
@@ -353,8 +291,8 @@ public final class GraphPanel extends Canvas {
         boolean first = true;
         for (double[] pt : data) {
             if (pt[0] < tMin || pt[0] > tMax) continue;
-            double sx = toScreenX(pt[0], tMin, tMax, plotW);
-            double sy = toScreenY(pt[fieldIdx], yMin, yMax, plotH);
+            double sx = mapX(pt[0], tMin, tMax, MARGIN, plotW);
+            double sy = mapY(pt[fieldIdx], yMin, yMax, MARGIN + 20, plotH);
             if (first) { gc.moveTo(sx, sy); first = false; }
             else         gc.lineTo(sx, sy);
         }
@@ -363,7 +301,6 @@ public final class GraphPanel extends Canvas {
 
     // ---- Mode: Phase Portrait ----
     private void drawPhasePortrait(GraphicsContext gc, double plotW, double plotH) {
-        // Compute data bounds
         double thetaMin =  Double.MAX_VALUE, thetaMax = -Double.MAX_VALUE;
         double omegaMin =  Double.MAX_VALUE, omegaMax = -Double.MAX_VALUE;
         for (double[] pt : data) {
@@ -371,24 +308,21 @@ public final class GraphPanel extends Canvas {
             omegaMin = Math.min(omegaMin, pt[2]); omegaMax = Math.max(omegaMax, pt[2]);
         }
 
-        // Symmetrise and pad
         double thetaRange = Math.max(thetaMax - thetaMin, 0.2);
         double omegaRange = Math.max(omegaMax - omegaMin, 0.2);
         double thetaPad = thetaRange * 0.08, omegaPad = omegaRange * 0.08;
         thetaMin -= thetaPad; thetaMax += thetaPad;
         omegaMin -= omegaPad; omegaMax += omegaPad;
 
-        // Zero lines
         drawZeroLine(gc, plotW, plotH, omegaMin, omegaMax);
 
-        // Phase path with colour-fading by age
         int total = data.size();
         int idx   = 0;
         double[] prev = null;
 
         for (double[] pt : data) {
-            double sx = toScreenX(pt[1], thetaMin, thetaMax, plotW);
-            double sy = toScreenY(pt[2], omegaMin, omegaMax, plotH);
+            double sx = mapX(pt[1], thetaMin, thetaMax, MARGIN, plotW);
+            double sy = mapY(pt[2], omegaMin, omegaMax, MARGIN + 20, plotH);
 
             if (prev != null) {
                 double alpha = 0.10 + 0.80 * ((double) idx / total);
@@ -400,13 +334,11 @@ public final class GraphPanel extends Canvas {
             idx++;
         }
 
-        // Current point marker
         if (prev != null) {
             gc.setFill(Color.WHITE);
             gc.fillOval(prev[0] - 3, prev[1] - 3, 6, 6);
         }
 
-        // Axis labels for phase portrait
         gc.setFont(Font.font("Monospaced", 10));
         gc.setFill(Color.web("#8A8A96"));
         gc.fillText(String.format("θ  [%.2f, %.2f] rad", thetaMin, thetaMax),
@@ -442,8 +374,8 @@ public final class GraphPanel extends Canvas {
 
         gc.setFill(C_POINCARE.deriveColor(0, 1, 1, 0.6));
         for (double[] pt : poincarePoints) {
-            double sx = toScreenX(pt[0], thetaMin, thetaMax, plotW);
-            double sy = toScreenY(pt[1], omegaMin, omegaMax, plotH);
+            double sx = mapX(pt[0], thetaMin, thetaMax, MARGIN, plotW);
+            double sy = mapY(pt[1], omegaMin, omegaMax, MARGIN + 20, plotH);
             gc.fillOval(sx - 1.5, sy - 1.5, 3, 3);
         }
 
@@ -483,8 +415,8 @@ public final class GraphPanel extends Canvas {
             gc.beginPath();
             boolean first = true;
             for (int i = 0; i < s.times().length; i++) {
-                double sx = toScreenX(s.times()[i], tMin, tMax, plotW);
-                double sy = toScreenY(s.energyDrift()[i], yMin, yMax, plotH);
+                double sx = mapX(s.times()[i], tMin, tMax, MARGIN, plotW);
+                double sy = mapY(s.energyDrift()[i], yMin, yMax, MARGIN + 20, plotH);
                 if (first) { gc.moveTo(sx, sy); first = false; } else gc.lineTo(sx, sy);
             }
             gc.stroke();
@@ -515,9 +447,9 @@ public final class GraphPanel extends Canvas {
 
         gc.setFill(C_ANGLE.deriveColor(0, 1, 1, 0.35));
         for (int c = 0; c < bifurcationParams.length; c++) {
-            double sx = toScreenX(bifurcationParams[c], xMin, xMax, plotW);
+            double sx = mapX(bifurcationParams[c], xMin, xMax, MARGIN, plotW);
             for (double y : bifurcationSamples.get(c)) {
-                double sy = toScreenY(y, yMin, yMax, plotH);
+                double sy = mapY(y, yMin, yMax, MARGIN + 20, plotH);
                 gc.fillOval(sx - 0.75, sy - 0.75, 1.5, 1.5);
             }
         }
@@ -536,13 +468,10 @@ public final class GraphPanel extends Canvas {
     // Deliberately a separate, self-contained set of mini-drawing routines
     // rather than reusing drawAngleSeries/drawEnergySeries/drawPhasePortrait
     // with a smaller margin threaded through: those three are built around
-    // the instance-level MARGIN constant and the full canvas origin, and
-    // retrofitting three independent coordinate systems through them would
-    // touch more surface than duplicating the (much simpler) plotting logic
-    // here, scoped to an explicit (x0, y0, w, h) band.
-
-    private static final double MINI_MARGIN   = 6;
-    private static final double MINI_TITLE_H  = 17;
+    // the MARGIN-based origin and the full canvas, and retrofitting three
+    // independent coordinate systems through them would touch more surface
+    // than duplicating the (much simpler) plotting logic here, scoped to an
+    // explicit (x0, y0, w, h) band.
 
     /**
      * Draws the ALL mode: angle, energy, and phase portrait stacked in three
@@ -576,7 +505,7 @@ public final class GraphPanel extends Canvas {
 
         gc.setStroke(Color.web("#FFFFFF", 0.1));
         gc.setLineWidth(1.0);
-        double zeroY = miniY(0, yMin, yMax, plotY, plotH);
+        double zeroY = mapY(0, yMin, yMax, plotY, plotH);
         gc.strokeLine(plotX, zeroY, plotX + plotW, zeroY);
 
         drawMiniSeries(gc, tMin, tMax, yMin, yMax, plotX, plotY, plotW, plotH, 1, C_ANGLE, 1.2);
@@ -630,8 +559,8 @@ public final class GraphPanel extends Canvas {
         int idx = 0;
         double[] prev = null;
         for (double[] pt : data) {
-            double sx = miniX(pt[1], thetaMin, thetaMax, plotX, plotW);
-            double sy = miniY(pt[2], omegaMin, omegaMax, plotY, plotH);
+            double sx = mapX(pt[1], thetaMin, thetaMax, plotX, plotW);
+            double sy = mapY(pt[2], omegaMin, omegaMax, plotY, plotH);
             if (prev != null) {
                 double alpha = 0.15 + 0.75 * ((double) idx / total);
                 gc.setStroke(C_PHASE.deriveColor(0, 1, 1, alpha));
@@ -665,135 +594,30 @@ public final class GraphPanel extends Canvas {
         boolean first = true;
         for (double[] pt : data) {
             if (pt[0] < tMin || pt[0] > tMax) continue;
-            double sx = miniX(pt[0], tMin, tMax, x0, w);
-            double sy = miniY(pt[fieldIdx], yMin, yMax, y0, h);
+            double sx = mapX(pt[0], tMin, tMax, x0, w);
+            double sy = mapY(pt[fieldIdx], yMin, yMax, y0, h);
             if (first) { gc.moveTo(sx, sy); first = false; } else gc.lineTo(sx, sy);
         }
         gc.stroke();
     }
 
-    /** Maps a value to an x pixel inside a small-multiples band: normalise to 0..1, then scale into the band's own width. */
-    private double miniX(double val, double vMin, double vMax, double x0, double w) {
-        double frac = (val - vMin) / Math.max(vMax - vMin, 1e-10);
-        return x0 + frac * w;
-    }
+    // ---- Buffer window helpers ----
 
-    /** Maps a value to a y pixel inside a band. The {@code (1.0 - frac)} inverts the axis, because screen y grows downward but graphs grow upward. */
-    private double miniY(double val, double yMin, double yMax, double y0, double h) {
-        double frac = (val - yMin) / Math.max(yMax - yMin, 1e-10);
-        return y0 + (1.0 - frac) * h;
-    }
-
-    // -------------------------------------------------------------------------
-    // Axis, title, and utility drawing
-    // -------------------------------------------------------------------------
-
-    private void drawAxes(GraphicsContext gc, double W, double H, double plotW, double plotH) {
-        gc.setStroke(Color.web("#2E2E36"));
-        gc.setLineWidth(1.5);
-        gc.strokeRect(MARGIN, MARGIN + 20, plotW, plotH);
-    }
-
-    /** Draws the heading naming the active mode, above the plot area. */
-    private void drawTitle(GraphicsContext gc, double plotW) {
-        String title = switch (mode) {
-            case ANGLE      -> "θ₁(t) — First Link Angle";
-            case ENERGY     -> "E(t) — Energy Components";
-            case PHASE      -> "Phase Portrait  (θ₁, ω₁)";
-            case POINCARE   -> "Poincaré Section  (θ₂, ω₂ at θ₁=0⁺)";
-            case COMPARISON -> "Integrator Comparison — |E(t) − E₀|";
-            case BIFURCATION -> "Bifurcation Diagram — swept θ₁ initial angle";
-            case ALL        -> ""; // render() returns before this is ever reached for ALL
-        };
-        gc.setFont(Font.font("System", FontWeight.BOLD, 14));
-        gc.setFill(Color.web("#C7C7D1"));
-        gc.fillText(title, MARGIN + 4, MARGIN + 16);
-    }
-
-    /**
-     * Numeric labels along both axes for the time-series modes (ANGLE,
-     * ENERGY) — without these a plot has grid lines but no way to read an
-     * actual value off it. PHASE mode prints its ranges as text instead
-     * (see {@link #drawPhasePortrait}), so doesn't call this.
-     */
-    private void drawAxisTicks(GraphicsContext gc, double plotW, double plotH,
-                               double tMin, double tMax, double yMin, double yMax) {
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(Color.web("#8A8A96"));
-
-        int gridN = 5;
-        // Y-axis values, aligned to the same 5 gridlines drawn in drawPlotArea.
-        for (int i = 0; i <= gridN; i++) {
-            double frac  = (double) i / gridN;
-            double value = yMax - frac * (yMax - yMin); // frac=0 -> top -> yMax
-            double sy    = MARGIN + 20 + frac * plotH;
-            gc.fillText(formatAxisValue(value), 4, sy + 4);
-        }
-
-        // X-axis time labels, evenly spaced across the visible window.
-        for (int i = 0; i <= gridN; i++) {
-            double frac = (double) i / gridN;
-            double t    = tMin + frac * (tMax - tMin);
-            double sx   = MARGIN + frac * plotW;
-            gc.fillText(String.format("%.1fs", t), sx - 16, MARGIN + 20 + plotH + 17);
-        }
-    }
-
-    /** Formats an axis tick, collapsing values that round to zero into a bare "0" rather than "-0.00" or "0.00". */
-    private static String formatAxisValue(double v) {
-        return (Math.abs(v) < 0.005) ? "0" : String.format("%.2f", v);
-    }
-
-    private void drawZeroLine(GraphicsContext gc, double plotW, double plotH,
-                              double yMin, double yMax) {
-        double yFrac = (0.0 - yMin) / Math.max(yMax - yMin, 1e-10);
-        double sy = toScreenYFromFrac(yFrac, plotH);
-        gc.setStroke(Color.web("#FFFFFF", 0.12));
-        gc.setLineWidth(1.0);
-        gc.strokeLine(MARGIN, sy, MARGIN + plotW, sy);
-    }
-
-    // ---- Coordinate helpers ----
-
-    /** Maps a data value to an x pixel in the main plot area. The {@code max(..., 1e-10)} guards against a zero-width range dividing by zero. */
-    private double toScreenX(double val, double vMin, double vMax, double plotW) {
-        double frac = (val - vMin) / Math.max(vMax - vMin, 1e-10);
-        return MARGIN + frac * plotW;
-    }
-
-    /** Maps a data value to a y pixel in the main plot area. */
-    private double toScreenY(double val, double yMin, double yMax, double plotH) {
-        double frac = (val - yMin) / Math.max(yMax - yMin, 1e-10);
-        return toScreenYFromFrac(frac, plotH);
-    }
-
-    /** Converts a 0..1 fraction to a y pixel, flipping the axis and clamping to the plot rectangle so an out-of-range value cannot draw outside the frame. */
-    private double toScreenYFromFrac(double frac, double plotH) {
-        // Flip: frac=0 → bottom, frac=1 → top
-        double sy = MARGIN + 20 + (1.0 - frac) * plotH;
-        return Math.max(MARGIN + 20, Math.min(MARGIN + 20 + plotH, sy));
-    }
-
-    /** The most recent sample, or {@code null} if none. The cast is safe — {@code data} is always the {@link ArrayDeque} declared above. */
+    /** The most recent sample, or {@code null} if none. */
     private double[] peekLast() {
         if (data.isEmpty()) return null;
-        return ((ArrayDeque<double[]>) data).peekLast();
+        return data.peekLast();
     }
 
     /**
      * {@code [tMin, tMax]} for the trailing {@link #TIME_WINDOW}-second
      * slice of {@link #data}, computed from the buffer's own first/last
-     * samples rather than assumed forward-increasing. Sim time normally
-     * only increases, but {@code simulation.SimulationLoop#setTimeReversed}
-     * makes it genuinely decrease over a run — {@code tMax = last sample}
-     * would then be numerically the <em>smallest</em> value, inverting the
-     * range and breaking every caller that assumes {@code tMin <= tMax}.
-     * This always returns a properly ordered pair; time-series plots
-     * accordingly read newest-first right-to-left while reversed, exactly
-     * as an axis whose value is decreasing over time should.
+     * samples rather than assumed forward-increasing — {@code
+     * simulation.SimulationLoop#setTimeReversed} makes sim time genuinely
+     * decrease over a run, so this always returns a properly ordered pair.
      */
     private double[] windowBounds() {
-        double[] first = data.isEmpty() ? null : ((ArrayDeque<double[]>) data).peekFirst();
+        double[] first = data.isEmpty() ? null : data.peekFirst();
         double[] last  = peekLast();
         if (first == null || last == null) return new double[]{0, 0};
 
