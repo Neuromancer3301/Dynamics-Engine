@@ -87,7 +87,7 @@
             adjacent children.
         -->
         <HBox spacing="0.0">
-            <VBox fx:id="sidebarToggleHost" styleClass="sidebar-toggle-host" alignment="TOP_CENTER"/>
+            <VBox fx:id="sidebarToggleHost" alignment="TOP_CENTER"/>
             <!--
                 ControlPanel and LinkEditorPanel are both plain-Java Regions
                 (see controller.SimulationController) stacked inside this VBox;
@@ -101,7 +101,21 @@
                 never setVisible(false), so it's a genuine layout column that
                 shrinks the canvas/graph rather than overlaying them.
             -->
-            <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true" hbarPolicy="NEVER"
+            <!--
+                vbarPolicy starts NEVER, matching the collapsed initial
+                state (sidebarExpanded=false in LayoutShell) — round 1.6 §2:
+                left at the default AS_NEEDED, a ScrollPane whose content
+                (controlHost) is taller than the collapsed 0px width still
+                tries to show a vertical scrollbar, whose own track has a
+                nonzero minimum width regardless of the ScrollPane's own
+                min/pref/maxWidth="0.0" above, poking out right where
+                sidebarToggleHost sits and visibly clashing with the toggle
+                button. LayoutShell#setSidebarExpanded flips this back to
+                AS_NEEDED once actually expanded, where content genuinely
+                can overflow (e.g. a 20-link chain in the link editor).
+            -->
+            <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true"
+                        hbarPolicy="NEVER" vbarPolicy="NEVER"
                         minWidth="0.0" prefWidth="0.0" maxWidth="0.0" HBox.hgrow="NEVER">
                 <content>
                     <VBox fx:id="controlHost"/>

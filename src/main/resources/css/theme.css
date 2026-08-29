@@ -492,13 +492,16 @@
 }
 .sidebar-button:hover, .sidebar-button:focused { -fx-border-color: -accent; }
 
-.sidebar-slider {
-    -fx-accent: -accent;
-    -fx-border-color: transparent;
-    -fx-border-width: 1px;
-    -fx-border-radius: 2px;
+/* Round 1.6 §3: the outline convention for a slider is the thumb itself
+   changing color, not a box drawn around the whole control — a highlighted
+   bounding box read as "the slider is boxed in," not as "this is the thing
+   you'd interact with," the way every other control's outline reads.
+   -fx-accent alone (below) is what colors the track's filled portion; it
+   doesn't reach the thumb, which needs its own rule. */
+.sidebar-slider { -fx-accent: -accent; }
+.sidebar-slider:hover .thumb, .sidebar-slider:focused .thumb {
+    -fx-background-color: -accent;
 }
-.sidebar-slider:hover, .sidebar-slider:focused { -fx-border-color: -accent; }
 
 .sidebar-separator { -fx-background-color: -line-soft; -fx-padding: 2 0; }
 
@@ -587,12 +590,12 @@
    Simulation.fxml), not an overlay on the canvas — round 1.5 §1: that's
    what keeps it structurally flush against the sidebar's own edge whether
    collapsed or expanded, instead of a fixed-margin chip that only looked
-   attached by coincidence. */
-.sidebar-toggle-host {
-    -fx-background-color: -bg-surface;
-    -fx-border-color: -line;
-    -fx-border-width: 0 0 0 1;
-}
+   attached by coincidence. Round 1.6 §1: the host column itself is
+   deliberately unstyled (no background/border) — it exists only to
+   position the button, and always renders taller than the button itself
+   (it stretches to the full sidebar height, the button doesn't), so
+   painting the host would read as one long colored strip rather than a
+   button. Only .sidebar-toggle-button below is ever painted. */
 .sidebar-toggle-button {
     -fx-background-color: -accent-soft;
     -fx-border-color: -line;
@@ -602,7 +605,7 @@
     -fx-pref-width: 34px;
     -fx-min-width: 34px;
     -fx-max-width: 34px;
-    -fx-pref-height: 96px;
+    -fx-pref-height: 130px;
     -fx-cursor: hand;
 }
 .sidebar-toggle-button:hover, .sidebar-toggle-button:focused {
@@ -610,9 +613,9 @@
 }
 .sidebar-toggle-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
-    -fx-font-size: 12px;
+    -fx-font-size: 15px;
     -fx-font-weight: bold;
-    -fx-letter-spacing: 0.04em;
+    -fx-letter-spacing: 0.12em;
     -fx-text-fill: -ink-2;
 }
 

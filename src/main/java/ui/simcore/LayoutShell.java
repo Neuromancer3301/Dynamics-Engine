@@ -105,22 +105,37 @@ public final class LayoutShell {
      * #SIDEBAR_EXPANDED_WIDTH}. Deliberately a min/pref/max width tween on a
      * real layout column, not {@code setVisible(false)} — the canvas/graph
      * genuinely shrink to make room rather than being overlaid.
+     *
+     * <p>Round 1.6 §2: also toggles {@code sidebarScroll}'s vbarPolicy —
+     * NEVER while collapsed (or collapsing), AS_NEEDED only once actually
+     * expanded — see Simulation.fxml's own comment on the initial value for
+     * why a vertical scrollbar must never even attempt to render at 0
+     * width. Collapsing flips it back to NEVER immediately, before the
+     * width even starts shrinking, so the scrollbar doesn't linger visible
+     * while the column animates down to nothing; expanding waits until the
+     * width animation actually finishes, so it doesn't try to render
+     * against a still-mid-animation, not-yet-wide-enough column.
      */
     public void setSidebarExpanded(boolean expanded) {
         this.sidebarExpanded = expanded;
         double target = expanded ? SIDEBAR_EXPANDED_WIDTH : 0.0;
 
         if (sidebarWidthAnim != null) sidebarWidthAnim.stop();
+        if (!expanded) sidebarScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
 
         if (ThemeManager.getInstance().isReducedMotion()) {
             sidebarScroll.setMinWidth(target);
             sidebarScroll.setPrefWidth(target);
             sidebarScroll.setMaxWidth(target);
+            if (expanded) sidebarScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         } else {
             sidebarWidthAnim = new Timeline(new KeyFrame(WIDTH_ANIM_DURATION,
                     new KeyValue(sidebarScroll.minWidthProperty(), target, Interpolator.EASE_BOTH),
                     new KeyValue(sidebarScroll.prefWidthProperty(), target, Interpolator.EASE_BOTH),
                     new KeyValue(sidebarScroll.maxWidthProperty(), target, Interpolator.EASE_BOTH)));
+            if (expanded) {
+                sidebarWidthAnim.setOnFinished(e -> sidebarScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED));
+            }
             sidebarWidthAnim.play();
         }
 

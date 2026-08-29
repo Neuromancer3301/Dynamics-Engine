@@ -39,8 +39,13 @@ public abstract class SimCanvas extends Canvas {
         setOnScroll(this::handleScroll);
     }
 
+    // Round 1.6 §4: sensitivity cut to 25% on request — the per-tick
+    // deviation from 1.0 (was 0.1, i.e. 1.1x/0.909x per scroll tick) is now
+    // a quarter of that (0.025, i.e. 1.025x/0.9756x per tick).
+    private static final double SCROLL_ZOOM_FACTOR = 1.025;
+
     private void handleScroll(ScrollEvent e) {
-        double factor = e.getDeltaY() > 0 ? 1.1 : (1 / 1.1);
+        double factor = e.getDeltaY() > 0 ? SCROLL_ZOOM_FACTOR : (1 / SCROLL_ZOOM_FACTOR);
         camera.zoomBy(factor, e.getX(), e.getY(), getWidth(), getHeight());
         e.consume();
     }
