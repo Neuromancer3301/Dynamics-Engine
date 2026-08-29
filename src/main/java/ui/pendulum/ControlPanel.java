@@ -38,6 +38,7 @@ public final class ControlPanel extends VBox {
     private Consumer<Boolean> onEnsembleToggle;
     private Consumer<Boolean> onSonifyToggle;
     private Runnable onGenerateBifurcation;
+    private Runnable onGenerateFractal;
     private Runnable onResetGravityDirection;
     private BiConsumer<Boolean, Double> onCompareToggle;
     private Consumer<IntegratorType> onIntegratorChange;
@@ -81,6 +82,7 @@ public final class ControlPanel extends VBox {
 
         graphsGroup = new GraphsGroupPanel(graphPanel);
         graphsGroup.setOnGenerateBifurcation(onGenerateBifurcation);
+        graphsGroup.setOnGenerateFractal(onGenerateFractal);
         graphsGroup.setOnGraphVisibilityChange(onGraphVisibilityChange);
 
         historyGroup = new HistoryGroupPanel();
@@ -106,6 +108,7 @@ public final class ControlPanel extends VBox {
     public void setOnEnsembleToggle(Consumer<Boolean> callback) { this.onEnsembleToggle = callback; }
     public void setOnSonifyToggle(Consumer<Boolean> callback)   { this.onSonifyToggle = callback; }
     public void setOnGenerateBifurcation(Runnable callback)     { this.onGenerateBifurcation = callback; }
+    public void setOnGenerateFractal(Runnable callback)          { this.onGenerateFractal = callback; }
     public void setOnResetGravityDirection(Runnable callback)   { this.onResetGravityDirection = callback; }
     public void setOnCompareToggle(BiConsumer<Boolean, Double> callback) { this.onCompareToggle = callback; }
     public void setOnGraphVisibilityChange(Consumer<Boolean> callback) { this.onGraphVisibilityChange = callback; }
@@ -122,6 +125,9 @@ public final class ControlPanel extends VBox {
     public void setBifurcationProgress(double fraction) { graphsGroup.setBifurcationProgress(fraction); }
     public void setBifurcationRunning(boolean running) { graphsGroup.setBifurcationRunning(running); }
     public void selectBifurcationMode() { graphsGroup.selectBifurcationMode(); }
+    public void setFractalProgress(double fraction) { graphsGroup.setFractalProgress(fraction); }
+    public void setFractalRunning(boolean running) { graphsGroup.setFractalRunning(running); }
+    public void selectFractalMode() { graphsGroup.selectFractalMode(); }
     public void updateHistoryRange(int maxIndex) { historyGroup.updateHistoryRange(maxIndex); }
     public void setHistoryPositionLive(int index) { historyGroup.setHistoryPositionLive(index); }
     public void setHistoryPositionScrubbed(double secondsAgo) { historyGroup.setHistoryPositionScrubbed(secondsAgo); }

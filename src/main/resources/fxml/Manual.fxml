@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane fx:id="root" styleClass="stub-screen"
+            xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
+            fx:controller="controller.ManualController">
+
+    <top>
+        <!--
+            Header, then the tab bar. The three tab buttons are created in
+            ManualController rather than declared here: they are generated
+            from the Tab enum, so adding a fourth simulation means adding an
+            enum constant, not editing this file and keeping it in sync.
+        -->
+        <VBox styleClass="manual-header">
+            <HBox alignment="CENTER_LEFT" spacing="16.0">
+                <padding>
+                    <Insets top="28" right="48" bottom="14" left="48"/>
+                </padding>
+                <Button styleClass="back-button" text="← Menu" onAction="#handleBack"/>
+                <Label styleClass="stub-title" text="Manual"/>
+            </HBox>
+            <HBox fx:id="tabBar" styleClass="manual-tabbar" spacing="0.0">
+                <padding>
+                    <Insets top="0" right="48" bottom="0" left="48"/>
+                </padding>
+            </HBox>
+        </VBox>
+    </top>
+
+    <center>
+        <!--
+            The manual is long, so it lives in a ScrollPane. fitToWidth keeps
+            paragraphs wrapping to the window rather than scrolling sideways;
+            hbarPolicy NEVER makes that guarantee explicit. Content is built
+            in Java (see ManualController) rather than declared here: it is
+            ~40 sections of prose, which would be unreadable as FXML and
+            impossible to keep consistently styled.
+        -->
+        <ScrollPane fx:id="scroll" styleClass="manual-scroll"
+                    fitToWidth="true" hbarPolicy="NEVER">
+            <content>
+                <VBox fx:id="content" styleClass="manual-body" spacing="0.0">
+                    <padding>
+                        <Insets top="8" right="48" bottom="64" left="48"/>
+                    </padding>
+                </VBox>
+            </content>
+        </ScrollPane>
+    </center>
+
+</BorderPane>

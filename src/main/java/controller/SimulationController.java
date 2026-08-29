@@ -325,6 +325,7 @@ public final class SimulationController implements Initializable, Navigable,
         controlPanel.setOnEnsembleToggle(chaosFeatures::setEnsembleActive);
         controlPanel.setOnSonifyToggle(chaosFeatures::setSonifyActive);
         controlPanel.setOnGenerateBifurcation(chaosFeatures::generateBifurcationMap);
+        controlPanel.setOnGenerateFractal(chaosFeatures::generateBasinFractal);
         controlPanel.setOnCompareToggle(chaosFeatures::setCompareActive);
         controlPanel.setOnResetGravityDirection(() -> {
             currentGravityAngle = 0.0;
@@ -551,6 +552,19 @@ public final class SimulationController implements Initializable, Navigable,
         controlPanel.selectBifurcationMode();
     }
 
+    @Override
+    public void setFractalRunning(boolean running) { controlPanel.setFractalRunning(running); }
+
+    @Override
+    public void setFractalProgress(double fraction) { controlPanel.setFractalProgress(fraction); }
+
+    @Override
+    public void onFractalComplete(double[][] timeToFlip, double maxSeconds) {
+        graphPanel.setFractalData(timeToFlip, maxSeconds);
+        graphPanel.setMode(PendulumGraphPanel.Mode.FRACTAL);
+        controlPanel.selectFractalMode();
+    }
+
     /**
      * Creates the 60 fps render loop.
      *
@@ -674,6 +688,7 @@ public final class SimulationController implements Initializable, Navigable,
         // A sweep left running after navigating away would keep a
         // background thread alive computing a diagram nobody can see.
         chaosFeatures.cancelBifurcationIfRunning();
+        chaosFeatures.cancelFractalIfRunning();
 
         Scene scene = btnBack.getScene();
         if (scene != null && keyHandler != null) scene.removeEventFilter(KeyEvent.KEY_PRESSED, keyHandler);

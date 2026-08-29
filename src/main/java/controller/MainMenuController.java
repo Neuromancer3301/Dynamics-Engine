@@ -72,13 +72,16 @@ public final class MainMenuController implements Initializable, Navigable {
                 "03", Icons.Glyph.RESERVED, "Coming Soon",
                 "A third slot, waiting for its simulation.");
 
+        UtilityIconButton manualButton = new UtilityIconButton(Icons.Glyph.MANUAL, "Manual");
+        manualButton.setOnActivate(() -> router.navigate(Route.MANUAL));
+
         UtilityIconButton settingsButton = new UtilityIconButton(Icons.Glyph.SETTINGS, "Settings");
         settingsButton.setOnActivate(() -> router.navigate(Route.SETTINGS));
 
         UtilityIconButton aboutButton = new UtilityIconButton(Icons.Glyph.INFO, "About");
         aboutButton.setOnActivate(() -> router.navigate(Route.ABOUT));
 
-        utilityLinksBox.getChildren().addAll(settingsButton, aboutButton);
+        utilityLinksBox.getChildren().addAll(manualButton, settingsButton, aboutButton);
     }
 
     @Override

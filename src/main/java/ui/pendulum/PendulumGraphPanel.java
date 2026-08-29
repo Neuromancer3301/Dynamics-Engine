@@ -3,6 +3,8 @@ package ui.pendulum;
 import physics.SimState;
 import ui.simcore.ChartCanvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
@@ -38,13 +40,21 @@ import java.util.List;
  *                    θ₁ zero-crossing, one column per swept initial angle;
  *                    fed externally via {@link #setBifurcationData}, computed
  *                    by {@code physics.BifurcationSweep}
+ *  8. FRACTAL      — the classic double-pendulum basin-of-attraction
+ *                    fractal: one pixel per (θ₁, θ₂) starting pair, coloured
+ *                    by how fast link 2 flips; fed externally via {@link
+ *                    #setFractalData}, computed by {@code
+ *                    physics.FractalBasinSweep}. Round 3 — ported from
+ *                    {@code feature/manual-and-bugfixes}, see that branch's
+ *                    {@code ui.GraphPanel#drawFractal}/{@code
+ *                    #buildFractalImage} for the original.
  *
  * ANGLE/ENERGY/PHASE/ALL share one ring buffer of fixed capacity.
  */
 public final class PendulumGraphPanel extends ChartCanvas {
 
     /** Graph display modes. */
-    public enum Mode { ANGLE, ENERGY, PHASE, ALL, POINCARE, COMPARISON, BIFURCATION }
+    public enum Mode { ANGLE, ENERGY, PHASE, ALL, POINCARE, COMPARISON, BIFURCATION, FRACTAL }
 
     /** One integrator's energy-drift-over-time trace for {@link Mode#COMPARISON}. */
     public record ComparisonSeries(String name, double[] times, double[] energyDrift, Color color) {}
@@ -80,6 +90,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
     private static final Color MINI_ZERO_LINE = Color.web("#FFFFFF", 0.1);
     private static final Color MINI_BG        = Color.web("#101014");
     private static final Color MINI_TITLE_COLOR = Color.web("#C7C7D1");
+    private static final Color FRACTAL_NEVER_FLIPPED = Color.web("#0B0B10");
     private static final Font FONT_LEGEND    = Font.font("Monospaced", 11);
     private static final Font FONT_CAPTION   = Font.font("Monospaced", 10);
     private static final Font FONT_EMPTY_MSG = Font.font("System", 12);
@@ -107,6 +118,13 @@ public final class PendulumGraphPanel extends ChartCanvas {
     // bifurcationSamples.get(c) is that column's collected sample points.
     private double[] bifurcationParams = new double[0];
     private List<double[]> bifurcationSamples = List.of();
+
+    // Basin-of-attraction fractal. Rendered once into a WritableImage when
+    // the data arrives rather than per-frame: at the default resolution
+    // that's 40,000 cells, far too many to redraw as individual rectangles
+    // every repaint. Null until a sweep completes.
+    private WritableImage fractalImage;
+    private double fractalMaxSeconds = 1.0;
 
     /** @param width,height initial size; later bound to the host pane so the graph fills its column. */
     public PendulumGraphPanel(double width, double height) {
@@ -165,6 +183,22 @@ public final class PendulumGraphPanel extends ChartCanvas {
         markDirty();
     }
 
+    /**
+     * Supplies the grid {@link Mode#FRACTAL} draws, converting it to an
+     * image immediately — see {@link #fractalImage} for why this happens
+     * once here rather than on every repaint.
+     */
+    public void setFractalData(double[][] timeToFlip, double maxSeconds) {
+        this.fractalMaxSeconds = Math.max(maxSeconds, 1e-9);
+        this.fractalImage = buildFractalImage(timeToFlip);
+        markDirty();
+    }
+
+    /** True once a fractal sweep has produced an image — gates the empty-state message. */
+    public boolean hasFractalData() {
+        return fractalImage != null;
+    }
+
     @Override
     protected void drawModeContent(GraphicsContext gc, double W, double H) {
         if (mode == Mode.ALL) {
@@ -184,6 +218,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
             case POINCARE     -> drawPoincareSection(gc, plotW, plotH);
             case COMPARISON   -> drawComparison(gc, plotW, plotH);
             case BIFURCATION  -> drawBifurcation(gc, plotW, plotH);
+            case FRACTAL      -> drawFractal(gc, plotW, plotH);
             case ALL          -> { /* handled above, before the early return */ }
         }
 
@@ -199,6 +234,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
             case POINCARE   -> "Poincaré Section  (θ₂, ω₂ at θ₁=0⁺)";
             case COMPARISON -> "Integrator Comparison — |E(t) − E₀|";
             case BIFURCATION -> "Bifurcation Diagram — swept θ₁ initial angle";
+            case FRACTAL     -> "Basin Fractal — time until link 2 flips";
             case ALL        -> ""; // drawModeContent returns before this is ever reached for ALL
         };
     }
@@ -471,6 +507,79 @@ public final class PendulumGraphPanel extends ChartCanvas {
         gc.fillText(String.format("θ₁ initial swept [%.2f, %.2f] rad · y = last link's angle at each θ₁ crossing",
                         xMin, xMax),
                 MARGIN + 4, MARGIN + 20 + plotH + 18);
+    }
+
+    // ---- Mode: Basin Fractal ----
+    // Round 3: ported from feature/manual-and-bugfixes's ui.GraphPanel —
+    // physics.FractalBasinSweep itself needed no changes at all (it only
+    // touches PendulumConfig/PhysicsEngine's public API, untouched by the
+    // Round 2 physics-layer pass), so this is the drawing half of that port.
+
+    /**
+     * Draws the precomputed basin image, scaled to fill the plot area and
+     * kept square so the (θ₁, θ₂) grid isn't visually distorted.
+     */
+    private void drawFractal(GraphicsContext gc, double plotW, double plotH) {
+        if (fractalImage == null) {
+            gc.setFont(FONT_EMPTY_MSG);
+            gc.setFill(CAPTION_TEXT);
+            gc.fillText("Press \"Generate Basin Fractal\" in the sidebar to run this.",
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
+            gc.fillText("Sweeps every pair of starting angles — takes a few seconds.",
+                    MARGIN + 12, MARGIN + 20 + plotH / 2.0 + 10);
+            return;
+        }
+
+        // Square, centred: the two axes are the same quantity (an angle over
+        // the full circle), so a stretched aspect ratio would misrepresent it.
+        double side = Math.min(plotW, plotH);
+        double x = MARGIN + (plotW - side) / 2.0;
+        double y = MARGIN + 20 + (plotH - side) / 2.0;
+        gc.drawImage(fractalImage, x, y, side, side);
+
+        gc.setStroke(DIVIDER_LINE);
+        gc.setLineWidth(1.0);
+        gc.strokeRect(x, y, side, side);
+
+        gc.setFont(FONT_CAPTION);
+        gc.setFill(CAPTION_TEXT);
+        gc.fillText("x = θ₁ start, y = θ₂ start, both −π..π · bright = flips fast · dark = never flips",
+                MARGIN + 4, MARGIN + 20 + plotH + 18);
+    }
+
+    /**
+     * Converts the sweep's time-to-flip grid into a colour image.
+     *
+     * <p>Cells that never flipped are painted near-black: those are the
+     * smooth, predictable regions, and leaving them dark makes the
+     * intricate boundary read as the subject. Everything else ramps from
+     * magenta (flips almost immediately) through to deep blue (took nearly
+     * the whole budget), using the app's own accent hue at the hot end for
+     * the same reason the velocity tint does.
+     */
+    private WritableImage buildFractalImage(double[][] timeToFlip) {
+        int h = timeToFlip.length;
+        int w = timeToFlip[0].length;
+        WritableImage image = new WritableImage(w, h);
+        PixelWriter pixels = image.getPixelWriter();
+
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                double t = timeToFlip[row][col];
+                Color c;
+                if (t >= fractalMaxSeconds) {
+                    c = FRACTAL_NEVER_FLIPPED; // never flipped — stable region
+                } else {
+                    double frac = t / fractalMaxSeconds;      // 0 = instant, 1 = only just
+                    double hue = 330.0 - frac * 110.0;        // 330 magenta -> 220 blue
+                    c = Color.hsb(hue, 0.85, 1.0 - 0.35 * frac);
+                }
+                // Row 0 is theta2 = -pi. Flipped vertically so +theta2 points
+                // up on screen, matching how every other plot here reads.
+                pixels.setColor(col, h - 1 - row, c);
+            }
+        }
+        return image;
     }
 
     // -------------------------------------------------------------------------
