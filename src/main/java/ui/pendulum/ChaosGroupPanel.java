@@ -1,6 +1,5 @@
 package ui.pendulum;
 
-import simulation.SimulationLoop;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
@@ -9,6 +8,7 @@ import javafx.scene.layout.VBox;
 
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.DoubleConsumer;
 
 /**
  * The sidebar's "Chaos & Compare" group: the butterfly-effect ensemble
@@ -35,7 +35,16 @@ public final class ChaosGroupPanel extends VBox {
     private Consumer<Boolean> onSonifyToggle;
     private BiConsumer<Boolean, Double> onCompareToggle;
 
-    public ChaosGroupPanel(SimulationLoop simLoop) {
+    /**
+     * @param onPerturb called with {@link #PERTURB_MAGNITUDE} when the
+     *                   Perturb button fires — round 2 §3: this used to call
+     *                   {@code SimulationLoop#perturb} directly; that method
+     *                   moved to {@code PendulumChaosFeatures#perturb}
+     *                   (genuinely pendulum-specific, unlike the loop's own
+     *                   scheduling machinery), so the caller now wires
+     *                   {@code chaosFeatures::perturb} in here instead.
+     */
+    public ChaosGroupPanel(DoubleConsumer onPerturb) {
         super(10);
 
         Label lEnsemble = SidebarControlFactory.sectionLabel("Chaos");
@@ -47,7 +56,7 @@ public final class ChaosGroupPanel extends VBox {
 
         Button btnPerturb = new Button("⚡  Perturb");
         SidebarControlFactory.styleButton(btnPerturb);
-        btnPerturb.setOnAction(e -> simLoop.perturb(PERTURB_MAGNITUDE));
+        btnPerturb.setOnAction(e -> onPerturb.accept(PERTURB_MAGNITUDE));
         Label perturbHint = SidebarControlFactory.hintLabel("Nudges every link's velocity by a microscopic random amount.");
 
         SidebarControlFactory.styleButton(btnSonify);

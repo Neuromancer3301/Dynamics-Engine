@@ -1,5 +1,6 @@
 package ui.pendulum;
 
+import physics.PhysicsEngine;
 import physics.SimState;
 import physics.integrator.IntegratorType;
 import simulation.SimulationLoop;
@@ -55,7 +56,8 @@ public final class ControlPanel extends VBox {
      * Constructs the six grouped panels and wires every callback set so far
      * into whichever one owns it. Call after setting all callbacks.
      */
-    public void build(SimulationLoop simLoop,
+    public void build(SimulationLoop<PhysicsEngine, SimState> simLoop,
+                      PendulumChaosFeatures chaosFeatures,
                       PendulumGraphPanel graphPanel,
                       PendulumCanvas pendulumCanvas,
                       int n) {
@@ -69,7 +71,10 @@ public final class ControlPanel extends VBox {
         motionGroup.setOnCompareIntegrators(onCompareIntegrators);
         motionGroup.setOnPauseChange(onPauseChange);
 
-        chaosGroup = new ChaosGroupPanel(simLoop);
+        // Round 2 §3: Perturb now goes through PendulumChaosFeatures#perturb
+        // rather than SimulationLoop#perturb directly — see ChaosGroupPanel's
+        // constructor javadoc.
+        chaosGroup = new ChaosGroupPanel(chaosFeatures::perturb);
         chaosGroup.setOnEnsembleToggle(onEnsembleToggle);
         chaosGroup.setOnSonifyToggle(onSonifyToggle);
         chaosGroup.setOnCompareToggle(onCompareToggle);

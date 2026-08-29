@@ -1,6 +1,8 @@
 package ui.pendulum;
 
 import javafx.collections.FXCollections;
+import physics.PhysicsEngine;
+import physics.SimState;
 import physics.integrator.IntegratorType;
 import simulation.SimulationLoop;
 import javafx.scene.control.Button;
@@ -35,7 +37,7 @@ public final class MotionGroupPanel extends VBox {
     private Runnable onCompareIntegrators;
     private Consumer<Boolean> onPauseChange;
 
-    public MotionGroupPanel(SimulationLoop simLoop, PendulumGraphPanel graphPanel, PendulumCanvas pendulumCanvas) {
+    public MotionGroupPanel(SimulationLoop<PhysicsEngine, SimState> simLoop, PendulumGraphPanel graphPanel, PendulumCanvas pendulumCanvas) {
         super(10);
 
         // ---- Gravity slider ----
@@ -50,7 +52,9 @@ public final class MotionGroupPanel extends VBox {
         SidebarControlFactory.styleButton(btnResetGravityDir);
         btnResetGravityDir.setOnAction(e -> { if (onResetGravityDirection != null) onResetGravityDirection.run(); });
         sGrav.valueProperty().addListener((o, ov, nv) -> {
-            simLoop.setGravity(nv.doubleValue());
+            // Round 2 §2: setGravity moved off SimulationLoop (a pendulum-only
+            // concept) — submit() is the generic replacement.
+            simLoop.submit(e -> e.setGravity(nv.doubleValue()));
             tfGrav.setText(String.format("%.2f", nv.doubleValue()));
         });
         SidebarControlFactory.wireNumericFieldToSlider(tfGrav, sGrav);
