@@ -585,17 +585,11 @@
     -fx-border-color: transparent;
 }
 
-/* Sidebar-toggle "tab" (ui.simcore.LayoutShell#buildSidebarToggle) — a
-   real layout column, sibling to sidebarScroll in the same HBox (see
-   Simulation.fxml), not an overlay on the canvas — round 1.5 §1: that's
-   what keeps it structurally flush against the sidebar's own edge whether
-   collapsed or expanded, instead of a fixed-margin chip that only looked
-   attached by coincidence. Round 1.6 §1: the host column itself is
-   deliberately unstyled (no background/border) — it exists only to
-   position the button, and always renders taller than the button itself
-   (it stretches to the full sidebar height, the button doesn't), so
-   painting the host would read as one long colored strip rather than a
-   button. Only .sidebar-toggle-button below is ever painted. */
+/* Sidebar-toggle "tab" (ui.simcore.LayoutShell#buildSidebarToggle) — an
+   overlay on canvasGraphStack (round 1.7 §1; see that method's own javadoc
+   for why this reverted from round 1.5's layout-column attempt), so only
+   the button's own footprint is ever painted — everything around it is the
+   canvas's own live rendering, not a separate panel. */
 .sidebar-toggle-button {
     -fx-background-color: -accent-soft;
     -fx-border-color: -line;
@@ -615,7 +609,7 @@
     -fx-font-family: "Consolas", "Menlo", monospace;
     -fx-font-size: 15px;
     -fx-font-weight: bold;
-    -fx-letter-spacing: 0.12em;
+    -fx-letter-spacing: 0.25em;
     -fx-text-fill: -ink-2;
 }
 

@@ -37,29 +37,17 @@ public final class LayoutShell {
 
     private final ScrollPane sidebarScroll;
     private final StackPane graphHost;
-    private final VBox sidebarToggleHost;
+    private final StackPane canvasGraphStack;
 
     private boolean sidebarExpanded = false;
     private Icons.IconView sidebarToggleIcon;
     private Timeline sidebarWidthAnim;
     private Timeline graphWidthAnim;
 
-    /**
-     * @param sidebarToggleHost a real layout column, a sibling of {@code
-     *        sidebarScroll} in the same HBox (see Simulation.fxml) — round
-     *        1.5 §1: {@link #buildSidebarToggle} used to add the toggle
-     *        button as a fixed-margin overlay on the canvas/graph stack,
-     *        which only looked attached to the sidebar by coincidence while
-     *        collapsed and visibly floated away from it once expanded,
-     *        since the overlay's position never tracked the sidebar's own
-     *        animated width. A sibling layout column can't do that — an
-     *        HBox never leaves a gap between adjacent children, expanded or
-     *        not — so the button now lives here instead.
-     */
-    public LayoutShell(ScrollPane sidebarScroll, StackPane graphHost, VBox sidebarToggleHost) {
+    public LayoutShell(ScrollPane sidebarScroll, StackPane graphHost, StackPane canvasGraphStack) {
         this.sidebarScroll = sidebarScroll;
         this.graphHost = graphHost;
-        this.sidebarToggleHost = sidebarToggleHost;
+        this.canvasGraphStack = canvasGraphStack;
     }
 
     /**
@@ -72,6 +60,30 @@ public final class LayoutShell {
      * without the wrapper the surrounding {@link VBox} would still reserve
      * the label's original unrotated (wide/short) footprint instead of its
      * rotated (narrow/tall) one, clipping it against the icon above.
+     *
+     * <p>Round 1.5 tried making this button a real layout column, a sibling
+     * of {@code sidebarScroll}, specifically to fix it detaching from the
+     * sidebar on expand (see git history for that attempt). That traded one
+     * bug for a worse one: a real column, even styled with no
+     * background/border of its own, still has to show *something* for
+     * whatever fraction of its height the button doesn't cover — and what
+     * showed was this screen's own plain background fill (black in dark
+     * theme, white in light), a flat rectangle with no relation to the
+     * canvas beside it. Round 1.7 §1 reverts to an overlay on {@link
+     * #canvasGraphStack} — so the "empty" area around the button is once
+     * again the canvas's own live rendering, not a stray colored panel —
+     * and fixes the actual round-1.4 bug directly: {@link #buildSidebarToggle}
+     * gives the button a right margin of exactly 0. {@code
+     * canvasGraphStack}'s own right edge always sits exactly at the
+     * sidebar's current left edge (collapsed or expanded) because {@code
+     * BorderPane} resizes its center region to fill whatever the right
+     * region doesn't claim — a zero right-margin overlay therefore stays
+     * flush against the sidebar automatically, with no need to track its
+     * animated width at all. The old fixed-10px-on-every-side margin was
+     * the actual bug: fine while collapsed (a 10px inset from the window
+     * edge reads as intentional breathing room), but that same 10px read as
+     * "detached from the sidebar" the moment the sidebar expanded and that
+     * edge became the sidebar's own boundary instead of the window's.
      */
     public void buildSidebarToggle() {
         Theme theme = ThemeManager.getInstance().getCurrent();
@@ -96,8 +108,9 @@ public final class LayoutShell {
         ThemeManager.getInstance().addListener(() ->
                 sidebarToggleIcon.setColor(Icons.idleColor(ThemeManager.getInstance().getCurrent())));
 
-        VBox.setMargin(toggle, new Insets(10, 0, 0, 0));
-        sidebarToggleHost.getChildren().setAll(toggle);
+        StackPane.setAlignment(toggle, Pos.TOP_RIGHT);
+        StackPane.setMargin(toggle, new Insets(10, 0, 0, 0));
+        canvasGraphStack.getChildren().add(toggle);
     }
 
     /**

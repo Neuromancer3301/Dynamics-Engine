@@ -126,9 +126,9 @@ public final class SimulationController implements Initializable, Navigable,
     @FXML private Button btnBack;
     @FXML private Label titleLabel;
     @FXML private VBox actionRail;
+    @FXML private StackPane canvasGraphStack;
     @FXML private StackPane canvasHost;
     @FXML private StackPane graphHost;
-    @FXML private VBox sidebarToggleHost;
     @FXML private ScrollPane sidebarScroll;
     @FXML private VBox controlHost;
 
@@ -241,7 +241,7 @@ public final class SimulationController implements Initializable, Navigable,
         actionRailBuilder = new PendulumActionRailBuilder(actionRail, pendulumCanvas);
         actionRailBuilder.build();
 
-        layoutShell = new LayoutShell(sidebarScroll, graphHost, sidebarToggleHost);
+        layoutShell = new LayoutShell(sidebarScroll, graphHost, canvasGraphStack);
         layoutShell.buildSidebarToggle();
 
         pendulumCanvas.setDragListener(new PendulumCanvas.DragListener() {

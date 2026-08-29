@@ -39,10 +39,19 @@
 
     <center>
         <!--
-            canvasGraphStack layers the small overlay sidebar-toggle button
-            (top-right corner; see SimulationController#buildSidebarToggle)
-            over canvasHost/graphHost — a StackPane, not part of the title
-            bar, per the layout spec.
+            canvasGraphStack layers the sidebar-toggle button (top-right
+            corner; see ui.simcore.LayoutShell#buildSidebarToggle) over
+            canvasHost/graphHost — a StackPane, not part of the title bar,
+            per the layout spec. Round 1.7 §1: the button is a genuine
+            overlay here (Pos.TOP_RIGHT, zero right-margin), not a
+            layout-column sibling of sidebarScroll — the zero right-margin
+            is what keeps it flush against whichever edge is currently the
+            sidebar's own (canvasGraphStack's own right edge always sits
+            exactly there, collapsed or expanded, since BorderPane resizes
+            its center region to fill whatever the right region doesn't
+            claim) without needing a separate always-visible column whose
+            unbuttoned remainder would have nothing to show but this
+            screen's plain background fill.
         -->
         <StackPane fx:id="canvasGraphStack" BorderPane.alignment="CENTER">
             <HBox fx:id="canvasGraphRow" spacing="0">
@@ -71,57 +80,49 @@
 
     <right>
         <!--
-            sidebarToggleHost + sidebarScroll, side by side in one HBox with
-            no spacing — round 1.5 §1: the toggle button used to be a
-            fixed-margin overlay on canvasGraphStack, which looked attached
-            to the sidebar only by coincidence (its margin happened to match
-            the gap to the window edge while the sidebar was collapsed) and
-            visibly detached into a floating chip the moment the sidebar
-            actually expanded, since the overlay's position never tracked
-            the sidebar's own animated width. Making the toggle a sibling
-            column of sidebarScroll instead — both real layout children of
-            this same HBox — means it is *structurally* always flush against
-            whichever edge is currently the sidebar's own (the window edge
-            while collapsed, the panel's edge once expanded), with zero
-            special-casing: an HBox simply never leaves a gap between
-            adjacent children.
-        -->
-        <HBox spacing="0.0">
-            <VBox fx:id="sidebarToggleHost" alignment="TOP_CENTER"/>
-            <!--
-                ControlPanel and LinkEditorPanel are both plain-Java Regions
-                (see controller.SimulationController) stacked inside this VBox;
-                the ScrollPane exists because the link editor's row count is
-                unbounded — without it, editing a 20-link chain would push
-                content below the window with no way to reach it.
+            ControlPanel and LinkEditorPanel are both plain-Java Regions
+            (see controller.SimulationController) stacked inside this VBox;
+            the ScrollPane exists because the link editor's row count is
+            unbounded — without it, editing a 20-link chain would push
+            content below the window with no way to reach it.
 
-                Collapsed to zero width by default (see
-                SimulationController#setSidebarExpanded) — canvas-first per the
-                layout spec — and animated open/closed via min/pref/maxWidth,
-                never setVisible(false), so it's a genuine layout column that
-                shrinks the canvas/graph rather than overlaying them.
-            -->
-            <!--
-                vbarPolicy starts NEVER, matching the collapsed initial
-                state (sidebarExpanded=false in LayoutShell) — round 1.6 §2:
-                left at the default AS_NEEDED, a ScrollPane whose content
-                (controlHost) is taller than the collapsed 0px width still
-                tries to show a vertical scrollbar, whose own track has a
-                nonzero minimum width regardless of the ScrollPane's own
-                min/pref/maxWidth="0.0" above, poking out right where
-                sidebarToggleHost sits and visibly clashing with the toggle
-                button. LayoutShell#setSidebarExpanded flips this back to
-                AS_NEEDED once actually expanded, where content genuinely
-                can overflow (e.g. a 20-link chain in the link editor).
-            -->
-            <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true"
-                        hbarPolicy="NEVER" vbarPolicy="NEVER"
-                        minWidth="0.0" prefWidth="0.0" maxWidth="0.0" HBox.hgrow="NEVER">
-                <content>
-                    <VBox fx:id="controlHost"/>
-                </content>
-            </ScrollPane>
-        </HBox>
+            Collapsed to zero width by default (see
+            SimulationController#setSidebarExpanded) — canvas-first per the
+            layout spec — and animated open/closed via min/pref/maxWidth,
+            never setVisible(false), so it's a genuine layout column that
+            shrinks the canvas/graph rather than overlaying them.
+
+            Round 1.5 §1 briefly made the sidebar-toggle button a sibling
+            layout column here instead of an overlay on canvasGraphStack, to
+            fix it visibly detaching from the sidebar on expand — but a real
+            column, even an unstyled one, still has to show *something* for
+            whatever fraction of its height the button doesn't cover, and
+            what showed there was this screen's own -bg-base fill: a plain
+            black (dark theme) or white (light theme) rectangle with no
+            relation to the canvas beside it, reading as "a stray panel,"
+            not as a button. Round 1.7 §1 reverts to an overlay — see
+            canvasGraphStack's own comment above and
+            LayoutShell#buildSidebarToggle — but fixes the *actual* round
+            1.4 bug (zero right-margin instead of a fixed one) rather than
+            reintroducing it.
+
+            vbarPolicy starts NEVER, matching the collapsed initial state
+            (sidebarExpanded=false in LayoutShell): left at the default
+            AS_NEEDED, a ScrollPane whose content (controlHost) is taller
+            than the collapsed 0px width still tries to show a vertical
+            scrollbar, whose own track has a nonzero minimum width
+            regardless of the ScrollPane's own min/pref/maxWidth="0.0"
+            above. LayoutShell#setSidebarExpanded flips this to AS_NEEDED
+            only once actually expanded, where content genuinely can
+            overflow (e.g. a 20-link chain in the link editor).
+        -->
+        <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true"
+                    hbarPolicy="NEVER" vbarPolicy="NEVER"
+                    minWidth="0.0" prefWidth="0.0" maxWidth="0.0">
+            <content>
+                <VBox fx:id="controlHost"/>
+            </content>
+        </ScrollPane>
     </right>
 
 </BorderPane>
