@@ -73,6 +73,18 @@ public final class PendulumGraphPanel extends ChartCanvas {
     private static final Color C_PHASE  = Color.web("#EA3F8C");   // magenta (accent)
     private static final Color C_POINCARE = Color.web("#EA3F8C"); // magenta (accent)
 
+    // Round 2.1: hoisted out of the per-mode draw methods below — same
+    // reasoning as ui.simcore.ChartCanvas/ChainRenderer's own constants.
+    private static final Color CAPTION_TEXT  = Color.web("#8A8A96");
+    private static final Color DIVIDER_LINE  = Color.web("#2E2E36");
+    private static final Color MINI_ZERO_LINE = Color.web("#FFFFFF", 0.1);
+    private static final Color MINI_BG        = Color.web("#101014");
+    private static final Color MINI_TITLE_COLOR = Color.web("#C7C7D1");
+    private static final Font FONT_LEGEND    = Font.font("Monospaced", 11);
+    private static final Font FONT_CAPTION   = Font.font("Monospaced", 10);
+    private static final Font FONT_EMPTY_MSG = Font.font("System", 12);
+    private static final Font FONT_MINI_TITLE = Font.font("System", FontWeight.BOLD, 10);
+
     private Mode mode = Mode.ANGLE;
 
     /**
@@ -275,7 +287,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 4, C_KE,     1.2); // KE
         drawSeries(gc, tMin, tMax, yMin, yMax, plotW, plotH, 5, C_PE,     1.2); // PE
 
-        gc.setFont(Font.font("Monospaced", 11));
+        gc.setFont(FONT_LEGEND);
         gc.setFill(C_ENERGY); gc.fillText("─ Total", MARGIN + 6, MARGIN + 30);
         gc.setFill(C_KE);     gc.fillText("─ KE",    MARGIN + 6, MARGIN + 42);
         gc.setFill(C_PE);     gc.fillText("─ PE",    MARGIN + 6, MARGIN + 54);
@@ -339,8 +351,8 @@ public final class PendulumGraphPanel extends ChartCanvas {
             gc.fillOval(prev[0] - 3, prev[1] - 3, 6, 6);
         }
 
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(Color.web("#8A8A96"));
+        gc.setFont(FONT_CAPTION);
+        gc.setFill(CAPTION_TEXT);
         gc.fillText(String.format("θ  [%.2f, %.2f] rad", thetaMin, thetaMax),
                     MARGIN + 4, MARGIN + 20 + plotH + 18);
         gc.fillText(String.format("ω  [%.2f, %.2f] rad/s", omegaMin, omegaMax),
@@ -350,8 +362,8 @@ public final class PendulumGraphPanel extends ChartCanvas {
     // ---- Mode: Poincaré Section ----
     private void drawPoincareSection(GraphicsContext gc, double plotW, double plotH) {
         if (poincarePoints.isEmpty()) {
-            gc.setFont(Font.font("System", 12));
-            gc.setFill(Color.web("#8A8A96"));
+            gc.setFont(FONT_EMPTY_MSG);
+            gc.setFill(CAPTION_TEXT);
             gc.fillText("Accumulating — a point is plotted each time θ₁",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
             gc.fillText("crosses zero moving forward (needs N ≥ 2)",
@@ -379,8 +391,8 @@ public final class PendulumGraphPanel extends ChartCanvas {
             gc.fillOval(sx - 1.5, sy - 1.5, 3, 3);
         }
 
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(Color.web("#8A8A96"));
+        gc.setFont(FONT_CAPTION);
+        gc.setFill(CAPTION_TEXT);
         gc.fillText(String.format("%d crossings   θ₂ [%.2f, %.2f]   ω₂ [%.2f, %.2f]",
                         poincarePoints.size(), thetaMin, thetaMax, omegaMin, omegaMax),
                 MARGIN + 4, MARGIN + 20 + plotH + 18);
@@ -389,8 +401,8 @@ public final class PendulumGraphPanel extends ChartCanvas {
     // ---- Mode: Integrator Comparison ----
     private void drawComparison(GraphicsContext gc, double plotW, double plotH) {
         if (comparisonSeries.isEmpty()) {
-            gc.setFont(Font.font("System", 12));
-            gc.setFill(Color.web("#8A8A96"));
+            gc.setFont(FONT_EMPTY_MSG);
+            gc.setFill(CAPTION_TEXT);
             gc.fillText("Press \"Compare Integrators\" in the sidebar to run this.",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0);
             return;
@@ -408,7 +420,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
         drawAxisTicks(gc, plotW, plotH, tMin, tMax, yMin, yMax);
 
         double legendY = MARGIN + 30;
-        gc.setFont(Font.font("Monospaced", 11));
+        gc.setFont(FONT_LEGEND);
         for (ComparisonSeries s : comparisonSeries) {
             gc.setStroke(s.color());
             gc.setLineWidth(1.6);
@@ -430,8 +442,8 @@ public final class PendulumGraphPanel extends ChartCanvas {
     // ---- Mode: Bifurcation Diagram ----
     private void drawBifurcation(GraphicsContext gc, double plotW, double plotH) {
         if (bifurcationParams.length == 0) {
-            gc.setFont(Font.font("System", 12));
-            gc.setFill(Color.web("#8A8A96"));
+            gc.setFont(FONT_EMPTY_MSG);
+            gc.setFill(CAPTION_TEXT);
             gc.fillText("Press \"Generate Bifurcation Map\" in the sidebar to run this.",
                     MARGIN + 12, MARGIN + 20 + plotH / 2.0 - 10);
             gc.fillText("Sweeps the first link's initial angle — takes a while.",
@@ -454,8 +466,8 @@ public final class PendulumGraphPanel extends ChartCanvas {
             }
         }
 
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(Color.web("#8A8A96"));
+        gc.setFont(FONT_CAPTION);
+        gc.setFill(CAPTION_TEXT);
         gc.fillText(String.format("θ₁ initial swept [%.2f, %.2f] rad · y = last link's angle at each θ₁ crossing",
                         xMin, xMax),
                 MARGIN + 4, MARGIN + 20 + plotH + 18);
@@ -485,7 +497,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
         drawMiniEnergy(gc, bandH, bandH, W);
         drawMiniPhase(gc, bandH * 2, bandH, W);
 
-        gc.setStroke(Color.web("#2E2E36"));
+        gc.setStroke(DIVIDER_LINE);
         gc.setLineWidth(1.0);
         gc.strokeLine(0, bandH, W, bandH);
         gc.strokeLine(0, bandH * 2, W, bandH * 2);
@@ -503,7 +515,7 @@ public final class PendulumGraphPanel extends ChartCanvas {
         double tMin = bounds[0], tMax = bounds[1];
         double yMin = -Math.PI, yMax = Math.PI;
 
-        gc.setStroke(Color.web("#FFFFFF", 0.1));
+        gc.setStroke(MINI_ZERO_LINE);
         gc.setLineWidth(1.0);
         double zeroY = mapY(0, yMin, yMax, plotY, plotH);
         gc.strokeLine(plotX, zeroY, plotX + plotW, zeroY);
@@ -578,10 +590,10 @@ public final class PendulumGraphPanel extends ChartCanvas {
 
     /** Fills one small-multiples band and labels it. */
     private void drawMiniBackground(GraphicsContext gc, double y0, double h, double W, String title) {
-        gc.setFill(Color.web("#101014"));
+        gc.setFill(MINI_BG);
         gc.fillRect(0, y0, W, h);
-        gc.setFont(Font.font("System", FontWeight.BOLD, 10));
-        gc.setFill(Color.web("#C7C7D1"));
+        gc.setFont(FONT_MINI_TITLE);
+        gc.setFill(MINI_TITLE_COLOR);
         gc.fillText(title, MINI_MARGIN, y0 + 12);
     }
 

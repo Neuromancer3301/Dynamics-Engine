@@ -28,6 +28,19 @@ public abstract class ChartCanvas extends Canvas {
     protected static final double MINI_MARGIN  = 6;
     protected static final double MINI_TITLE_H = 17;
 
+    // Round 2.1: hoisted out of the per-frame draw methods below — same
+    // reasoning as ui.pendulum.PendulumChainRenderer's constants (Color.web/
+    // Font.font otherwise re-parse/re-lookup an unchanging value every call).
+    private static final Color BG_COLOR    = Color.web("#08080B");
+    private static final Color PLOT_BG     = Color.web("#101014");
+    private static final Color GRID_LINE   = Color.web("#232329", 0.7);
+    private static final Color AXES_STROKE = Color.web("#2E2E36");
+    private static final Color TICK_TEXT   = Color.web("#8A8A96");
+    private static final Color ZERO_LINE   = Color.web("#FFFFFF", 0.12);
+    private static final Color TITLE_TEXT  = Color.web("#C7C7D1");
+    private static final Font  FONT_TICK   = Font.font("Monospaced", 10);
+    private static final Font  FONT_TITLE  = Font.font("System", FontWeight.BOLD, 14);
+
     private boolean dirty = true;
 
     protected ChartCanvas(double width, double height) {
@@ -57,16 +70,16 @@ public abstract class ChartCanvas extends Canvas {
     protected abstract void drawModeContent(GraphicsContext gc, double width, double height);
 
     protected void drawBackground(GraphicsContext gc, double w, double h) {
-        gc.setFill(Color.web("#08080B"));
+        gc.setFill(BG_COLOR);
         gc.fillRect(0, 0, w, h);
     }
 
     /** Paints the inner plot rectangle and its 5x5 reference grid, at the standard {@link #MARGIN}-based origin. Drawn before any series so the data sits on top. */
     protected void drawPlotArea(GraphicsContext gc, double plotW, double plotH) {
-        gc.setFill(Color.web("#101014"));
+        gc.setFill(PLOT_BG);
         gc.fillRect(MARGIN, MARGIN + 20, plotW, plotH);
 
-        gc.setStroke(Color.web("#232329", 0.7));
+        gc.setStroke(GRID_LINE);
         gc.setLineWidth(0.5);
         int gridN = 5;
         for (int i = 0; i <= gridN; i++) {
@@ -81,7 +94,7 @@ public abstract class ChartCanvas extends Canvas {
 
     /** Strokes the plot rectangle's border, at the standard {@link #MARGIN}-based origin. */
     protected void drawAxes(GraphicsContext gc, double plotW, double plotH) {
-        gc.setStroke(Color.web("#2E2E36"));
+        gc.setStroke(AXES_STROKE);
         gc.setLineWidth(1.5);
         gc.strokeRect(MARGIN, MARGIN + 20, plotW, plotH);
     }
@@ -93,8 +106,8 @@ public abstract class ChartCanvas extends Canvas {
      */
     protected void drawAxisTicks(GraphicsContext gc, double plotW, double plotH,
                                   double tMin, double tMax, double yMin, double yMax) {
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(Color.web("#8A8A96"));
+        gc.setFont(FONT_TICK);
+        gc.setFill(TICK_TEXT);
 
         int gridN = 5;
         for (int i = 0; i <= gridN; i++) {
@@ -120,15 +133,15 @@ public abstract class ChartCanvas extends Canvas {
     /** A faint horizontal line at data-value zero, in the standard {@link #MARGIN}-based plot. */
     protected void drawZeroLine(GraphicsContext gc, double plotW, double plotH, double yMin, double yMax) {
         double sy = mapY(0.0, yMin, yMax, MARGIN + 20, plotH);
-        gc.setStroke(Color.web("#FFFFFF", 0.12));
+        gc.setStroke(ZERO_LINE);
         gc.setLineWidth(1.0);
         gc.strokeLine(MARGIN, sy, MARGIN + plotW, sy);
     }
 
     /** Draws the heading naming the active mode, above the standard {@link #MARGIN}-based plot area. */
     protected void drawTitle(GraphicsContext gc, double plotW, String title) {
-        gc.setFont(Font.font("System", FontWeight.BOLD, 14));
-        gc.setFill(Color.web("#C7C7D1"));
+        gc.setFont(FONT_TITLE);
+        gc.setFill(TITLE_TEXT);
         gc.fillText(title, MARGIN + 4, MARGIN + 16);
     }
 
