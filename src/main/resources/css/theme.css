@@ -676,3 +676,255 @@
     -fx-wrap-text: true;
     -fx-max-width: 480px;
 }
+
+/* ---------- Manual screen ----------
+   The one place in the app that is read rather than operated, so it is set
+   like a document: a single measured column, a real heading hierarchy, and
+   four colour-coded callout kinds. Everything still resolves through the
+   same -ink/-accent/-line tokens as the rest of the app, so it themes with
+   everything else and needs no light/dark rules of its own. */
+
+.manual-header {
+    -fx-background-color: -bg-base;
+    -fx-border-color: transparent transparent -line transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+/* The ScrollPane paints its own gray chrome by default; both the control
+   and its viewport have to be cleared or a lighter rectangle shows through
+   behind the text. */
+.manual-scroll,
+.manual-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+.manual-scroll {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+/* Caps the measure at roughly 90 characters. Without this the paragraphs
+   stretch to whatever the window is, and long lines are the single fastest
+   way to make prose unreadable. */
+.manual-body {
+    -fx-max-width: 900px;
+}
+
+/* Part dividers: a small accent eyebrow over a large title. */
+.manual-part-kicker {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 0.14em;
+    -fx-text-fill: -accent;
+}
+.manual-part-title {
+    -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+    -fx-font-size: 27px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+
+.manual-heading {
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+
+/* Experiment banners get the accent rule so the ten of them are findable by
+   scrolling, without needing a table of contents. */
+.manual-exp-head {
+    -fx-border-color: transparent transparent transparent -accent;
+    -fx-border-width: 0 0 0 3px;
+    -fx-padding: 2 0 2 12;
+}
+.manual-exp-number {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 0.1em;
+    -fx-text-fill: -accent;
+}
+.manual-exp-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+
+.manual-text {
+    -fx-font-size: 14px;
+    -fx-text-fill: -ink-2;
+}
+
+.manual-step-number {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -accent;
+}
+
+/* The label half of a term/description pair — brighter than the body text
+   so the left column reads as the key, not as more prose. */
+.manual-row {
+    -fx-padding: 5 0 5 0;
+    -fx-border-color: transparent transparent -line-soft transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+.manual-row-term {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 13px;
+    -fx-text-fill: -ink;
+}
+
+/* Four callout kinds, distinguished only by the colour of their left rule:
+   green for the expected result, accent for the lesson, neutral for asides,
+   and a filled panel for the one-line statements that carry the most
+   weight. */
+.manual-banner {
+    -fx-font-size: 14px;
+    -fx-padding: 9 14 9 13;
+    -fx-border-width: 0 0 0 3px;
+}
+.manual-expect {
+    -fx-text-fill: -ink-2;
+    -fx-background-color: -bg-surface;
+    -fx-border-color: transparent transparent transparent -success;
+}
+.manual-means {
+    -fx-text-fill: -ink-2;
+    -fx-background-color: -bg-surface;
+    -fx-border-color: transparent transparent transparent -accent;
+}
+.manual-note {
+    -fx-text-fill: -ink-3;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent transparent -line;
+}
+.manual-callout {
+    -fx-font-size: 15px;
+    -fx-text-fill: -ink;
+    -fx-background-color: -accent-soft;
+    -fx-border-color: transparent transparent transparent -accent;
+}
+
+.manual-code {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 13px;
+    -fx-text-fill: -ink;
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+    -fx-padding: 10 14 10 14;
+}
+
+/* The manual's tab bar — one tab per simulation, mirroring the three cards
+   on the main menu. Styled as an underlined bar rather than folder-style
+   tabs: the active tab is marked by an accent rule along its bottom edge,
+   which reads as "you are here" without boxing each label in chrome. */
+.manual-tabbar {
+    -fx-background-color: -bg-base;
+    -fx-border-color: transparent transparent -line transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.manual-tab {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 14px;
+    -fx-text-fill: -ink-2;
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-padding: 11 20 11 20;
+    -fx-cursor: hand;
+    /* Sits 1px lower so the active tab's rule covers the tab bar's own
+       bottom border rather than doubling up with it. */
+    -fx-border-color: transparent transparent transparent transparent;
+    -fx-border-width: 0 0 2px 0;
+    -fx-border-insets: 0 0 -1 0;
+}
+.manual-tab:hover, .manual-tab:focused {
+    -fx-text-fill: -ink;
+    -fx-background-color: -accent-soft;
+}
+.manual-tab-active {
+    -fx-text-fill: -accent;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent transparent -accent transparent;
+}
+/* A reserved tab is still clickable — it opens a page explaining the slot is
+   empty — so it is dimmed, never disabled. Dimming says "nothing here yet";
+   disabling would wrongly say "you cannot read about this". */
+.manual-tab-reserved {
+    -fx-text-fill: -ink-3;
+}
+.manual-tab-reserved.manual-tab-active {
+    -fx-text-fill: -ink;
+    -fx-border-color: transparent transparent -ink-3 transparent;
+}
+
+/* Top-level simulation dividers. The manual is split into three sections,
+   one per card on the main menu, so these are styled to echo those cards:
+   a solid-bordered panel for the simulation you can open, a dashed and
+   dimmed one for the two reserved slots — the same visual language the menu
+   uses to say "empty shelf, not broken button". */
+.manual-sim {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -accent;
+    -fx-border-width: 0 0 0 4px;
+    -fx-padding: 16 20 16 18;
+}
+.manual-sim-reserved {
+    -fx-background-color: transparent;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+    -fx-border-style: segments(6, 5) line-cap butt;
+    -fx-padding: 16 20 16 18;
+}
+
+.manual-sim-number {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 26px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -accent;
+}
+.manual-sim-reserved .manual-sim-number {
+    -fx-text-fill: -ink-3;
+}
+
+.manual-sim-title {
+    -fx-font-family: "Century Gothic", "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+    -fx-font-size: 30px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -ink;
+}
+.manual-sim-reserved .manual-sim-title {
+    -fx-text-fill: -ink-3;
+}
+
+/* The status pill. A reserved slot gets muted grey, never a hopeful accent —
+   an empty slot should not advertise itself as though it were a feature. */
+.manual-sim-status {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 0.12em;
+    -fx-padding: 4 9 4 9;
+    -fx-border-width: 1px;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
+}
+.manual-sim-status-live {
+    -fx-text-fill: -success;
+    -fx-border-color: -success;
+    -fx-background-color: transparent;
+}
+.manual-sim-status-soon {
+    -fx-text-fill: -ink-3;
+    -fx-border-color: -line;
+    -fx-background-color: transparent;
+}
+
+/* The paragraph directly under a simulation divider — one step brighter and
+   larger than body text, so each section opens with a readable summary. */
+.manual-lede {
+    -fx-font-size: 15px;
+    -fx-text-fill: -ink;
+}

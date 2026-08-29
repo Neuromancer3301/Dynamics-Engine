@@ -6,6 +6,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.input.KeyEvent;
@@ -325,6 +326,7 @@ public final class SimulationController implements Initializable, Navigable,
         controlPanel.setOnEnsembleToggle(chaosFeatures::setEnsembleActive);
         controlPanel.setOnSonifyToggle(chaosFeatures::setSonifyActive);
         controlPanel.setOnGenerateBifurcation(chaosFeatures::generateBifurcationMap);
+        controlPanel.setOnGenerateFractal(chaosFeatures::generateBasinFractal);
         controlPanel.setOnCompareToggle(chaosFeatures::setCompareActive);
         controlPanel.setOnResetGravityDirection(() -> {
             currentGravityAngle = 0.0;
@@ -551,6 +553,19 @@ public final class SimulationController implements Initializable, Navigable,
         controlPanel.selectBifurcationMode();
     }
 
+    @Override
+    public void setFractalRunning(boolean running) { controlPanel.setFractalRunning(running); }
+
+    @Override
+    public void setFractalProgress(double fraction) { controlPanel.setFractalProgress(fraction); }
+
+    @Override
+    public void onFractalComplete(double[][] timeToFlip, double maxSeconds) {
+        graphPanel.setFractalData(timeToFlip, maxSeconds);
+        graphPanel.setMode(PendulumGraphPanel.Mode.FRACTAL);
+        controlPanel.selectFractalMode();
+    }
+
     /**
      * Creates the 60 fps render loop.
      *
@@ -674,6 +689,7 @@ public final class SimulationController implements Initializable, Navigable,
         // A sweep left running after navigating away would keep a
         // background thread alive computing a diagram nobody can see.
         chaosFeatures.cancelBifurcationIfRunning();
+        chaosFeatures.cancelFractalIfRunning();
 
         Scene scene = btnBack.getScene();
         if (scene != null && keyHandler != null) scene.removeEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
@@ -686,6 +702,18 @@ public final class SimulationController implements Initializable, Navigable,
      * rather than a handler on a single node: Space on a focused Button
      * would otherwise trigger that button's own click before this ever saw
      * the key.
+     *
+     * <p><b>Round 3.1:</b> → is the one case here that deliberately backs
+     * off when a {@link Control} has focus (see the {@code case RIGHT}
+     * branch below) — unlike Space/R, → has no "must always work mid-demo"
+     * case strong enough to justify stealing it from whatever the user is
+     * actually focused on. Left unguarded, this filter unconditionally
+     * consumed → in the capturing phase — before the event ever reached its
+     * target — which silently broke the sidebar tab bar's own →-traversal
+     * and a focused slider's own →-to-increment behavior (both work
+     * correctly once this filter simply doesn't consume the key at all).
+     * Space/R stay unconditional on purpose — that's the documented,
+     * deliberate behavior above and isn't what round 3.1 reported as broken.
      */
     private void handleKeyPress(KeyEvent e) {
         switch (e.getCode()) {
@@ -704,6 +732,8 @@ public final class SimulationController implements Initializable, Navigable,
                 e.consume();
             }
             case RIGHT -> {
+                Scene scene = btnBack.getScene();
+                if (scene != null && scene.getFocusOwner() instanceof Control) return;
                 simLoop.stepOnce();
                 e.consume();
             }

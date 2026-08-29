@@ -14,10 +14,13 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * The sidebar's "Graphs" group: the seven graph-mode toggles (mutually
+ * The sidebar's "Graphs" group: the eight graph-mode toggles (mutually
  * exclusive, or none selected — see {@link #toggleGraphMode}), the
- * bifurcation-sweep button/progress bar, and CSV export. Moved out of
- * {@code ControlPanel} — see round 1 §10 of the UI restructuring plan.
+ * bifurcation-sweep and basin-fractal-sweep buttons/progress bars, and CSV
+ * export. Moved out of {@code ControlPanel} — see round 1 §10 of the UI
+ * restructuring plan. Round 3: the basin-fractal button/progress bar/toggle
+ * were ported from {@code feature/manual-and-bugfixes}'s {@code
+ * ui.ControlPanel}, mirroring the bifurcation ones already here.
  */
 public final class GraphsGroupPanel extends VBox {
 
@@ -31,11 +34,15 @@ public final class GraphsGroupPanel extends VBox {
     // otherwise have given us for free.
     private final ToggleButton[] graphModeButtons;
     private final ToggleButton bifurcationToggle;
+    private final ToggleButton fractalToggle;
 
     private final ProgressBar bifurcationProgressBar;
     private final Button bifurcationButton;
+    private final ProgressBar fractalProgressBar;
+    private final Button fractalButton;
 
     private Runnable onGenerateBifurcation;
+    private Runnable onGenerateFractal;
 
     // Fired true when a graph mode becomes selected, false when the active
     // one is clicked again (deselected) — see controller.SimulationController's
@@ -54,8 +61,10 @@ public final class GraphsGroupPanel extends VBox {
         ToggleButton tbPoincare    = SidebarControlFactory.graphModeButton("Poincaré Section (θ₂,ω₂)");
         ToggleButton tbCompare     = SidebarControlFactory.graphModeButton("Integrator Comparison");
         ToggleButton tbBifurcation = SidebarControlFactory.graphModeButton("Bifurcation Map");
-        this.graphModeButtons = new ToggleButton[]{tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation};
+        ToggleButton tbFractal     = SidebarControlFactory.graphModeButton("Basin Fractal");
+        this.graphModeButtons = new ToggleButton[]{tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation, tbFractal};
         this.bifurcationToggle = tbBifurcation;
+        this.fractalToggle = tbFractal;
 
         tbAngle      .setOnAction(e -> toggleGraphMode(tbAngle, PendulumGraphPanel.Mode.ANGLE, graphPanel));
         tbEnergy     .setOnAction(e -> toggleGraphMode(tbEnergy, PendulumGraphPanel.Mode.ENERGY, graphPanel));
@@ -64,6 +73,7 @@ public final class GraphsGroupPanel extends VBox {
         tbPoincare   .setOnAction(e -> toggleGraphMode(tbPoincare, PendulumGraphPanel.Mode.POINCARE, graphPanel));
         tbCompare    .setOnAction(e -> toggleGraphMode(tbCompare, PendulumGraphPanel.Mode.COMPARISON, graphPanel));
         tbBifurcation.setOnAction(e -> toggleGraphMode(tbBifurcation, PendulumGraphPanel.Mode.BIFURCATION, graphPanel));
+        tbFractal    .setOnAction(e -> toggleGraphMode(tbFractal, PendulumGraphPanel.Mode.FRACTAL, graphPanel));
 
         Button btnBifurcation = new Button("🌀  Generate Bifurcation Map");
         SidebarControlFactory.styleButton(btnBifurcation);
@@ -79,6 +89,22 @@ public final class GraphsGroupPanel extends VBox {
         });
         this.bifurcationProgressBar = bifurcationProgress;
         this.bifurcationButton = btnBifurcation;
+
+        Button btnFractal = new Button("❋  Generate Basin Fractal");
+        SidebarControlFactory.styleButton(btnFractal);
+        ProgressBar fractalProgress = new ProgressBar(0);
+        fractalProgress.setMaxWidth(Double.MAX_VALUE);
+        fractalProgress.setVisible(false);
+        fractalProgress.setManaged(false);
+        Label fractalHint = SidebarControlFactory.hintLabel(
+            "Runs a 2-link chain from every pair of starting angles and colours each by "
+          + "how fast it flips. Smooth areas never flip; the intricate boundary is the fractal. "
+          + "~40,000 simulations, run across all CPU cores.");
+        btnFractal.setOnAction(e -> {
+            if (onGenerateFractal != null) onGenerateFractal.run();
+        });
+        this.fractalProgressBar = fractalProgress;
+        this.fractalButton = btnFractal;
 
         Button btnExportCsv = new Button("⬇  Export CSV");
         SidebarControlFactory.styleButton(btnExportCsv);
@@ -104,8 +130,9 @@ public final class GraphsGroupPanel extends VBox {
         });
 
         getChildren().setAll(
-            lGraph, tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation,
+            lGraph, tbAngle, tbEnergy, tbPhase, tbAll, tbPoincare, tbCompare, tbBifurcation, tbFractal,
             btnBifurcation, bifurcationProgress, bifurcationHint,
+            btnFractal, fractalProgress, fractalHint,
             btnExportCsv, exportHint
         );
     }
@@ -123,6 +150,9 @@ public final class GraphsGroupPanel extends VBox {
 
     /** Called when "Generate Bifurcation Map" is clicked. */
     public void setOnGenerateBifurcation(Runnable callback) { this.onGenerateBifurcation = callback; }
+
+    /** Called when "Generate Basin Fractal" is clicked. */
+    public void setOnGenerateFractal(Runnable callback) { this.onGenerateFractal = callback; }
 
     /** Called with {@code true} once a graph mode is selected, {@code false} when deselected. See §10 of the UI overhaul spec. */
     public void setOnGraphVisibilityChange(Consumer<Boolean> callback) { this.onGraphVisibilityChange = callback; }
@@ -149,6 +179,25 @@ public final class GraphsGroupPanel extends VBox {
      */
     public void selectBifurcationMode() {
         for (ToggleButton b : graphModeButtons) b.setSelected(b == bifurcationToggle);
+        if (onGraphVisibilityChange != null) onGraphVisibilityChange.accept(true);
+    }
+
+    /** Drives the progress bar while a basin sweep runs — see {@code physics.FractalBasinSweep}. */
+    public void setFractalProgress(double fraction) {
+        fractalProgressBar.setProgress(fraction);
+    }
+
+    /** Toggles the fractal button/progress-bar between "idle" and "sweep in progress" — disables re-entrancy. */
+    public void setFractalRunning(boolean running) {
+        fractalButton.setDisable(running);
+        fractalProgressBar.setVisible(running);
+        fractalProgressBar.setManaged(running);
+        if (!running) fractalProgressBar.setProgress(0);
+    }
+
+    /** Selects the Basin Fractal toggle once a sweep finishes — same reasoning as {@link #selectBifurcationMode}. */
+    public void selectFractalMode() {
+        for (ToggleButton b : graphModeButtons) b.setSelected(b == fractalToggle);
         if (onGraphVisibilityChange != null) onGraphVisibilityChange.accept(true);
     }
 }
