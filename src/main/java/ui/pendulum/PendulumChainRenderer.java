@@ -66,6 +66,39 @@ final class PendulumChainRenderer {
     // Cycles per second for the selection halo's pulse.
     private static final double HALO_PULSE_HZ = 1.2;
 
+    // Round 2.1: hoisted out of the per-frame draw methods below. Color.web
+    // re-parses its hex-string argument on every call and Font.font does an
+    // internal family/weight/size lookup on every call — neither is
+    // expensive in isolation (a profiling pass found the whole draw() call
+    // to already be sub-millisecond even without this), but every one of
+    // these was previously a fresh call every single frame for a value that
+    // never changes, which is pure avoidable garbage-collector pressure.
+    // Anything whose alpha/hue genuinely varies frame-to-frame (the
+    // selection halo's pulse, a trail segment's fade, velocity tinting)
+    // stays computed inline — see drawSelectionHalo/drawOneTrail/velocityColor.
+    private static final Color ACCENT          = Color.web("#EA3F8C");
+    private static final Color ACCENT_A12      = Color.web("#EA3F8C", 0.12);
+    private static final Color ACCENT_A35      = Color.web("#EA3F8C", 0.35);
+    private static final Color ACCENT_A70      = Color.web("#EA3F8C", 0.7);
+    private static final Color ACCENT_A75      = Color.web("#EA3F8C", 0.75);
+    private static final Color ACCENT_A85      = Color.web("#EA3F8C", 0.85);
+    private static final Color COMPARE_CYAN        = Color.web("#3DDCC7");
+    private static final Color COMPARE_CYAN_STROKE = Color.web("#1B6E63");
+    private static final Color BLACK_A35 = Color.web("#000000", 0.35);
+    private static final Color BLACK_A40 = Color.web("#000000", 0.4);
+    private static final Color BLACK_A60 = Color.web("#000000", 0.6);
+    private static final Color BLACK_A70 = Color.web("#000000", 0.7);
+    private static final Color WHITE     = Color.web("#FFFFFF");
+    private static final Color WHITE_A35 = Color.web("#FFFFFF", 0.35);
+    private static final Color ROD_COLOR       = Color.web("#C7C7D1");
+    private static final Color TEXT_SECONDARY  = Color.web("#D6D6DC");
+    private static final Color PIVOT_STROKE    = Color.web("#6B6B74");
+    private static final Color GRAVITY_HANDLE_STROKE = Color.web("#7A2148");
+
+    private static final Font FONT_HUD           = Font.font("Monospaced", 14);
+    private static final Font FONT_COMPARE_LABEL = Font.font("Monospaced", FontWeight.BOLD, 10);
+    private static final Font FONT_GRAVITY_LABEL = Font.font("Monospaced", 10);
+
     // Shared text measurement for the HUD/inspector boxes.
     private static final double HUD_TEXT_PADDING = 9;
     private static final double HUD_MIN_WIDTH = 150;
@@ -200,7 +233,7 @@ final class PendulumChainRenderer {
 
     private void drawGhostChain(GraphicsContext gc, SimState state, double scale, double pivotX, double pivotY) {
         double prevX = pivotX, prevY = pivotY;
-        gc.setStroke(Color.web("#EA3F8C", 0.12));
+        gc.setStroke(ACCENT_A12);
         gc.setLineWidth(1.0);
 
         for (int i = 0; i < state.getN(); i++) {
@@ -211,14 +244,14 @@ final class PendulumChainRenderer {
             prevY = by;
         }
 
-        gc.setFill(Color.web("#EA3F8C", 0.35));
+        gc.setFill(ACCENT_A35);
         double r = 2.5;
         gc.fillOval(prevX - r, prevY - r, r * 2, r * 2);
     }
 
     private void drawCompareChain(GraphicsContext gc, SimState state, double scale, double pivotX, double pivotY) {
         double prevX = pivotX, prevY = pivotY;
-        Color compareColor = Color.web("#3DDCC7");
+        Color compareColor = COMPARE_CYAN;
         gc.setStroke(compareColor.deriveColor(0, 1, 1, 0.8));
         gc.setLineWidth(2.0);
 
@@ -233,11 +266,11 @@ final class PendulumChainRenderer {
         gc.setFill(compareColor);
         double r = bobBaseRadius * 0.7;
         gc.fillOval(prevX - r, prevY - r, r * 2, r * 2);
-        gc.setStroke(Color.web("#1B6E63"));
+        gc.setStroke(COMPARE_CYAN_STROKE);
         gc.setLineWidth(1.0);
         gc.strokeOval(prevX - r, prevY - r, r * 2, r * 2);
 
-        gc.setFont(Font.font("Monospaced", FontWeight.BOLD, 10));
+        gc.setFont(FONT_COMPARE_LABEL);
         gc.setFill(compareColor);
         gc.fillText("B", prevX + r + 3, prevY + 3);
     }
@@ -246,7 +279,7 @@ final class PendulumChainRenderer {
         if (trailMode == PendulumCanvas.TrailMode.OFF) return;
 
         if (trailMode == PendulumCanvas.TrailMode.TIP_ONLY) {
-            if (n > 0) drawOneTrail(gc, trails.get(n - 1), Color.web("#EA3F8C"), scale, pivotX, pivotY);
+            if (n > 0) drawOneTrail(gc, trails.get(n - 1), ACCENT, scale, pivotX, pivotY);
         } else { // ALL_LINKS
             for (int i = 0; i < n; i++) drawOneTrail(gc, trails.get(i), bobColors[i % bobColors.length], scale, pivotX, pivotY);
         }
@@ -302,11 +335,11 @@ final class PendulumChainRenderer {
             double bx = previewing ? previewScreenX[i] : pivotX + state.bobX[i] * scale;
             double by = previewing ? previewScreenY[i] : pivotY - state.bobY[i] * scale;
 
-            gc.setStroke(Color.web("#000000", 0.35));
+            gc.setStroke(BLACK_A35);
             gc.setLineWidth(ROD_WIDTH + 2);
             gc.strokeLine(prevX + 1.5, prevY + 1.5, bx + 1.5, by + 1.5);
 
-            gc.setStroke(Color.web("#C7C7D1"));
+            gc.setStroke(ROD_COLOR);
             gc.setLineWidth(ROD_WIDTH);
             gc.strokeLine(prevX, prevY, bx, by);
 
@@ -321,7 +354,7 @@ final class PendulumChainRenderer {
                 double glowR = bobRadius * 1.8;
                 gc.fillOval(bx - glowR, by - glowR, glowR * 2, glowR * 2);
 
-                gc.setFill(Color.web("#000000", 0.35));
+                gc.setFill(BLACK_A35);
                 gc.fillOval(bx - bobRadius + 2, by - bobRadius + 2, bobRadius * 2, bobRadius * 2);
 
                 RadialGradient gradient = new RadialGradient(
@@ -335,7 +368,7 @@ final class PendulumChainRenderer {
                 gc.setFill(gradient);
                 gc.fillOval(bx - bobRadius, by - bobRadius, bobRadius * 2, bobRadius * 2);
 
-                gc.setFill(Color.web("#FFFFFF", 0.35));
+                gc.setFill(WHITE_A35);
                 double hl = bobRadius * 0.55;
                 gc.fillOval(bx - hl * 0.9, by - hl * 0.9, hl, hl);
             }
@@ -388,7 +421,7 @@ final class PendulumChainRenderer {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && link < state.masses.length) ? state.masses[link] : Double.NaN;
 
-        Font font = Font.font("Monospaced", 14);
+        Font font = FONT_HUD;
         gc.setFont(font);
 
         String line1 = "Link #" + (link + 1);
@@ -400,21 +433,24 @@ final class PendulumChainRenderer {
         double boxX = Math.min(bx + 14, canvasW - boxW - 4);
         double boxY = Math.max(by - boxH - 14, 4);
 
-        gc.setFill(Color.web("#000000", 0.7));
+        gc.setFill(BLACK_A70);
         gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
-        gc.setStroke(Color.web("#EA3F8C", 0.7));
+        gc.setStroke(ACCENT_A70);
         gc.setLineWidth(1.0);
         gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
-        gc.setFill(Color.web("#FFFFFF"));
+        gc.setFill(WHITE);
         gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 18);
-        gc.setFill(Color.web("#D6D6DC"));
+        gc.setFill(TEXT_SECONDARY);
         gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 36);
         gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 53);
     }
 
     private void drawInfoOverlay(GraphicsContext gc, SimState state, double W) {
-        Font font = Font.font("Monospaced", FontWeight.NORMAL, 14);
+        // Same family/weight/size as FONT_HUD (FontWeight.NORMAL is Font.font's
+        // own default), so this reuses that cached instance rather than
+        // looking up an identical font fresh every frame.
+        Font font = FONT_HUD;
         gc.setFont(font);
 
         String line1 = String.format("t  = %7.2f s",   state.time);
@@ -425,10 +461,10 @@ final class PendulumChainRenderer {
         double boxW = hudBoxWidth(font, line1, line2, line3);
         this.infoOverlayBoxW = boxW;
 
-        gc.setFill(Color.web("#000000", 0.6));
+        gc.setFill(BLACK_A60);
         gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
-        gc.setFill(Color.web("#EA3F8C"));
+        gc.setFill(ACCENT);
         gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 19);
         gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 35);
         gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 51);
@@ -444,7 +480,7 @@ final class PendulumChainRenderer {
         double rodLength = Math.hypot(bx - parentX, by - parentY) / scale;
         double mass = (state.masses != null && selectedLink < state.masses.length) ? state.masses[selectedLink] : Double.NaN;
 
-        Font font = Font.font("Monospaced", 14);
+        Font font = FONT_HUD;
         gc.setFont(font);
 
         String line1 = "Selected: Link #" + (selectedLink + 1);
@@ -456,25 +492,25 @@ final class PendulumChainRenderer {
         double boxW = hudBoxWidth(font, line1, line2, line3);
         double boxH = 58;
 
-        gc.setFill(Color.web("#000000", 0.6));
+        gc.setFill(BLACK_A60);
         gc.fillRoundRect(boxX, boxY, boxW, boxH, 4, 4);
-        gc.setStroke(Color.web("#EA3F8C", 0.7));
+        gc.setStroke(ACCENT_A70);
         gc.setLineWidth(1.0);
         gc.strokeRoundRect(boxX, boxY, boxW, boxH, 4, 4);
 
-        gc.setFill(Color.web("#EA3F8C"));
+        gc.setFill(ACCENT);
         gc.fillText(line1, boxX + HUD_TEXT_PADDING, boxY + 18);
-        gc.setFill(Color.web("#D6D6DC"));
+        gc.setFill(TEXT_SECONDARY);
         gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 36);
         gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 53);
     }
 
     private void drawPivot(GraphicsContext gc, double px, double py) {
-        gc.setFill(Color.web("#000000", 0.4));
+        gc.setFill(BLACK_A40);
         gc.fillOval(px - PIVOT_RADIUS + 2, py - PIVOT_RADIUS + 2, PIVOT_RADIUS * 2, PIVOT_RADIUS * 2);
-        gc.setFill(Color.web("#D6D6DC"));
+        gc.setFill(TEXT_SECONDARY);
         gc.fillOval(px - PIVOT_RADIUS, py - PIVOT_RADIUS, PIVOT_RADIUS * 2, PIVOT_RADIUS * 2);
-        gc.setStroke(Color.web("#6B6B74"));
+        gc.setStroke(PIVOT_STROKE);
         gc.setLineWidth(1.5);
         gc.strokeLine(px - 4, py, px + 4, py);
         gc.strokeLine(px, py - 4, px, py + 4);
@@ -487,18 +523,18 @@ final class PendulumChainRenderer {
     private void drawGravityHandle(GraphicsContext gc, double pivotX, double pivotY, double gravityAngle, boolean draggingGravity) {
         double hx = gravityHandleX(pivotX, gravityAngle), hy = gravityHandleY(pivotY, gravityAngle);
 
-        gc.setStroke(Color.web("#EA3F8C", 0.75));
+        gc.setStroke(ACCENT_A75);
         gc.setLineWidth(1.5);
         gc.strokeLine(pivotX, pivotY, hx, hy);
 
-        gc.setFill(draggingGravity ? Color.web("#EA3F8C") : Color.web("#EA3F8C", 0.85));
+        gc.setFill(draggingGravity ? ACCENT : ACCENT_A85);
         gc.fillOval(hx - 5, hy - 5, 10, 10);
-        gc.setStroke(Color.web("#7A2148"));
+        gc.setStroke(GRAVITY_HANDLE_STROKE);
         gc.setLineWidth(1.0);
         gc.strokeOval(hx - 5, hy - 5, 10, 10);
 
-        gc.setFont(Font.font("Monospaced", 10));
-        gc.setFill(Color.web("#EA3F8C"));
+        gc.setFont(FONT_GRAVITY_LABEL);
+        gc.setFill(ACCENT);
         gc.fillText("g", hx + 8, hy + 3);
     }
 }

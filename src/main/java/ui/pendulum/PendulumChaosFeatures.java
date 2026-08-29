@@ -9,11 +9,13 @@ import physics.integrator.Integrator;
 import physics.integrator.IntegratorType;
 import simulation.Ensemble;
 import simulation.SimulationLoop;
+import simulation.StepListener;
 import javafx.concurrent.Task;
 import javafx.scene.paint.Color;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -22,8 +24,20 @@ import java.util.logging.Logger;
  * and integrator-comparison orchestration for the pendulum screen. Moved
  * out of {@code controller.SimulationController} — see round 1 §11 of the
  * UI restructuring plan.
+ *
+ * <p><b>Round 2 §3.</b> Also now owns the {@code ensemble}/{@code
+ * compareEngine} fields and their per-tick stepping, moved out of {@code
+ * simulation.SimulationLoop} — both are genuinely pendulum-specific (an
+ * ensemble means perturbing angle/velocity; A/B compare offsets link 0's
+ * angle), so unlike the loop's own scheduling machinery they don't belong
+ * generalized into it. This class implements {@link StepListener}&lt;{@link
+ * PhysicsEngine}&gt; and is wired via {@code
+ * host.simLoop().setStepListener(this)} so both still step in lock-step with
+ * the primary engine exactly as before. {@link #perturb} moved the same way
+ * — it was already a plain {@code SimCommand<PhysicsEngine>} lambda, so only
+ * which class calls {@code simLoop.submit(...)} for it changed.
  */
-public final class PendulumChaosFeatures {
+public final class PendulumChaosFeatures implements StepListener<PhysicsEngine> {
 
     private static final Logger LOG = Logger.getLogger(PendulumChaosFeatures.class.getName());
 
@@ -50,7 +64,7 @@ public final class PendulumChaosFeatures {
     public interface Host {
         PendulumConfig currentConfig();
         SimState liveState();
-        SimulationLoop simLoop();
+        SimulationLoop<PhysicsEngine, SimState> simLoop();
         PendulumGraphPanel graphPanel();
 
         void setEnsembleVisual(boolean active);
@@ -77,8 +91,69 @@ public final class PendulumChaosFeatures {
     // Non-null only while a sweep is in flight.
     private Task<BifurcationSweep.Result> bifurcationTask;
 
+    // Round 2 §3: moved from simulation.SimulationLoop — see this class's
+    // own javadoc. null when the butterfly-effect ensemble isn't active. A
+    // plain volatile field, not a queued command: swapping the reference
+    // doesn't need to be ordered against an in-flight step the way engine
+    // mutation does, and a fully-constructed Ensemble is safely published by
+    // the volatile write regardless of which thread creates it (setEnsembleActive
+    // runs on the JavaFX thread; onStep reads it from the physics thread).
+    private volatile Ensemble ensemble;
+
+    // null when A/B compare isn't active. Same volatile-reference reasoning
+    // as `ensemble` above, but this is exactly one engine representing a
+    // deliberately, visibly different "B" scenario (not 50 near-identical
+    // copies) — see #setCompareActive for how it's built and
+    // ui.pendulum.PendulumCanvas#drawCompareChain for how it's drawn
+    // distinctly from both the primary and the ensemble ghosts.
+    private volatile PhysicsEngine compareEngine;
+
     public PendulumChaosFeatures(Host host) {
         this.host = host;
+        host.simLoop().setStepListener(this);
+    }
+
+    /**
+     * Steps the ensemble and/or the A/B compare engine alongside whichever
+     * primary-engine advance ({@link SimulationLoop}'s manual-step or
+     * normal-advance branch) just ran, using the exact same {@code dt}/
+     * {@code steps} it used — deliberate for compare: attributing any
+     * difference to the deliberate B-vs-A parameter change, not to a
+     * different integration schedule. Called once per loop iteration from
+     * the physics thread; see {@link StepListener}.
+     */
+    @Override
+    public void onStep(PhysicsEngine primaryEngine, double dt, int steps) {
+        Ensemble ens = ensemble; // one volatile read; avoids a null-check race against a concurrent setEnsembleActive()
+        if (ens != null) ens.step(dt, steps);
+
+        PhysicsEngine cmp = compareEngine;
+        if (cmp != null) for (int i = 0; i < steps; i++) cmp.step(dt);
+    }
+
+    /** The active ensemble, or {@code null}. Read each frame by the renderer to draw ghost chains. */
+    public Ensemble getEnsemble() { return ensemble; }
+
+    /** The active A/B "B" engine, or {@code null}. Read each frame by the renderer to draw the comparison chain. */
+    public PhysicsEngine getCompareEngine() { return compareEngine; }
+
+    /**
+     * Nudges every link's angular velocity by an independent tiny random
+     * amount — sensitive dependence on initial conditions, demonstrated on
+     * demand rather than only by comparing to a separate {@link Ensemble}.
+     * Applied as a single {@code SimCommand} (via {@link
+     * SimulationLoop#submit}) so it can't be interleaved with an in-flight
+     * integration step. Round 2 §3: moved from {@code SimulationLoop#perturb}
+     * — it was already exactly this lambda, just called from the wrong class.
+     */
+    public void perturb(double magnitude) {
+        host.simLoop().submit(e -> {
+            SimState s = e.getState();
+            for (int i = 0; i < s.getN(); i++) {
+                double delta = (ThreadLocalRandom.current().nextDouble() * 2.0 - 1.0) * magnitude;
+                e.setLinkState(i, s.angles[i], s.angularVelocities[i] + delta);
+            }
+        });
     }
 
     /**
@@ -87,16 +162,16 @@ public final class PendulumChaosFeatures {
      */
     public void setEnsembleActive(boolean active) {
         if (!active) {
-            host.simLoop().setEnsemble(null);
+            ensemble = null;
             ensembleStartSimTime = null;
             return;
         }
         SimState current = host.liveState();
         if (current == null) return; // physics thread hasn't published a first state yet
         PendulumConfig currentConfig = host.currentConfig();
-        host.simLoop().setEnsemble(new Ensemble(
+        ensemble = new Ensemble(
                 currentConfig, current.angles, current.angularVelocities,
-                ENSEMBLE_SIZE, ENSEMBLE_EPSILON));
+                ENSEMBLE_SIZE, ENSEMBLE_EPSILON);
         ensembleStartSimTime = current.time;
     }
 
@@ -108,18 +183,18 @@ public final class PendulumChaosFeatures {
      */
     public void setCompareActive(boolean active, double deltaTheta1Radians) {
         if (!active) {
-            host.simLoop().setCompareEngine(null);
+            compareEngine = null;
             return;
         }
         SimState current = host.liveState();
         if (current == null) return; // physics thread hasn't published a first state yet
 
-        PhysicsEngine compareEngine = new PhysicsEngine(host.currentConfig());
+        PhysicsEngine built = new PhysicsEngine(host.currentConfig());
         for (int i = 0; i < current.getN(); i++) {
             double offset = (i == 0) ? deltaTheta1Radians : 0.0;
-            compareEngine.setLinkState(i, current.angles[i] + offset, current.angularVelocities[i]);
+            built.setLinkState(i, current.angles[i] + offset, current.angularVelocities[i]);
         }
-        host.simLoop().setCompareEngine(compareEngine);
+        compareEngine = built;
     }
 
     /** Starts or stops the audio tone. */

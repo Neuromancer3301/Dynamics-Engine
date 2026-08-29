@@ -1,8 +1,8 @@
 package physics;
 
+import physics.io.ConfigFileIO;
+
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -48,8 +48,8 @@ public final class PendulumConfigIO {
 
     public static void save(PendulumConfig config, Path path) throws IOException {
         try {
-            Files.writeString(path, toJson(config), StandardCharsets.UTF_8);
-            LOG.info(() -> "Saved scenario (N=" + config.getN() + ") to " + path.getFileName());
+            ConfigFileIO.writeLogged(path, toJson(config), LOG,
+                    () -> "Saved scenario (N=" + config.getN() + ") to " + path.getFileName());
         } catch (IOException ex) {
             // Message-only, no stack trace: I/O failures here (permissions,
             // full disk) are routine user-facing conditions, not bugs — the
@@ -60,13 +60,13 @@ public final class PendulumConfigIO {
     }
 
     public static PendulumConfig load(Path path) throws IOException {
-        long size = Files.size(path);
-        if (size > MAX_FILE_BYTES) {
-            IOException ex = new IOException("Scenario file is too large (" + size + " bytes, max " + MAX_FILE_BYTES + ")");
+        String json;
+        try {
+            json = ConfigFileIO.readCapped(path, MAX_FILE_BYTES, "Scenario");
+        } catch (IOException ex) {
             LOG.warning("Rejected oversized scenario file " + path + ": " + ex.getMessage());
             throw ex;
         }
-        String json = Files.readString(path, StandardCharsets.UTF_8);
         try {
             PendulumConfig config = fromJson(json);
             LOG.info(() -> "Loaded scenario (N=" + config.getN() + ") from " + path.getFileName());

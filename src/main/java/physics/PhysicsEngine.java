@@ -2,6 +2,7 @@ package physics;
 
 import physics.integrator.Integrator;
 import physics.integrator.Rk4Integrator;
+import simulation.SimulationEngine;
 
 import java.util.logging.Logger;
 
@@ -33,8 +34,13 @@ import java.util.logging.Logger;
  *       #derivative} computes each pairwise trig value once and mirrors
  *       it, instead of recomputing it from both sides.</li>
  * </ul>
+ *
+ * <p>Implements {@link SimulationEngine}&lt;{@link SimState}&gt; — see Round
+ * 2 §1 of the physics-layer modularity pass. {@link #step}, {@link
+ * #getState}, {@link #getTime}, and {@link #reset} already had exactly these
+ * signatures before that interface existed, so this costs nothing.
  */
-public final class PhysicsEngine {
+public final class PhysicsEngine implements SimulationEngine<SimState> {
 
     private static final Logger LOG = Logger.getLogger(PhysicsEngine.class.getName());
 
@@ -163,7 +169,8 @@ public final class PhysicsEngine {
     /** The integration strategy currently in use. */
     public Integrator getIntegrator()                { return integrator; }
 
-    /** Returns the chain to its configured starting angles at rest and rewinds the clock. Invoked via {@code ResetCommand} so it lands between steps. */
+    /** Returns the chain to its configured starting angles at rest and rewinds the clock. Invoked via {@code SimulationLoop#reset} so it lands between steps. */
+    @Override
     public void reset() { resetState(); time = 0.0; }
 
     /**
@@ -199,6 +206,7 @@ public final class PhysicsEngine {
      * Clamped symmetrically so neither direction can take a single step
      * large enough to blow up the integrator.
      */
+    @Override
     public void step(double dt) {
         dt = Math.max(-0.05, Math.min(dt, 0.05));
         integrator.step(state, dt, this::derivative, n);
@@ -242,6 +250,7 @@ public final class PhysicsEngine {
      * simulation — the app's "Drift %" readout is precisely how far this
      * total has wandered, and is the headline measure of integrator quality.
      */
+    @Override
     public SimState getState() {
         double[] theta = new double[n], omega = new double[n];
         double[] bobX  = new double[n], bobY  = new double[n];
@@ -274,6 +283,7 @@ public final class PhysicsEngine {
     }
 
     /** Simulation time in seconds since the last reset. Can decrease — see {@link #step} on negative timesteps. */
+    @Override
     public double getTime() { return time; }
 
     /**

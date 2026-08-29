@@ -85,7 +85,7 @@ import java.util.logging.Logger;
  * per-link parameter editor and runtime N control in one place — adding or
  * removing a row changes N directly, and both go through the same "Apply"
  * action ({@link #applyStructuralEdit}), which submits an {@code
- * EngineRebuilder} via {@link SimulationLoop#rebuildWithConfig} rather than
+ * EngineRebuilder} via {@link SimulationLoop#submitRebuild} rather than
  * a {@code SimCommand}, since changing length, mass, or N means replacing
  * the engine's internal arrays rather than mutating a field on them.
  *
@@ -133,8 +133,8 @@ public final class SimulationController implements Initializable, Navigable,
     @FXML private VBox controlHost;
 
     private SceneRouter router;
-    private SimulationLoop simLoop;
-    private StateBuffer stateBuffer;
+    private SimulationLoop<PhysicsEngine, SimState> simLoop;
+    private StateBuffer<SimState> stateBuffer;
     private ControlPanel controlPanel;
     private LinkEditorPanel linkEditorPanel;
     private SidebarTabs sidebarTabs;
@@ -178,7 +178,7 @@ public final class SimulationController implements Initializable, Navigable,
 
     // Time-travel scrubbing — see HistoryBuffer's javadoc for the scope
     // boundary (a view into the past, not a rewind of the live simulation).
-    private final HistoryBuffer history = new HistoryBuffer(HISTORY_CAPACITY);
+    private final HistoryBuffer<SimState> history = new HistoryBuffer<>(HISTORY_CAPACITY);
     private boolean scrubbing = false;
     private int scrubIndex = 0;
 
@@ -205,8 +205,11 @@ public final class SimulationController implements Initializable, Navigable,
         PendulumConfig config = PendulumConfig.defaultConfig();
         currentConfig = config;
         originalConfig = config;
-        stateBuffer = new StateBuffer();
-        simLoop = new SimulationLoop(config, stateBuffer);
+        stateBuffer = new StateBuffer<>();
+        // Round 2 §2: SimulationLoop is now generic over the engine/state
+        // types — this controller builds the concrete PhysicsEngine itself
+        // rather than handing the loop a PendulumConfig to build one from.
+        simLoop = new SimulationLoop<>(new PhysicsEngine(config), stateBuffer, config.getSpeedMultiplier());
 
         pendulumCanvas = new PendulumCanvas(500, 580, config.getTotalLength());
         graphPanel = new PendulumGraphPanel(490, 580);
@@ -266,7 +269,7 @@ public final class SimulationController implements Initializable, Navigable,
 
         pendulumCanvas.setGravityListener(angle -> {
             currentGravityAngle = angle;
-            simLoop.setGravityAngle(angle);
+            simLoop.submit(e -> e.setGravityAngle(angle));
         });
 
         // §7.1 — a completed click/click-drag-release selects the bob and
@@ -325,7 +328,7 @@ public final class SimulationController implements Initializable, Navigable,
         controlPanel.setOnCompareToggle(chaosFeatures::setCompareActive);
         controlPanel.setOnResetGravityDirection(() -> {
             currentGravityAngle = 0.0;
-            simLoop.setGravityAngle(0.0);
+            simLoop.submit(e -> e.setGravityAngle(0.0));
             pendulumCanvas.setGravityAngleVisual(0.0);
         });
         controlPanel.setOnIntegratorChange(this::setIntegratorType);
@@ -340,11 +343,11 @@ public final class SimulationController implements Initializable, Navigable,
         controlPanel.setOnPauseChange(paused -> {
             if (!paused) pendulumCanvas.setSelectedLink(-1);
         });
-        controlPanel.build(simLoop, graphPanel, pendulumCanvas, config.getN());
+        controlPanel.build(simLoop, chaosFeatures, graphPanel, pendulumCanvas, config.getN());
 
         linkEditorPanel = new LinkEditorPanel();
         linkEditorPanel.loadFrom(config);
-        linkEditorPanel.setLiveParameterSuppliers(simLoop::getGravity, simLoop::getSpeedMultiplier);
+        linkEditorPanel.setLiveParameterSuppliers(() -> simLoop.currentEngine().getGravity(), simLoop::getSpeedMultiplier);
         // A preset/file load or the sidebar's own "Apply Changes" is a
         // deliberate "start fresh from here" — see originalConfig's javadoc.
         linkEditorPanel.setOnApply(cfg -> applyStructuralEdit(cfg, true));
@@ -431,7 +434,7 @@ public final class SimulationController implements Initializable, Navigable,
     /**
      * Handles a validated {@link PendulumConfig} from the link editor, the
      * length-drag commit, the parameter dialog, or the add-link dialog:
-     * swaps the engine via {@link SimulationLoop#rebuildWithConfig}, then
+     * swaps the engine via {@link SimulationLoop#submitRebuild}, then
      * refreshes everything downstream that was sized or labeled for the old
      * N/length. The action-bar tools (length drag, parameter dialog, Add)
      * call this one-arg overload, which never moves the Reset baseline —
@@ -456,22 +459,25 @@ public final class SimulationController implements Initializable, Navigable,
         int selectedBefore = pendulumCanvas.getSelectedLink();
 
         currentConfig = newConfig;
-        simLoop.rebuildWithConfig(newConfig);
-        // The fresh engine rebuildWithConfig just built defaults to RK4 —
-        // re-apply whatever the user actually had selected, sized for the
-        // new N. See selectedIntegratorType's javadoc.
-        simLoop.setIntegrator(selectedIntegratorType.create(2 * newConfig.getN()));
-        simLoop.setGravityAngle(currentGravityAngle);
+        // Round 2 §2: rebuildWithConfig was a PendulumConfig-specific
+        // convenience inlined off SimulationLoop — this is exactly what it
+        // did internally.
+        simLoop.submitRebuild(old -> new PhysicsEngine(newConfig));
+        // The fresh engine just built defaults to RK4 — re-apply whatever
+        // the user actually had selected, sized for the new N. See
+        // selectedIntegratorType's javadoc.
+        simLoop.submit(e -> e.setIntegrator(selectedIntegratorType.create(2 * newConfig.getN())));
+        simLoop.submit(e -> e.setGravityAngle(currentGravityAngle));
         pendulumCanvas.setGravityAngleVisual(currentGravityAngle);
 
         // An active ensemble was built from the old N/lengths/masses — it's
         // not just stale, it no longer corresponds to what the primary chain
         // even looks like, so drop it rather than confuse the demo.
-        simLoop.setEnsemble(null);
+        chaosFeatures.setEnsembleActive(false);
         controlPanel.setEnsembleVisual(false);
 
         // Same reasoning for an active A/B compare "B" engine.
-        simLoop.setCompareEngine(null);
+        chaosFeatures.setCompareActive(false, 0);
         controlPanel.setCompareVisual(false);
 
         pendulumCanvas.setTotalLength(newConfig.getTotalLength());
@@ -501,7 +507,7 @@ public final class SimulationController implements Initializable, Navigable,
     /** Switches the integration strategy on the live engine, and remembers the choice for the next structural rebuild. */
     private void setIntegratorType(IntegratorType type) {
         selectedIntegratorType = type;
-        simLoop.setIntegrator(type.create(2 * currentConfig.getN()));
+        simLoop.submit(e -> e.setIntegrator(type.create(2 * currentConfig.getN())));
     }
 
     // -------------------------------------------------------------------------
@@ -515,7 +521,7 @@ public final class SimulationController implements Initializable, Navigable,
     public SimState liveState() { return stateBuffer.read(); }
 
     @Override
-    public SimulationLoop simLoop() { return simLoop; }
+    public SimulationLoop<PhysicsEngine, SimState> simLoop() { return simLoop; }
 
     @Override
     public PendulumGraphPanel graphPanel() { return graphPanel; }
@@ -586,10 +592,10 @@ public final class SimulationController implements Initializable, Navigable,
                     if (historical != null) displayState = historical;
                 }
 
-                Ensemble ensemble = simLoop.getEnsemble();
+                Ensemble ensemble = chaosFeatures.getEnsemble();
                 List<SimState> ghosts = (!scrubbing && ensemble != null) ? ensemble.snapshot() : null;
 
-                PhysicsEngine compareEngine = simLoop.getCompareEngine();
+                PhysicsEngine compareEngine = chaosFeatures.getCompareEngine();
                 SimState compareState = (!scrubbing && compareEngine != null) ? compareEngine.getState() : null;
 
                 pendulumCanvas.render(displayState, ghosts, compareState);

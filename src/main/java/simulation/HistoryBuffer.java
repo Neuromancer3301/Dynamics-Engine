@@ -1,14 +1,12 @@
 package simulation;
 
-import physics.SimState;
-
 import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
- * A rolling window of recent {@link SimState} snapshots, enabling scrubbing
- * backward through recent history — the answer to "wait, what just
- * happened?" — without pausing or resetting the live simulation.
+ * A rolling window of recent state snapshots, enabling scrubbing backward
+ * through recent history — the answer to "wait, what just happened?" —
+ * without pausing or resetting the live simulation.
  *
  * <p>Sampled from the JavaFX render loop ({@code
  * controller.SimulationController}), not the physics thread: {@link
@@ -23,11 +21,17 @@ import java.util.Deque;
  * no "resume simulation from this point" — that would mean overwriting the
  * live engine's actual state from a historical snapshot, a materially
  * different (and riskier) feature than the one built here.
+ *
+ * <p><b>Round 2 §4:</b> genericized over {@code S} — this was already pure
+ * storage with zero pendulum-specific logic, so this is a behavior-free
+ * change that gives any future simulation type scrubbing for free.
+ *
+ * @param <S> the state snapshot type being recorded
  */
-public final class HistoryBuffer {
+public final class HistoryBuffer<S> {
 
     private final int capacity;
-    private final Deque<SimState> samples = new ArrayDeque<>();
+    private final Deque<S> samples = new ArrayDeque<>();
 
     /** @param capacity maximum snapshots retained; the oldest is discarded once full. */
     public HistoryBuffer(int capacity) {
@@ -40,13 +44,13 @@ public final class HistoryBuffer {
      * ignored so the caller need not guard against the very first frames,
      * before the physics thread has published anything.
      */
-    public void record(SimState state) {
+    public void record(S state) {
         if (state == null) return;
         samples.addLast(state);                                   // newest at the tail
         while (samples.size() > capacity) samples.removeFirst();   // drop the oldest
     }
 
-    /** Discards all history. Called on reset and after a structural rebuild, where old samples describe a chain that no longer exists. */
+    /** Discards all history. Called on reset and after a structural rebuild, where old samples describe a state that no longer exists. */
     public void clear() {
         samples.clear();
     }
@@ -62,10 +66,10 @@ public final class HistoryBuffer {
      * index} — fine at this buffer's scale (a few hundred to ~1200 entries)
      * and call rate (slider-drag events, not a hot path).
      */
-    public SimState get(int index) {
+    public S get(int index) {
         if (index < 0 || index >= samples.size()) return null;
         int i = 0;
-        for (SimState s : samples) {
+        for (S s : samples) {
             if (i++ == index) return s;
         }
         return null; // unreachable given the bounds check above

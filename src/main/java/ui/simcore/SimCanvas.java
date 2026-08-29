@@ -5,6 +5,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 
 /**
@@ -33,6 +34,20 @@ public abstract class SimCanvas extends Canvas {
     private static final double[] SCALE_BAR_NICE_LENGTHS =
             {0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500};
     private static final double SCALE_BAR_TARGET_PX = 70;
+
+    // Round 2.1: hoisted out of the per-frame draw methods below — these run
+    // unconditionally every AnimationTimer tick (no dirty-flag skip the way
+    // ui.simcore.ChartCanvas has), so re-parsing/re-looking-up the same
+    // unchanging Color/Font on every one of those calls was pure avoidable
+    // per-frame garbage.
+    private static final Color BG_COLOR       = Color.web("#08080B");
+    private static final Color GRID_LINE      = Color.web("#1C1C22", 0.7);
+    private static final Color AXIS_LINE      = Color.web("#2E2E36", 0.6);
+    private static final Color WAITING_TEXT   = Color.web("#7C7C88", 0.9);
+    private static final Color SCALE_BAR_LINE = Color.web("#8A8A94", 0.85);
+    private static final Color SCALE_BAR_TEXT = Color.web("#8A8A94");
+    private static final Font  FONT_WAITING   = Font.font("System", FontWeight.NORMAL, 17);
+    private static final Font  FONT_SCALE_BAR = Font.font("Monospaced", 10);
 
     protected SimCanvas(double width, double height) {
         super(width, height);
@@ -133,10 +148,10 @@ public abstract class SimCanvas extends Canvas {
 
     /** Near-void, neutral grey grid plus the world-origin axes — moved verbatim from {@code ui.PendulumCanvas}, minus the old fixed-center line (see {@link #drawOriginAxes}). */
     protected void drawBackground(GraphicsContext gc, double w, double h) {
-        gc.setFill(Color.web("#08080B"));
+        gc.setFill(BG_COLOR);
         gc.fillRect(0, 0, w, h);
 
-        gc.setStroke(Color.web("#1C1C22", 0.7));
+        gc.setStroke(GRID_LINE);
         gc.setLineWidth(0.5);
         for (double x = 0; x < w; x += 45) gc.strokeLine(x, 0, x, h);
         for (double y = 0; y < h; y += 45) gc.strokeLine(0, y, w, y);
@@ -156,7 +171,7 @@ public abstract class SimCanvas extends Canvas {
         double originX = camera.originX(w);
         double originY = camera.originY(h);
 
-        gc.setStroke(Color.web("#2E2E36", 0.6));
+        gc.setStroke(AXIS_LINE);
         gc.setLineWidth(1.0);
         gc.strokeLine(originX, 0, originX, h);
         gc.strokeLine(0, originY, w, originY);
@@ -164,8 +179,8 @@ public abstract class SimCanvas extends Canvas {
 
     /** Shown for the brief window before the first real frame is available. Moved verbatim from {@code ui.PendulumCanvas}. */
     protected void drawWaitingMessage(GraphicsContext gc, double w, double h) {
-        gc.setFill(Color.web("#7C7C88", 0.9));
-        gc.setFont(Font.font("System", javafx.scene.text.FontWeight.NORMAL, 17));
+        gc.setFill(WAITING_TEXT);
+        gc.setFont(FONT_WAITING);
         gc.fillText("Initialising physics engine...", w / 2 - 105, h / 2);
     }
 
@@ -184,14 +199,14 @@ public abstract class SimCanvas extends Canvas {
         double barX = 12;
         double barY = h - 12;
 
-        gc.setStroke(Color.web("#8A8A94", 0.85));
+        gc.setStroke(SCALE_BAR_LINE);
         gc.setLineWidth(1.5);
         gc.strokeLine(barX, barY, barX + barPx, barY);
         gc.strokeLine(barX, barY - 4, barX, barY + 4);
         gc.strokeLine(barX + barPx, barY - 4, barX + barPx, barY + 4);
 
-        gc.setFill(Color.web("#8A8A94"));
-        gc.setFont(Font.font("Monospaced", 10));
+        gc.setFill(SCALE_BAR_TEXT);
+        gc.setFont(FONT_SCALE_BAR);
         gc.setTextAlign(TextAlignment.CENTER);
         String label = (referenceLength == Math.floor(referenceLength))
                 ? String.format("%d m", (int) referenceLength)
