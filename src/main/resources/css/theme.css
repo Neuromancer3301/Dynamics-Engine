@@ -122,6 +122,13 @@
    only the revealed text label below is a real styleable control. */
 .menu-utility-button {
     -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 3px;
+    -fx-background-radius: 3px;
+}
+.menu-utility-button:hover, .menu-utility-button:focused {
+    -fx-border-color: -accent;
 }
 .menu-utility-label {
     -fx-font-family: "Consolas", "Menlo", monospace;
@@ -266,13 +273,33 @@
     -fx-padding: 8 0 0 0;
 }
 
+/* Round 1.5 §2 — the hover/keyboard-focus outline convention: every
+   selectable/interactive control in the app reserves a 1px transparent
+   border at rest (so nothing shifts by a pixel when the border color
+   changes) and swaps it to -accent on :hover/:focused. This is the exact
+   mechanism .back-button/.primary-button/.nav-card/.sidebar-button already
+   used (see further below) — applied here to every remaining interactive
+   class so the same "thin outline" reads as one consistent affordance app-
+   wide, never as a special case a handful of controls happen to have.
+   Deliberately additive, not a replacement: an element's own hover/active
+   background or indicator (the rail's -bg-base hover fill, a locked-active
+   tool's -accent-soft fill, a sidebar tab's bottom accent line) is left
+   completely alone — the outline layers on top of whatever that element
+   already shows, active or not, exactly as asked. */
+
 .rail-button {
     -fx-background-color: transparent;
     -fx-background-radius: 3px;
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 3px;
     -fx-padding: 8px;
     -fx-cursor: hand;
 }
-.rail-button:hover, .rail-button:focused { -fx-background-color: -bg-base; }
+.rail-button:hover, .rail-button:focused {
+    -fx-background-color: -bg-base;
+    -fx-border-color: -accent;
+}
 
 /* The currently-active rail tool (Edit or Add — see
    controller.SimulationController#buildActionRail) — a persistent
@@ -281,7 +308,10 @@
 .rail-button-locked-active {
     -fx-background-color: -accent-soft;
 }
-.rail-button-locked-active:hover, .rail-button-locked-active:focused { -fx-background-color: -accent-soft; }
+.rail-button-locked-active:hover, .rail-button-locked-active:focused {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: -accent;
+}
 
 .rail-separator {
     -fx-background-color: -line-soft;
@@ -313,17 +343,28 @@
 .sidebar-tab-button {
     -fx-background-color: transparent;
     -fx-background-radius: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
     -fx-border-radius: 0;
     -fx-padding: 10 0 10 0;
     -fx-cursor: hand;
 }
 .sidebar-tab-button:hover, .sidebar-tab-button:focused {
     -fx-background-color: -bg-base;
+    -fx-border-color: -accent;
 }
 .sidebar-tab-button-active {
     -fx-background-color: -accent-soft;
     -fx-border-color: transparent transparent -accent transparent;
     -fx-border-width: 0 0 2 0;
+}
+/* Active AND hovered/focused: the outline still shows (all four sides),
+   just with the bottom edge kept at the active indicator's own thicker 2px
+   rather than reverting to the plain 1px every other side gets. */
+.sidebar-tab-button-active:hover, .sidebar-tab-button-active:focused {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: -accent;
+    -fx-border-width: 1 1 2 1;
 }
 .sidebar-status-wrapper {
     -fx-background-color: -bg-surface;
@@ -355,6 +396,9 @@
     -fx-border-radius: 2px;
     -fx-background-radius: 2px;
 }
+.combo-box:hover, .combo-box:focused {
+    -fx-border-color: -accent;
+}
 .combo-box .list-cell {
     -fx-text-fill: -ink;
     -fx-background-color: transparent;
@@ -363,10 +407,18 @@
     -fx-background-color: -bg-base;
     -fx-border-color: -line;
 }
+/* Dropdown options — the outline convention (see above) applies inside the
+   popup too: -fx-border-width reserved (transparent) on every cell so the
+   hover/selected border swap below doesn't shift the row by a pixel. */
+.combo-box-popup .list-view .list-cell {
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
+}
 .combo-box-popup .list-view .list-cell:filled:hover,
 .combo-box-popup .list-view .list-cell:filled:selected {
     -fx-background-color: -accent-soft;
     -fx-text-fill: -ink;
+    -fx-border-color: -accent;
 }
 
 /* ---------- Sidebar (ui/ControlPanel.java, ui/LinkEditorPanel.java) ----------
@@ -440,11 +492,20 @@
 }
 .sidebar-button:hover, .sidebar-button:focused { -fx-border-color: -accent; }
 
-.sidebar-slider { -fx-accent: -accent; }
+.sidebar-slider {
+    -fx-accent: -accent;
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 2px;
+}
+.sidebar-slider:hover, .sidebar-slider:focused { -fx-border-color: -accent; }
 
 .sidebar-separator { -fx-background-color: -line-soft; -fx-padding: 2 0; }
 
-.sidebar-numeric-field {
+/* .sidebar-text-field: the same look for a plain (non-numeric) field —
+   LinkEditorPanel's natural-language input — sharing every rule with
+   .sidebar-numeric-field rather than duplicating them. */
+.sidebar-numeric-field, .sidebar-text-field {
     -fx-background-color: -bg-base;
     -fx-text-fill: -ink;
     -fx-font-family: "Consolas", "Menlo", monospace;
@@ -452,6 +513,10 @@
     -fx-border-color: -line;
     -fx-border-radius: 2px;
     -fx-background-radius: 2px;
+}
+.sidebar-numeric-field:hover, .sidebar-numeric-field:focused,
+.sidebar-text-field:hover, .sidebar-text-field:focused {
+    -fx-border-color: -accent;
 }
 
 .sidebar-error-label   { -fx-text-fill: -danger; -fx-font-size: 14px; }
@@ -466,13 +531,31 @@
     -fx-background-radius: 2px;
 }
 
-.sidebar-radio, .sidebar-checkbox { -fx-text-fill: -ink-2; -fx-font-size: 14px; }
+.sidebar-radio, .sidebar-checkbox {
+    -fx-text-fill: -ink-2;
+    -fx-font-size: 14px;
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 2px;
+    -fx-padding: 2 4 2 4;
+}
+.sidebar-radio:hover, .sidebar-checkbox:hover,
+.sidebar-radio:focused, .sidebar-checkbox:focused {
+    -fx-border-color: -accent;
+}
 
 .link-delete-button {
     -fx-background-color: transparent;
     -fx-text-fill: -danger;
     -fx-font-size: 14px;
     -fx-cursor: hand;
+    -fx-border-color: transparent;
+    -fx-border-width: 1px;
+    -fx-border-radius: 2px;
+    -fx-background-radius: 2px;
+}
+.link-delete-button:hover, .link-delete-button:focused {
+    -fx-border-color: -accent;
 }
 
 /* ---------- Shared buttons ---------- */
@@ -499,20 +582,38 @@
     -fx-border-color: transparent;
 }
 
-/* Small overlay buttons that sit directly on top of the pendulum/graph
-   canvases (currently just the sidebar-collapse chevron — see
-   controller.SimulationController#buildSidebarToggle). ui.PendulumCanvas
-   always paints a near-black background regardless of the app's light/dark
-   theme (see its own class javadoc), so a fixed dark translucent chip reads
-   fine in both themes without a light-theme variant. */
-.canvas-overlay-button {
-    -fx-background-color: rgba(16, 16, 20, 0.55);
-    -fx-background-radius: 4px;
-    -fx-padding: 6px;
+/* Sidebar-toggle "tab" (ui.simcore.LayoutShell#buildSidebarToggle) — a
+   real layout column, sibling to sidebarScroll in the same HBox (see
+   Simulation.fxml), not an overlay on the canvas — round 1.5 §1: that's
+   what keeps it structurally flush against the sidebar's own edge whether
+   collapsed or expanded, instead of a fixed-margin chip that only looked
+   attached by coincidence. */
+.sidebar-toggle-host {
+    -fx-background-color: -bg-surface;
+    -fx-border-color: -line;
+    -fx-border-width: 0 0 0 1;
+}
+.sidebar-toggle-button {
+    -fx-background-color: -accent-soft;
+    -fx-border-color: -line;
+    -fx-border-width: 1px;
+    -fx-border-radius: 3px 0 0 3px;
+    -fx-background-radius: 3px 0 0 3px;
+    -fx-pref-width: 34px;
+    -fx-min-width: 34px;
+    -fx-max-width: 34px;
+    -fx-pref-height: 96px;
     -fx-cursor: hand;
 }
-.canvas-overlay-button:hover, .canvas-overlay-button:focused {
-    -fx-background-color: rgba(234, 63, 140, 0.28);
+.sidebar-toggle-button:hover, .sidebar-toggle-button:focused {
+    -fx-border-color: -accent;
+}
+.sidebar-toggle-label {
+    -fx-font-family: "Consolas", "Menlo", monospace;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-letter-spacing: 0.04em;
+    -fx-text-fill: -ink-2;
 }
 
 /* Link parameter dialog (double-click a bob — see

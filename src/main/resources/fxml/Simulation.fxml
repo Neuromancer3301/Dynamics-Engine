@@ -71,24 +71,43 @@
 
     <right>
         <!--
-            ControlPanel and LinkEditorPanel are both plain-Java Regions
-            (see controller.SimulationController) stacked inside this VBox;
-            the ScrollPane exists because the link editor's row count is
-            unbounded — without it, editing a 20-link chain would push
-            content below the window with no way to reach it.
-
-            Collapsed to zero width by default (see
-            SimulationController#setSidebarExpanded) — canvas-first per the
-            layout spec — and animated open/closed via min/pref/maxWidth,
-            never setVisible(false), so it's a genuine layout column that
-            shrinks the canvas/graph rather than overlaying them.
+            sidebarToggleHost + sidebarScroll, side by side in one HBox with
+            no spacing — round 1.5 §1: the toggle button used to be a
+            fixed-margin overlay on canvasGraphStack, which looked attached
+            to the sidebar only by coincidence (its margin happened to match
+            the gap to the window edge while the sidebar was collapsed) and
+            visibly detached into a floating chip the moment the sidebar
+            actually expanded, since the overlay's position never tracked
+            the sidebar's own animated width. Making the toggle a sibling
+            column of sidebarScroll instead — both real layout children of
+            this same HBox — means it is *structurally* always flush against
+            whichever edge is currently the sidebar's own (the window edge
+            while collapsed, the panel's edge once expanded), with zero
+            special-casing: an HBox simply never leaves a gap between
+            adjacent children.
         -->
-        <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true" hbarPolicy="NEVER"
-                    minWidth="0.0" prefWidth="0.0" maxWidth="0.0">
-            <content>
-                <VBox fx:id="controlHost"/>
-            </content>
-        </ScrollPane>
+        <HBox spacing="0.0">
+            <VBox fx:id="sidebarToggleHost" styleClass="sidebar-toggle-host" alignment="TOP_CENTER"/>
+            <!--
+                ControlPanel and LinkEditorPanel are both plain-Java Regions
+                (see controller.SimulationController) stacked inside this VBox;
+                the ScrollPane exists because the link editor's row count is
+                unbounded — without it, editing a 20-link chain would push
+                content below the window with no way to reach it.
+
+                Collapsed to zero width by default (see
+                SimulationController#setSidebarExpanded) — canvas-first per the
+                layout spec — and animated open/closed via min/pref/maxWidth,
+                never setVisible(false), so it's a genuine layout column that
+                shrinks the canvas/graph rather than overlaying them.
+            -->
+            <ScrollPane fx:id="sidebarScroll" styleClass="sidebar-scroll" fitToWidth="true" hbarPolicy="NEVER"
+                        minWidth="0.0" prefWidth="0.0" maxWidth="0.0" HBox.hgrow="NEVER">
+                <content>
+                    <VBox fx:id="controlHost"/>
+                </content>
+            </ScrollPane>
+        </HBox>
     </right>
 
 </BorderPane>

@@ -1,5 +1,6 @@
 package ui.simcore;
 
+import theme.Theme;
 import theme.ThemeManager;
 import ui.icon.Icons;
 import javafx.animation.Interpolator;
@@ -8,10 +9,13 @@ import javafx.animation.KeyValue;
 import javafx.animation.Timeline;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Group;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
 /**
@@ -33,36 +37,67 @@ public final class LayoutShell {
 
     private final ScrollPane sidebarScroll;
     private final StackPane graphHost;
-    private final StackPane canvasGraphStack;
+    private final VBox sidebarToggleHost;
 
     private boolean sidebarExpanded = false;
     private Icons.IconView sidebarToggleIcon;
     private Timeline sidebarWidthAnim;
     private Timeline graphWidthAnim;
 
-    public LayoutShell(ScrollPane sidebarScroll, StackPane graphHost, StackPane canvasGraphStack) {
+    /**
+     * @param sidebarToggleHost a real layout column, a sibling of {@code
+     *        sidebarScroll} in the same HBox (see Simulation.fxml) — round
+     *        1.5 §1: {@link #buildSidebarToggle} used to add the toggle
+     *        button as a fixed-margin overlay on the canvas/graph stack,
+     *        which only looked attached to the sidebar by coincidence while
+     *        collapsed and visibly floated away from it once expanded,
+     *        since the overlay's position never tracked the sidebar's own
+     *        animated width. A sibling layout column can't do that — an
+     *        HBox never leaves a gap between adjacent children, expanded or
+     *        not — so the button now lives here instead.
+     */
+    public LayoutShell(ScrollPane sidebarScroll, StackPane graphHost, VBox sidebarToggleHost) {
         this.sidebarScroll = sidebarScroll;
         this.graphHost = graphHost;
-        this.canvasGraphStack = canvasGraphStack;
+        this.sidebarToggleHost = sidebarToggleHost;
     }
 
-    /** Builds the overlay chevron button (top-right of the canvas/graph area) that toggles the sidebar. */
+    /**
+     * Builds the sidebar-toggle "tab" — icon above a vertically-set
+     * {@code "Sidebar"} label, rotated 90&deg; counter-clockwise so it reads
+     * bottom-to-top, the standard vertical-tab convention for something
+     * attached to a side panel's edge. The label is wrapped in a {@link
+     * Group} rather than rotated in place: {@code Node.setRotate} is a
+     * visual-only transform that doesn't itself change layout bounds, so
+     * without the wrapper the surrounding {@link VBox} would still reserve
+     * the label's original unrotated (wide/short) footprint instead of its
+     * rotated (narrow/tall) one, clipping it against the icon above.
+     */
     public void buildSidebarToggle() {
-        Button toggle = new Button();
-        toggle.getStyleClass().add("canvas-overlay-button");
-        // A fixed, theme-independent tint, not Icons.hoverColor (near-black
-        // in light theme) — this button's chip is always dark regardless of
-        // app theme, so the icon has to ignore the app theme the same way,
-        // or it goes invisible in light mode.
-        sidebarToggleIcon = Icons.create(Icons.Glyph.CHEVRON, 18, Icons.onDarkOverlayColor());
+        Theme theme = ThemeManager.getInstance().getCurrent();
+
+        sidebarToggleIcon = Icons.create(Icons.Glyph.CHEVRON, 16, Icons.idleColor(theme));
         sidebarToggleIcon.setRotate(sidebarExpanded ? 0 : 180);
-        toggle.setGraphic(sidebarToggleIcon);
+
+        Label label = new Label("Sidebar");
+        label.getStyleClass().add("sidebar-toggle-label");
+        label.setRotate(-90);
+        Group rotatedLabel = new Group(label);
+
+        VBox content = new VBox(8, sidebarToggleIcon, rotatedLabel);
+        content.setAlignment(Pos.CENTER);
+
+        Button toggle = new Button();
+        toggle.getStyleClass().add("sidebar-toggle-button");
+        toggle.setGraphic(content);
         Tooltip.install(toggle, new Tooltip("Toggle sidebar"));
         toggle.setOnAction(e -> setSidebarExpanded(!sidebarExpanded));
 
-        StackPane.setAlignment(toggle, Pos.TOP_RIGHT);
-        StackPane.setMargin(toggle, new Insets(10));
-        canvasGraphStack.getChildren().add(toggle);
+        ThemeManager.getInstance().addListener(() ->
+                sidebarToggleIcon.setColor(Icons.idleColor(ThemeManager.getInstance().getCurrent())));
+
+        VBox.setMargin(toggle, new Insets(10, 0, 0, 0));
+        sidebarToggleHost.getChildren().setAll(toggle);
     }
 
     /**
