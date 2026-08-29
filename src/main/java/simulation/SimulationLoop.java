@@ -1,32 +1,59 @@
 package simulation;
 
-import physics.PhysicsEngine;
-import physics.PendulumConfig;
-import physics.SimState;
-import physics.integrator.Integrator;
 import simulation.command.EngineRebuilder;
-import simulation.command.ResetCommand;
 import simulation.command.SimCommand;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Owns the physics thread: a fixed-timestep RK4 loop decoupled from the
- * render rate, exchanging state with the JavaFX thread lock-free via
- * {@link StateBuffer}.
+ * Owns the physics thread: a fixed-timestep loop decoupled from the render
+ * rate, exchanging state with the JavaFX thread lock-free via {@link
+ * StateBuffer}.
+ *
+ * <p><b>Round 2 §2 of the physics-layer modularity pass.</b> Generalized
+ * over {@code E extends SimulationEngine<S>} — everything below is engine-
+ * agnostic scheduling (drain commands, measure wall time, subdivide into
+ * fixed steps, publish), unchanged in behavior from the pendulum-only
+ * version. What moved OUT, because it wasn't actually generic:
+ * <ul>
+ *   <li>{@code getGravity}/{@code setGravity}/{@code getGravityAngle}/
+ *       {@code setGravityAngle} — gravity-as-a-scalar is a pendulum concept
+ *       (an n-body simulation's "gravity" emerges from pairwise mass
+ *       interaction; a smoke simulation likely has no single such knob at
+ *       all). Callers now use {@link #submit} directly, e.g. {@code
+ *       simLoop.submit(e -> e.setGravity(g))} — already fully expressible
+ *       via the generic command channel — and {@link #currentEngine()} for
+ *       reads that need the concrete engine type.</li>
+ *   <li>{@code setIntegrator(Integrator)} — this one wasn't pendulum-only in
+ *       spirit (an n-body engine could plausibly swap integrators the same
+ *       way), but it isn't expressible against the generic bound either:
+ *       {@code SimulationEngine<S>} has no {@code setIntegrator}, only a
+ *       concrete engine like {@code PhysicsEngine} does. It was already a
+ *       one-line {@code submit(e -> e.setIntegrator(integrator))} wrapper
+ *       internally, so callers now write that lambda directly, same as
+ *       gravity above.</li>
+ *   <li>{@code rebuildWithConfig(PendulumConfig)} — inlined at its one call
+ *       site as {@code submitRebuild(old -> new PhysicsEngine(newConfig))},
+ *       which is exactly what it did internally.</li>
+ *   <li>The {@code ensemble}/{@code compareEngine} fields and their inline
+ *       per-iteration stepping — genuinely pendulum-specific orchestration
+ *       that ran synchronized with the primary engine's own stepping. See
+ *       {@link StepListener}, the narrow generic hook that replaces the
+ *       inline calls; {@code ui.pendulum.PendulumChaosFeatures} now owns
+ *       both fields and implements that interface.</li>
+ * </ul>
  *
  * <p>Mutation from the JavaFX thread happens through three channels, kept
  * deliberately distinct:
  * <ul>
  *   <li><b>{@link SimCommand}s</b> (via {@link #submit}) — anything that
- *       mutates the current {@link PhysicsEngine} in place (gravity, reset,
- *       a dragged link's angle). Applied at the top of a loop iteration, so
- *       never interleaved with a partially-computed RK4 step.</li>
+ *       mutates the current engine in place (gravity, reset, a dragged
+ *       link's angle). Applied at the top of a loop iteration, so never
+ *       interleaved with a partially-computed integration step.</li>
  *   <li><b>{@link EngineRebuilder}s</b> (via {@link #submitRebuild}) —
  *       structural changes that replace the engine outright (edited link
  *       count, length, or mass). See its javadoc for why this is a separate
@@ -41,25 +68,27 @@ import java.util.logging.Logger;
  * an {@link AtomicInteger} counter drained once per loop iteration
  * regardless of {@code paused}, since its entire purpose is to advance the
  * simulation by exactly one step while otherwise paused.
+ *
+ * @param <E> the concrete engine type this loop steps
+ * @param <S> the state snapshot type {@code E} publishes
  */
-public final class SimulationLoop implements Runnable {
+public final class SimulationLoop<E extends SimulationEngine<S>, S> implements Runnable {
 
     private static final Logger LOG = Logger.getLogger(SimulationLoop.class.getName());
 
     private static final double FIXED_DT    = 0.002;
     private static final double MAX_WALL_DT = 0.1;
 
-    private final StateBuffer    buffer;
-    private final PendulumConfig config;
-    private final Queue<SimCommand>     commandQueue  = new ConcurrentLinkedQueue<>();
-    private final Queue<EngineRebuilder> rebuildQueue = new ConcurrentLinkedQueue<>();
+    private final StateBuffer<S> buffer;
+    private final Queue<SimCommand<E>>     commandQueue = new ConcurrentLinkedQueue<>();
+    private final Queue<EngineRebuilder<E>> rebuildQueue = new ConcurrentLinkedQueue<>();
 
     // Not final: an EngineRebuilder replaces this reference outright, only
     // ever from the physics thread (see drainRebuilds()). volatile because
-    // getGravity() below reads it from the JavaFX thread — without that,
+    // currentEngine() below reads it from the JavaFX thread — without that,
     // the Java Memory Model gives no guarantee the new reference (or the
     // engine it points to) is even visible cross-thread after a rebuild.
-    private volatile PhysicsEngine engine;
+    private volatile E engine;
 
     private volatile boolean running = false;
     private volatile boolean paused  = false;
@@ -70,20 +99,13 @@ public final class SimulationLoop implements Runnable {
     // rather than a queued SimCommand — see #setTimeReversed.
     private volatile boolean timeReversed = false;
 
-    // null when the butterfly-effect ensemble isn't active. A plain
+    // null when nothing needs to ride alongside the primary engine's own
+    // stepping — see the class javadoc and StepListener's own. A plain
     // volatile field, not a queued command: swapping the reference doesn't
-    // need to be ordered against an in-flight RK4 step the way engine
-    // mutation does, and a fully-constructed Ensemble is safely published
-    // by the volatile write regardless of which thread creates it.
-    private volatile Ensemble ensemble;
-
-    // null when A/B compare isn't active. Same volatile-reference reasoning
-    // as `ensemble` above, but this is exactly one engine representing a
-    // deliberately, visibly different "B" scenario (not 50 near-identical
-    // copies) — see controller.SimulationController#setCompareActive for
-    // how it's built and ui.PendulumCanvas#drawCompareChain for how it's
-    // drawn distinctly from both the primary and the ensemble ghosts.
-    private volatile PhysicsEngine compareEngine;
+    // need to be ordered against an in-flight step the way engine mutation
+    // does, and a fully-constructed listener is safely published by the
+    // volatile write regardless of which thread creates it.
+    private volatile StepListener<E> stepListener;
 
     // Frame-stepping: incremented from the JavaFX thread (a button click or
     // the -> shortcut), drained and reset from the physics thread. Atomic
@@ -97,12 +119,15 @@ public final class SimulationLoop implements Runnable {
     /**
      * Builds the loop and immediately publishes the engine's initial state,
      * so the UI has something to render before the thread is even started.
+     *
+     * @param initialSpeed the starting speed multiplier (the pendulum screen
+     *                      passes {@code PendulumConfig#getSpeedMultiplier()};
+     *                      a future simulation type supplies its own default)
      */
-    public SimulationLoop(PendulumConfig config, StateBuffer buffer) {
-        this.config = config;
-        this.engine = new PhysicsEngine(config);
+    public SimulationLoop(E engine, StateBuffer<S> buffer, double initialSpeed) {
+        this.engine = engine;
         this.buffer = buffer;
-        this.speed  = config.getSpeedMultiplier();
+        this.speed  = initialSpeed;
         buffer.write(engine.getState());
     }
 
@@ -140,90 +165,67 @@ public final class SimulationLoop implements Runnable {
 
     /**
      * Toggles between integrating forward and backward — a genuine reversal
-     * of the live {@link PhysicsEngine}'s dynamics via negative {@code dt}
-     * (see {@link PhysicsEngine#step}), not a replay of recorded states the
-     * way {@code HistoryBuffer} scrubbing is. Deliberately distinct from
-     * that feature: this keeps advancing the <em>real</em> engine (so
-     * dragging a bob, changing gravity, etc. all still work while reversed),
-     * and — because RK4 isn't time-symmetric and a chaotic N&ge;2 chain is
-     * sensitive to the tiny numerical error each step accumulates — running
-     * it forward and then backward for the same number of steps will
-     * <em>not</em> land exactly back where it started except for the
-     * simplest (e.g. N=1) configurations. That mismatch is itself the
-     * demonstration: it's a visible illustration of both numerical
-     * irreversibility and chaotic sensitivity, not a bug to hide.
+     * of the live engine's dynamics via negative {@code dt} (see {@code
+     * PhysicsEngine#step}), not a replay of recorded states the way {@code
+     * HistoryBuffer} scrubbing is. Deliberately distinct from that feature:
+     * this keeps advancing the <em>real</em> engine (so dragging a bob,
+     * changing gravity, etc. all still work while reversed), and — because
+     * RK4 isn't time-symmetric and a chaotic N&ge;2 chain is sensitive to
+     * the tiny numerical error each step accumulates — running it forward
+     * and then backward for the same number of steps will <em>not</em> land
+     * exactly back where it started except for the simplest (e.g. N=1)
+     * configurations. That mismatch is itself the demonstration: it's a
+     * visible illustration of both numerical irreversibility and chaotic
+     * sensitivity, not a bug to hide.
      */
     public void setTimeReversed(boolean reversed) { this.timeReversed = reversed; }
 
     /** Whether the simulation is currently integrating backward. */
     public boolean isTimeReversed()               { return timeReversed; }
 
-    /** Current gravity, read from whichever engine is live right now. Safe cross-thread — see the field's javadoc. */
-    public double getGravity() { return engine.getGravity(); }
+    /**
+     * The engine currently live, read fresh (safe cross-thread — see the
+     * field's javadoc). For reads/writes needing the concrete engine type
+     * beyond what {@link SimulationEngine} exposes (e.g. {@code
+     * PhysicsEngine#getGravity}) — mutation should still go through {@link
+     * #submit} so it lands between steps, never mid-step.
+     */
+    public E currentEngine() { return engine; }
 
     /** Queues a mutation for the physics thread to apply before its next step. See {@link SimCommand}. */
-    public void submit(SimCommand command) { commandQueue.add(command); }
+    public void submit(SimCommand<E> command) { commandQueue.add(command); }
 
     /** Queues a structural engine replacement. See {@link EngineRebuilder}. */
-    public void submitRebuild(EngineRebuilder rebuilder) { rebuildQueue.add(rebuilder); }
-
-    /** Convenience for the common case: replace the engine outright with one built from {@code newConfig}. */
-    public void rebuildWithConfig(PendulumConfig newConfig) {
-        submitRebuild(old -> new PhysicsEngine(newConfig));
-    }
-
-    /** Queues a gravity-magnitude change. Goes through the command queue rather than a direct setter so it lands between steps, never mid-step. */
-    public void setGravity(double g) { submit(e -> e.setGravity(g)); }
-
-    /** Queues a gravity-direction change — see {@link PhysicsEngine#setGravityAngle}. */
-    public void setGravityAngle(double angle) { submit(e -> e.setGravityAngle(angle)); }
-
-    /** Current gravity direction, read from whichever engine is live right now. Safe cross-thread — see {@link #engine}'s javadoc. */
-    public double getGravityAngle() { return engine.getGravityAngle(); }
-    /** Queues a reset to the configured initial angles at rest. */
-    public void reset()              { submit(new ResetCommand()); }
-
-    /** Swaps the active integration strategy — see {@link Integrator}. A {@code SimCommand}: mutates the current engine, no rebuild needed. */
-    public void setIntegrator(Integrator integrator) { submit(e -> e.setIntegrator(integrator)); }
-
-    /** Activates the butterfly-effect ensemble; {@code null} deactivates it. See {@link Ensemble}. */
-    public void setEnsemble(Ensemble ensemble) { this.ensemble = ensemble; }
-
-    /** The active ensemble, or {@code null}. Read each frame by the renderer to draw ghost chains. */
-    public Ensemble getEnsemble()              { return ensemble; }
-
-    /** Activates A/B compare with a fully-built "B" engine; {@code null} deactivates it. See {@link #compareEngine}. */
-    public void setCompareEngine(PhysicsEngine compareEngine) { this.compareEngine = compareEngine; }
-
-    /** The active A/B "B" engine, or {@code null}. Read each frame by the renderer to draw the comparison chain. */
-    public PhysicsEngine getCompareEngine()                   { return compareEngine; }
+    public void submitRebuild(EngineRebuilder<E> rebuilder) { rebuildQueue.add(rebuilder); }
 
     /**
-     * Queues exactly one {@link PhysicsEngine#step} of {@link #FIXED_DT},
-     * applied on the next loop iteration regardless of {@link #paused} —
-     * frame-stepping is specifically meant to work <em>while</em> paused.
-     * Calling this repeatedly while already running just blends into the
-     * normal per-frame stepping; there's no special case for that, since
-     * skipping one iteration's worth of wall-clock time (~1ms) is imperceptible.
+     * Queues a reset to the engine's configured initial state. Unlike
+     * gravity/integrator, this needs no engine-specific access — {@code
+     * reset()} is part of {@link SimulationEngine} itself — so it stays
+     * here as a convenience rather than pushing every caller to write
+     * {@code submit(e -> e.reset())} by hand. Round 2 §2: replaces the old
+     * {@code simulation.command.ResetCommand}, which existed only to do
+     * exactly this and is now dead code with the interface in hand.
+     */
+    public void reset() { submit(SimulationEngine::reset); }
+
+    /**
+     * Queues exactly one step of {@link #FIXED_DT}, applied on the next loop
+     * iteration regardless of {@link #paused} — frame-stepping is
+     * specifically meant to work <em>while</em> paused. Calling this
+     * repeatedly while already running just blends into the normal
+     * per-frame stepping; there's no special case for that, since skipping
+     * one iteration's worth of wall-clock time (~1ms) is imperceptible.
      */
     public void stepOnce() { pendingManualSteps.incrementAndGet(); }
 
     /**
-     * Nudges every link's angular velocity by an independent tiny random
-     * amount — sensitive dependence on initial conditions, demonstrated on
-     * demand rather than only by comparing to a separate {@link Ensemble}.
-     * Applied as a single {@link SimCommand} so it can't be interleaved
-     * with an in-flight RK4 step.
+     * Installs (or, given {@code null}, removes) the hook called once per
+     * loop iteration alongside the primary engine's own stepping. See
+     * {@link StepListener}'s javadoc for why this exists instead of a
+     * generalized "ensemble" feature in this class.
      */
-    public void perturb(double magnitude) {
-        submit(e -> {
-            SimState s = e.getState();
-            for (int i = 0; i < s.getN(); i++) {
-                double delta = (ThreadLocalRandom.current().nextDouble() * 2.0 - 1.0) * magnitude;
-                e.setLinkState(i, s.angles[i], s.angularVelocities[i] + delta);
-            }
-        });
-    }
+    public void setStepListener(StepListener<E> listener) { this.stepListener = listener; }
 
     /**
      * <b>The physics thread's main loop.</b> Runs continuously from {@link
@@ -247,7 +249,10 @@ public final class SimulationLoop implements Runnable {
      * Numerical integrators become inaccurate — and eventually unstable —
      * as the step grows. Rather than take one big step when a frame runs
      * long, the loop takes several small ones of a known-good size. This
-     * keeps accuracy independent of machine speed and frame timing.
+     * keeps accuracy independent of machine speed and frame timing. (A
+     * fixed-timestep loop is a reasonable default for any of this engine's
+     * planned simulation types, including a PDE solver picking its own
+     * internal substeps inside one {@code step()} call.)
      *
      * <p><b>Why {@code MAX_WALL_DT} exists.</b> If the app is paused by the
      * OS, or the window is dragged, or a breakpoint is hit, the elapsed
@@ -280,11 +285,8 @@ public final class SimulationLoop implements Runnable {
                 double stepDt = direction * FIXED_DT;
                 for (int i = 0; i < manualSteps; i++) engine.step(stepDt);
 
-                Ensemble ens = ensemble;
-                if (ens != null) ens.step(stepDt, manualSteps);
-
-                PhysicsEngine cmp = compareEngine;
-                if (cmp != null) for (int i = 0; i < manualSteps; i++) cmp.step(stepDt);
+                StepListener<E> listener = stepListener; // one volatile read; avoids a null-check race against a concurrent setStepListener()
+                if (listener != null) listener.onStep(engine, stepDt, manualSteps);
 
                 buffer.write(engine.getState());
             } else if (!paused && wallDt > 0) {
@@ -298,15 +300,8 @@ public final class SimulationLoop implements Runnable {
                 double dt    = simDt / steps;
                 for (int i = 0; i < steps; i++) engine.step(dt);
 
-                Ensemble ens = ensemble; // one volatile read; avoids a null-check race against a concurrent setEnsemble()
-                if (ens != null) ens.step(dt, steps);
-
-                // Same dt/step-count as the primary, deliberately: the whole
-                // point of A/B compare is attributing any difference to the
-                // deliberate B-vs-A parameter change, not to a different
-                // integration schedule.
-                PhysicsEngine cmp = compareEngine;
-                if (cmp != null) for (int i = 0; i < steps; i++) cmp.step(dt);
+                StepListener<E> listener = stepListener;
+                if (listener != null) listener.onStep(engine, dt, steps);
 
                 buffer.write(engine.getState());
             }
@@ -325,11 +320,11 @@ public final class SimulationLoop implements Runnable {
      */
     private boolean drainRebuilds() {
         boolean any = false;
-        EngineRebuilder rebuilder;
+        EngineRebuilder<E> rebuilder;
         while ((rebuilder = rebuildQueue.poll()) != null) {
             try {
-                PhysicsEngine rebuilt = rebuilder.rebuild(engine);
-                LOG.info(() -> "Engine rebuilt: N=" + rebuilt.getState().getN());
+                E rebuilt = rebuilder.rebuild(engine);
+                LOG.fine("Engine rebuilt"); // per-engine detail (N, etc.) is a concern for the caller, which already knows its own concrete type
                 engine = rebuilt;
                 any = true;
             } catch (RuntimeException ex) {
@@ -342,7 +337,7 @@ public final class SimulationLoop implements Runnable {
     /** Applies every queued command. Returns true if at least one was applied, so callers know to publish state. Same fail-safe reasoning as {@link #drainRebuilds}. */
     private boolean drainCommands() {
         boolean any = false;
-        SimCommand cmd;
+        SimCommand<E> cmd;
         while ((cmd = commandQueue.poll()) != null) {
             try {
                 cmd.apply(engine);

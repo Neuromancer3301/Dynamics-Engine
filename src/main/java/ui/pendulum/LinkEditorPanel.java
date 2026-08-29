@@ -1,4 +1,4 @@
-package ui;
+package ui.pendulum;
 
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
@@ -6,8 +6,12 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
@@ -92,12 +96,51 @@ public final class LinkEditorPanel extends VBox {
         ComboBox<Presets.Preset> presetBox = new ComboBox<>(FXCollections.observableArrayList(Presets.all()));
         presetBox.setPromptText("Choose a preset…");
         presetBox.setMaxWidth(Double.MAX_VALUE);
-        presetBox.setOnAction(e -> {
-            Presets.Preset selected = presetBox.getValue();
+
+        // Round 3.2: applying now happens from a click/key listener on each
+        // popup cell, not presetBox's own ON_ACTION. ON_ACTION fires from
+        // the value property's invalidated() callback, which — like any
+        // JavaFX property — is a no-op if the new value equals the old one,
+        // so re-picking the *already-selected* preset (round 3.1's reported
+        // case: edit rows away from it, then re-pick it to discard those
+        // edits) silently did nothing. Round 3.1 fixed that by clearing the
+        // selection after every apply, but that also cleared the visible
+        // "which preset is active" label back to the prompt text every
+        // time — a real regression the user asked to avoid if there's a way
+        // to keep both. There is: intercept the actual click/key gesture on
+        // each cell directly, which fires regardless of whether it picks
+        // the same item already showing, and use presetBox.setValue purely
+        // to keep the closed box's label in sync — never as the trigger.
+        Consumer<Presets.Preset> applyPreset = selected -> {
             if (selected == null) return;
             loadFrom(selected.config());
             clearError();
             if (onApply != null) onApply.accept(selected.config());
+            presetBox.setValue(selected);
+        };
+        presetBox.setCellFactory(lv -> {
+            ListCell<Presets.Preset> cell = new ListCell<>() {
+                @Override
+                protected void updateItem(Presets.Preset item, boolean empty) {
+                    super.updateItem(item, empty);
+                    setText(empty || item == null ? null : item.toString());
+                }
+            };
+            cell.addEventHandler(MouseEvent.MOUSE_RELEASED, e -> {
+                if (cell.isEmpty()) return;
+                applyPreset.accept(cell.getItem());
+                presetBox.hide();
+                e.consume();
+            });
+            cell.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
+                if (cell.isEmpty()) return;
+                if (e.getCode() == KeyCode.ENTER || e.getCode() == KeyCode.SPACE) {
+                    applyPreset.accept(cell.getItem());
+                    presetBox.hide();
+                    e.consume();
+                }
+            });
+            return cell;
         });
 
         Button saveButton = smallButton("💾 Save");
@@ -112,6 +155,7 @@ public final class LinkEditorPanel extends VBox {
         // such here too, so it reads as a shortcut for the form above
         // rather than something smarter than it is.
         TextField nlField = new TextField();
+        nlField.getStyleClass().add("sidebar-text-field");
         nlField.setPromptText("e.g. \"5 links, heavy first link, low gravity\"");
         nlField.setAccessibleText("Describe a scenario in words to fill in the form below");
         Button nlApplyButton = smallButton("✨ Parse & Apply");
