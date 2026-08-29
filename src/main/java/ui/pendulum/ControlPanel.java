@@ -1,16 +1,8 @@
-package ui;
+package ui.pendulum;
 
 import physics.SimState;
 import physics.integrator.IntegratorType;
 import simulation.SimulationLoop;
-import ui.pendulum.ChaosGroupPanel;
-import ui.pendulum.DisplayGroupPanel;
-import ui.pendulum.GraphsGroupPanel;
-import ui.pendulum.HistoryGroupPanel;
-import ui.pendulum.MotionGroupPanel;
-import ui.pendulum.PendulumCanvas;
-import ui.pendulum.PendulumGraphPanel;
-import ui.pendulum.StatusPanel;
 import javafx.scene.layout.VBox;
 
 import java.util.function.BiConsumer;

@@ -17,7 +17,7 @@ import java.util.logging.Logger;
  * The sidebar's "Graphs" group: the seven graph-mode toggles (mutually
  * exclusive, or none selected — see {@link #toggleGraphMode}), the
  * bifurcation-sweep button/progress bar, and CSV export. Moved out of
- * {@code ui.ControlPanel} — see round 1 §10 of the UI restructuring plan.
+ * {@code ControlPanel} — see round 1 §10 of the UI restructuring plan.
  */
 public final class GraphsGroupPanel extends VBox {
 

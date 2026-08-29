@@ -13,7 +13,7 @@ import java.util.logging.Logger;
 
 /**
  * The sidebar's "Display" group: trail mode, velocity tinting, and trace-art
- * export. Moved out of {@code ui.ControlPanel} — see round 1 §10 of the UI
+ * export. Moved out of {@code ControlPanel} — see round 1 §10 of the UI
  * restructuring plan.
  */
 public final class DisplayGroupPanel extends VBox {

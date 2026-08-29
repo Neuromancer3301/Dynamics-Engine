@@ -13,7 +13,7 @@ import javafx.scene.layout.Priority;
 
 /**
  * Small shared factories for the sidebar's grouped panels (round 1 §10 of
- * the UI restructuring plan) — pulled out of {@code ui.ControlPanel} so
+ * the UI restructuring plan) — pulled out of {@code ControlPanel} so
  * {@code StatusPanel}/{@code MotionGroupPanel}/{@code ChaosGroupPanel}/
  * {@code GraphsGroupPanel}/{@code HistoryGroupPanel}/{@code
  * DisplayGroupPanel} share one copy instead of six.

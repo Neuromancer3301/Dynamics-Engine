@@ -9,7 +9,7 @@ import javafx.scene.paint.Color;
 /**
  * The sidebar's always-visible "Live Status" block: the N= header, the
  * instability banner, and the drift/Lyapunov readout. Moved out of {@code
- * ui.ControlPanel} — see round 1 §10 of the UI restructuring plan.
+ * ControlPanel} — see round 1 §10 of the UI restructuring plan.
  */
 public final class StatusPanel extends VBox {
 

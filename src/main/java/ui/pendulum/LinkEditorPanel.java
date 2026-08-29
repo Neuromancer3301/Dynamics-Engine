@@ -1,4 +1,4 @@
-package ui;
+package ui.pendulum;
 
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;

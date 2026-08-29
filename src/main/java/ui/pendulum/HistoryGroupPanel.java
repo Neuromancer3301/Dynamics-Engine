@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 
 /**
  * The sidebar's "History" group: the time-travel scrubbing slider. Moved
- * out of {@code ui.ControlPanel} — see round 1 §10 of the UI restructuring
+ * out of {@code ControlPanel} — see round 1 §10 of the UI restructuring
  * plan.
  */
 public final class HistoryGroupPanel extends VBox {

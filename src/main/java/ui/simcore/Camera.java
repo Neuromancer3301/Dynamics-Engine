@@ -24,7 +24,10 @@ package ui.simcore;
  * above.
  */
 public final class Camera {
-    private static final double MIN_ZOOM = 0.25, MAX_ZOOM = 6.0;
+    // Round 1.4 §3: widened on request — zoom-out range 10x further out
+    // (0.25 -> 0.025) and zoom-in range 5x further in (6.0 -> 30.0) than
+    // round 1 shipped with.
+    private static final double MIN_ZOOM = 0.025, MAX_ZOOM = 30.0;
 
     private double baseScale = 1.0;
     private double originXFraction = 0.5, originYFraction = 0.46; // fraction of W/H — resize-proof

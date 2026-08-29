@@ -67,7 +67,7 @@ public final class PendulumDialogFactory {
 
     /**
      * Opens the double-click parameter dialog (§7.4): angle/length/mass for
-     * one link, validated the same way {@code ui.LinkEditorPanel} validates
+     * one link, validated the same way {@code LinkEditorPanel} validates
      * its own rows, committing through {@link Host#applyStructuralEdit} on
      * "Apply." Selection/pause is already handled by the press that
      * preceded this double-click (§4-a) — nothing to do here for that.

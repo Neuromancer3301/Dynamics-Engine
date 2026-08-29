@@ -24,15 +24,16 @@ import simulation.HistoryBuffer;
 import simulation.SimulationLoop;
 import simulation.StateBuffer;
 import theme.ThemeManager;
-import ui.ControlPanel;
-import ui.LinkEditorPanel;
-import ui.SidebarTabs;
+import ui.icon.Icons;
+import ui.pendulum.ControlPanel;
+import ui.pendulum.LinkEditorPanel;
 import ui.pendulum.PendulumActionRailBuilder;
 import ui.pendulum.PendulumCanvas;
 import ui.pendulum.PendulumChaosFeatures;
 import ui.pendulum.PendulumDialogFactory;
 import ui.pendulum.PendulumGraphPanel;
 import ui.simcore.LayoutShell;
+import ui.simcore.SidebarTabs;
 
 import java.net.URL;
 import java.util.List;
@@ -80,7 +81,7 @@ import java.util.logging.Logger;
  * same {@link #applyStructuralEdit} path as {@link LinkEditorPanel}'s
  * "Apply Changes" — no second way to mutate the engine's structure exists.
  *
- * <p><b>Structural edits:</b> {@link ui.LinkEditorPanel} covers both the
+ * <p><b>Structural edits:</b> {@link LinkEditorPanel} covers both the
  * per-link parameter editor and runtime N control in one place — adding or
  * removing a row changes N directly, and both go through the same "Apply"
  * action ({@link #applyStructuralEdit}), which submits an {@code
@@ -349,16 +350,19 @@ public final class SimulationController implements Initializable, Navigable,
         linkEditorPanel.setOnApply(cfg -> applyStructuralEdit(cfg, true));
 
         // §9 — the tabbed sidebar shell: Live Status always visible, one
-        // group's controls shown at a time.
+        // group's controls shown at a time. The pendulum screen's own six
+        // tabs are assembled here, at the call site, not inside SidebarTabs
+        // itself — see that class's javadoc (round 1.4 §1) for why it only
+        // knows about generic Tabs, never this specific set.
         sidebarTabs = new SidebarTabs();
         sidebarTabs.build(
                 controlPanel.getStatusBlock(),
-                controlPanel.getMotionGroup(),
-                controlPanel.getChaosGroup(),
-                controlPanel.getGraphsGroup(),
-                controlPanel.getHistoryGroup(),
-                linkEditorPanel,
-                controlPanel.getDisplayGroup());
+                new SidebarTabs.Tab("Motion", Icons.Glyph.MOTION, controlPanel.getMotionGroup()),
+                new SidebarTabs.Tab("Chaos & Compare", Icons.Glyph.CHAOS, controlPanel.getChaosGroup()),
+                new SidebarTabs.Tab("Graphs", Icons.Glyph.GRAPHS, controlPanel.getGraphsGroup()),
+                new SidebarTabs.Tab("History", Icons.Glyph.HISTORY, controlPanel.getHistoryGroup()),
+                new SidebarTabs.Tab("Links", Icons.Glyph.LINKS, linkEditorPanel),
+                new SidebarTabs.Tab("Display", Icons.Glyph.DISPLAY, controlPanel.getDisplayGroup()));
         VBox.setVgrow(sidebarTabs, Priority.ALWAYS);
         controlHost.getChildren().setAll(sidebarTabs);
 

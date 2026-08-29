@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 /**
  * The sidebar's "Chaos & Compare" group: the butterfly-effect ensemble
  * toggle, perturb, sonify, and A/B compare. Moved out of {@code
- * ui.ControlPanel} — see round 1 §10 of the UI restructuring plan.
+ * ControlPanel} — see round 1 §10 of the UI restructuring plan.
  */
 public final class ChaosGroupPanel extends VBox {
 

@@ -88,7 +88,7 @@ public final class NavCardController {
         });
 
         // Keeps the icon's tint in sync with a live theme toggle, the same
-        // way component.UtilityIconButton and ui.SidebarTabs do for their
+        // way component.UtilityIconButton and ui.simcore.SidebarTabs do for their
         // own Canvas glyphs.
         ThemeManager.getInstance().addListener(this::refreshIconColor);
     }

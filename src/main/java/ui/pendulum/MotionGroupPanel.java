@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 /**
  * The sidebar's "Motion" group: gravity, sim speed, playback (pause/step/
  * reset), time reversal, and the integrator picker. Moved out of {@code
- * ui.ControlPanel} — see round 1 §10 of the UI restructuring plan.
+ * ControlPanel} — see round 1 §10 of the UI restructuring plan.
  */
 public final class MotionGroupPanel extends VBox {
 
