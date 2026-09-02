@@ -76,9 +76,26 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
 
     private static final Logger LOG = Logger.getLogger(SimulationLoop.class.getName());
 
-    private static final double FIXED_DT    = 0.002;
+    // Default only — pendulum-appropriate (a ~1-2s period). Not a shared
+    // constant any more: see #fixedDt and the n-body implementation spec
+    // §3. A hardcoded 0.002s was safe as long as exactly one engine type
+    // (the pendulum) ever used this loop; an orbital-timescale engine
+    // subdividing a multi-year simulated frame into 0.002s steps would need
+    // on the order of ten million RK4 evaluations per rendered frame —
+    // completely unworkable. fixedDt is now a per-instance field so each
+    // engine type can pick a step size matched to its own timescale, while
+    // this constant stays as the pendulum's zero-code-change default.
+    private static final double DEFAULT_FIXED_DT = 0.002;
     private static final double MAX_WALL_DT = 0.1;
 
+    /**
+     * The fixed integration step size {@link #run} subdivides every advance
+     * into, in the engine's own simulated-time units. Per-instance, not a
+     * shared constant — see {@link #DEFAULT_FIXED_DT}'s javadoc for why one
+     * size never fit every engine type, once a second one (orbital-scale
+     * n-body dynamics) actually existed to test that assumption against.
+     */
+    private final double fixedDt;
     private final StateBuffer<S> buffer;
     private final Queue<SimCommand<E>>     commandQueue = new ConcurrentLinkedQueue<>();
     private final Queue<EngineRebuilder<E>> rebuildQueue = new ConcurrentLinkedQueue<>();
@@ -125,9 +142,27 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
      *                      a future simulation type supplies its own default)
      */
     public SimulationLoop(E engine, StateBuffer<S> buffer, double initialSpeed) {
-        this.engine = engine;
-        this.buffer = buffer;
-        this.speed  = initialSpeed;
+        this(engine, buffer, initialSpeed, DEFAULT_FIXED_DT); // unchanged default — pendulum call sites untouched
+    }
+
+    /**
+     * Same as {@link #SimulationLoop(SimulationEngine, StateBuffer, double)},
+     * with an explicit fixed-step size instead of the pendulum-appropriate
+     * default. See {@link #fixedDt}'s field javadoc — an engine operating on
+     * a wildly different timescale (e.g. {@code physics.nbody.NBodyEngine}'s
+     * orbital mechanics) needs its own step size, or the fixed-step
+     * subdivision in {@link #run} becomes either meaninglessly coarse or
+     * (far more likely for a much larger natural timescale) requires
+     * millions of integrator evaluations per rendered frame.
+     *
+     * @param fixedDt the fixed integration step size, in the engine's own
+     *                simulated-time units (seconds); must be positive
+     */
+    public SimulationLoop(E engine, StateBuffer<S> buffer, double initialSpeed, double fixedDt) {
+        this.engine  = engine;
+        this.buffer  = buffer;
+        this.speed   = initialSpeed;
+        this.fixedDt = fixedDt;
         buffer.write(engine.getState());
     }
 
@@ -210,7 +245,7 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
     public void reset() { submit(SimulationEngine::reset); }
 
     /**
-     * Queues exactly one step of {@link #FIXED_DT}, applied on the next loop
+     * Queues exactly one step of {@link #fixedDt}, applied on the next loop
      * iteration regardless of {@link #paused} — frame-stepping is
      * specifically meant to work <em>while</em> paused. Calling this
      * repeatedly while already running just blends into the normal
@@ -241,7 +276,7 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
      *   <li><b>Measure elapsed wall-clock time</b> since the last iteration,
      *       capped at {@link #MAX_WALL_DT}.</li>
      *   <li><b>Advance the simulation</b> by that much simulated time,
-     *       subdivided into fixed {@link #FIXED_DT} steps.</li>
+     *       subdivided into fixed {@link #fixedDt} steps.</li>
      *   <li><b>Publish</b> the new state for the renderer.</li>
      * </ol>
      *
@@ -282,7 +317,7 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
 
             int manualSteps = pendingManualSteps.getAndSet(0);
             if (manualSteps > 0) {
-                double stepDt = direction * FIXED_DT;
+                double stepDt = direction * fixedDt;
                 for (int i = 0; i < manualSteps; i++) engine.step(stepDt);
 
                 StepListener<E> listener = stepListener; // one volatile read; avoids a null-check race against a concurrent setStepListener()
@@ -296,7 +331,7 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
                 // independent of frame rate. abs() because simDt is negative
                 // when running in reverse, and a step COUNT must be positive.
                 double simDt = direction * wallDt * speed;
-                int    steps = Math.max(1, (int) Math.ceil(Math.abs(simDt) / FIXED_DT));
+                int    steps = Math.max(1, (int) Math.ceil(Math.abs(simDt) / fixedDt));
                 double dt    = simDt / steps;
                 for (int i = 0; i < steps; i++) engine.step(dt);
 
