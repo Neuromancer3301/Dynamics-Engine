@@ -32,6 +32,17 @@ public final class Camera {
     private double zoom = 1.0;
     private double panX = 0.0, panY = 0.0;
 
+    // ---- Follow-point (round: n-body camera follow, §7) ----
+    // A world-space point that takes the place world-origin (0,0) used to
+    // occupy, so a scene with no fixed pivot (e.g. an n-body simulation's
+    // center of mass) can still be kept centered. Generic and
+    // simulation-agnostic on purpose — nothing below assumes what the
+    // followed point actually is; a caller (e.g. ui.nbody.NBodyCanvas)
+    // recomputes it fresh every frame and calls setFollowPoint/
+    // clearFollowPoint accordingly.
+    private double followWorldX = 0.0, followWorldY = 0.0;
+    private boolean following = false;
+
     /** Recomputes the base scale so {@code contentExtent} world-units fit the given viewport, and resets zoom/pan to identity. */
     public void fitToContent(double width, double height, double contentExtent) {
         this.baseScale = Math.min(width * 0.40, height * 0.40) / Math.max(contentExtent, 0.1);
@@ -117,8 +128,45 @@ public final class Camera {
 
     public double getScale() { return baseScale * zoom; }
 
-    public double originX(double width)  { return originXFraction * width  + panX; }
-    public double originY(double height) { return originYFraction * height + panY; }
+    /**
+     * Locks the camera onto a world-space point, which from the next
+     * {@link #originX}/{@link #originY} call onward takes the place
+     * world-origin (0,0) used to occupy — everything else (ordinary
+     * pan/zoom, {@link #zoomBy}'s anchor math, {@link #rescaleForViewport})
+     * layers on top of it exactly as before, since both of those only ever
+     * read {@link #getScale} and the pan/origin-fraction fields, never the
+     * world origin directly.
+     *
+     * <p>Deliberately does not itself call {@link #fitToContent} — starting
+     * to follow from wherever the camera currently sits keeps the
+     * transition smooth rather than a snap; a caller wanting a fresh framed
+     * view still calls {@link #fitToContent} itself (a preset load, Reset —
+     * genuine "start over" moments, unchanged from before this existed).
+     */
+    public void setFollowPoint(double worldX, double worldY) {
+        this.followWorldX = worldX;
+        this.followWorldY = worldY;
+        this.following = true;
+    }
+
+    /** Stops following — {@link #originX}/{@link #originY} revert to centering on the true world origin (0,0), from wherever the camera currently sits. */
+    public void clearFollowPoint() { this.following = false; }
+
+    /** Whether the camera is currently locked onto a followed point rather than the world origin. */
+    public boolean isFollowing() { return following; }
+
+    /**
+     * Screen-space X of the world origin — or, while {@link #isFollowing()},
+     * of whatever point was last passed to {@link #setFollowPoint}. The
+     * follow offset is subtracted here, at read time, rather than folded
+     * into {@code panX} — recomputed fresh from the current {@link
+     * #getScale} on every call, so it stays correct across a zoom or resize
+     * without needing any of those code paths to know a follow is active.
+     */
+    public double originX(double width)  { return originXFraction * width  + panX - (following ? followWorldX * getScale() : 0); }
+
+    /** Screen-space Y of the world origin (or the followed point) — see {@link #originX}'s javadoc; the {@code +} here (versus {@code originX}'s {@code -}) matches {@link #worldToScreenY}'s own sign convention. */
+    public double originY(double height) { return originYFraction * height + panY + (following ? followWorldY * getScale() : 0); }
 
     public double worldToScreenX(double worldX, double width)  { return originX(width) + worldX * getScale(); }
     public double worldToScreenY(double worldY, double height) { return originY(height) - worldY * getScale(); }
