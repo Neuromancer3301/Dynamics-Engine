@@ -139,7 +139,7 @@ public final class NBodySimulationController implements Initializable, Navigable
 
         dialogFactory = new NBodyDialogFactory(this);
 
-        actionRailBuilder = new NBodyActionRailBuilder(actionRail);
+        actionRailBuilder = new NBodyActionRailBuilder(actionRail, nbodyCanvas);
         actionRailBuilder.build();
 
         layoutShell = new LayoutShell(sidebarScroll, graphHost, canvasGraphStack);
@@ -209,14 +209,26 @@ public final class NBodySimulationController implements Initializable, Navigable
         // establishesNewBaseline is true, so no separate call is needed
         // here — see that method's own javadoc.
         controlPanel.setOnPresetApply(preset -> applyStructuralEdit(preset.config(), true));
+        // Round 1.1: a single click in the list only selects — same
+        // press-pauses-and-selects rule as clicking a body on the canvas
+        // (see setSelectionListener below); it must NOT also open the
+        // dialog, or every click reads as "double-click," indistinguishable
+        // from one. Double-click is its own callback.
+        controlPanel.setOnBodySelect(index -> {
+            setPaused(true);
+            nbodyCanvas.setSelectedBody(index);
+        });
         // Pausing first matters here exactly as much as it does for the
-        // canvas's own selection-then-pause rule (see setSelectionListener
-        // below): the parameter dialog snapshots live state once and reuses
-        // it for every OTHER body's position/velocity on Apply — leaving
-        // the sim running while this (potentially long-open) modal sits
-        // there would let it silently discard everyone else's intervening
-        // motion the moment Apply is pressed.
-        controlPanel.setOnBodyClick(index -> {
+        // canvas's own selection-then-pause rule: the parameter dialog
+        // snapshots live state once and reuses it for every OTHER body's
+        // position/velocity on Apply — leaving the sim running while this
+        // (potentially long-open) modal sits there would let it silently
+        // discard everyone else's intervening motion the moment Apply is
+        // pressed. Already paused by the single-click above by the time a
+        // double-click's second click arrives; setPaused(true) again here
+        // is a harmless no-op in that case, and the only path that matters
+        // if some other caller ever invokes this without a preceding select.
+        controlPanel.setOnBodyOpen(index -> {
             setPaused(true);
             nbodyCanvas.setSelectedBody(index);
             dialogFactory.showBodyParameterDialog(index);
@@ -288,6 +300,14 @@ public final class NBodySimulationController implements Initializable, Navigable
         nbodyCanvas.setSelectedBody(selectedBefore >= 0 && selectedBefore < newConfig.getN() ? selectedBefore : -1);
 
         if (establishesNewBaseline) nbodyCanvas.fitToContent();
+
+        // Recorded trail history describes bodies that may no longer exist
+        // at those indices post-edit — cleared unconditionally on every
+        // structural edit, same as PendulumCanvas#clearTrail's identical
+        // call in SimulationController#applyStructuralEdit. Which bodies
+        // are CHECKED survives this (see NBodyRenderer#clearTrailHistory);
+        // only the drawn path itself resets.
+        nbodyCanvas.clearTrails();
 
         controlPanel.updateBodyCount(newConfig.getN());
         controlPanel.refreshBodies(newConfig);
@@ -424,6 +444,7 @@ public final class NBodySimulationController implements Initializable, Navigable
             case R -> {
                 simLoop.reset();
                 nbodyCanvas.fitToContent();
+                nbodyCanvas.clearTrails();
                 initialEnergy = null;
                 initialMomentumX = null;
                 initialMomentumY = null;

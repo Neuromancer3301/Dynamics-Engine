@@ -74,6 +74,12 @@ final class NBodyInteraction {
     private double lastPanScreenX, lastPanScreenY;
     private double totalPanDragPx; // accumulated since the current press — see EMPTY_CLICK_MAX_DRAG_PX
 
+    // Round 1.1: gated by the Add tool, same mechanism/reasoning as
+    // PendulumInteraction's own field — see NBodyActionRailBuilder's
+    // class javadoc for why this was added. Selection and double-click
+    // stay tool-agnostic; only starting a new drag is gated.
+    private boolean dragEditingEnabled = true;
+
     NBodyInteraction(NBodyCanvas canvas, Camera camera, NBodyRenderer renderer) {
         this.canvas = canvas;
         this.camera = camera;
@@ -89,6 +95,8 @@ final class NBodyInteraction {
     void setDoubleClickListener(NBodyCanvas.DoubleClickListener listener) { this.doubleClickListener = listener; }
     void setRightClickListener(NBodyCanvas.RightClickListener listener) { this.rightClickListener = listener; }
     void setEmptySpaceClickListener(NBodyCanvas.EmptySpaceClickListener listener) { this.emptySpaceClickListener = listener; }
+
+    void setDragEditingEnabled(boolean dragEditingEnabled) { this.dragEditingEnabled = dragEditingEnabled; }
 
     private void wireInteraction() {
         canvas.setOnMouseMoved(e -> {
@@ -119,7 +127,8 @@ final class NBodyInteraction {
                     if (doubleClickListener != null) doubleClickListener.onDoubleClick(hit);
                     return;
                 }
-                if (dragListener != null && dragListener.onGrab(hit)) {
+                if (!dragEditingEnabled || dragListener == null) return;
+                if (dragListener.onGrab(hit)) {
                     draggedBody = hit;
                     dragSamples.clear();
                     recordDragSample(screenToWorldX(e.getX()), screenToWorldY(e.getY()));

@@ -68,10 +68,20 @@ public final class NBodyCanvas extends SimCanvas {
     // toggled by the sidebar's Display tab.
     private boolean followCenterOfMass = false;
 
+    // Round 1.1: the pendulum-tuned default zoom range (50x beyond the
+    // fitted view) leaves the Moon fused into Earth even at maximum zoom —
+    // the default view fits the whole system out to its outermost body
+    // (billions of km), while resolving Earth from its Moon (a few hundred
+    // thousand km apart) needs on the order of 10^5-10^6x more zoom than
+    // that, not 50x. See Camera#setZoomRange's own javadoc for the math.
+    private static final double MIN_ZOOM = 0.025;   // unchanged — no need to zoom out further than the pendulum ever did
+    private static final double MAX_ZOOM = 1.0e7;
+
     public NBodyCanvas(double width, double height) {
         super(width, height);
         this.renderer = new NBodyRenderer(camera);
         this.interaction = new NBodyInteraction(this, camera, renderer);
+        camera.setZoomRange(MIN_ZOOM, MAX_ZOOM);
     }
 
     @Override
@@ -90,6 +100,23 @@ public final class NBodyCanvas extends SimCanvas {
             max = Math.max(max, Math.hypot(dx, dy));
         }
         return max;
+    }
+
+    // Round 1.1: powers of ten from 10km to 10 billion km — the pendulum's
+    // own "nice" lengths (0.05m to 500m) top out at a fraction of a single
+    // pixel next to this scene's actual scale, so the picker was always
+    // just returning its largest entry regardless of zoom (see the n-body
+    // implementation spec round 1.1 issue #1 and SimCanvas#scaleBarNiceLengths).
+    private static final double[] SCALE_BAR_NICE_LENGTHS = {
+            1.0e4, 1.0e5, 1.0e6, 1.0e7, 1.0e8, 1.0e9, 1.0e10, 1.0e11, 1.0e12, 1.0e13
+    };
+
+    @Override
+    protected double[] scaleBarNiceLengths() { return SCALE_BAR_NICE_LENGTHS; }
+
+    @Override
+    protected String formatScaleBarLabel(double referenceLength) {
+        return String.format("%.0e m", referenceLength);
     }
 
     @Override
@@ -145,6 +172,9 @@ public final class NBodyCanvas extends SimCanvas {
     /** Registers the listener notified of grab/drag/release. {@code null} disables interaction. */
     public void setDragListener(DragListener listener) { interaction.setDragListener(listener); }
 
+    /** Enables or disables drag-to-reposition of bodies, independent of selection — gated by the Add tool (round 1.1; see {@code NBodyActionRailBuilder}). On by default. */
+    public void setDragEditingEnabled(boolean dragEditingEnabled) { interaction.setDragEditingEnabled(dragEditingEnabled); }
+
     /** Registers the listener notified when a body becomes selected. {@code null} disables that notification (selection can still be set programmatically). */
     public void setSelectionListener(SelectionListener listener) { interaction.setSelectionListener(listener); }
 
@@ -171,8 +201,25 @@ public final class NBodyCanvas extends SimCanvas {
     /** Swaps the per-body color palette for a colour-blind-safe one. */
     public void setColorBlindSafe(boolean colorBlindSafe) { renderer.setColorBlindSafe(colorBlindSafe); }
 
-    /** Disables the selection halo's pulse animation (a global accessibility preference, read once at screen construction — see {@code theme.ThemeManager#isReducedMotion}). */
+    /** Disables the selection halo's pulse animation and motion trails (a global accessibility preference, read once at screen construction — see {@code theme.ThemeManager#isReducedMotion}). */
     public void setReducedMotion(boolean reducedMotion) { renderer.setReducedMotion(reducedMotion); }
+
+    // ---- Round 1.1: motion trails, per body — see ui.nbody.DisplayGroupPanel ----
+
+    /** Number of bodies the trail state is currently sized for. */
+    public int trailBodyCount() { return renderer.trailBodyCount(); }
+
+    /** Whether body {@code i} currently leaves a trail. */
+    public boolean isTrailEnabled(int i) { return renderer.isTrailEnabled(i); }
+
+    /** Toggles body {@code i}'s trail on or off. */
+    public void setTrailEnabled(int i, boolean on) { renderer.setTrailEnabled(i, on); }
+
+    /** Enables or disables every body's trail at once. */
+    public void setAllTrailsEnabled(boolean on) { renderer.setAllTrailsEnabled(on); }
+
+    /** Erases recorded trail history (not which bodies are enabled) — call on Reset, where a body jumping back to its initial position shouldn't draw a line through where it used to be. */
+    public void clearTrails() { renderer.clearTrailHistory(); }
 
     /**
      * Mass-weighted average position — the scene's center of mass. Computed

@@ -34,7 +34,8 @@ public final class ControlPanel extends VBox {
     private Consumer<IntegratorType> onIntegratorChange;
     private Consumer<Boolean> onPauseChange;
     private Consumer<Presets.Preset> onPresetApply;
-    private IntConsumer onBodyClick;
+    private IntConsumer onBodySelect;
+    private IntConsumer onBodyOpen;
 
     public ControlPanel() {
         super(10);
@@ -51,9 +52,10 @@ public final class ControlPanel extends VBox {
 
         bodiesGroup = new BodiesGroupPanel(initialConfig);
         bodiesGroup.setOnPresetApply(onPresetApply);
-        bodiesGroup.setOnBodyClick(onBodyClick);
+        bodiesGroup.setOnBodySelect(onBodySelect);
+        bodiesGroup.setOnBodyOpen(onBodyOpen);
 
-        displayGroup = new DisplayGroupPanel(canvas);
+        displayGroup = new DisplayGroupPanel(canvas, initialConfig);
     }
 
     // ---- Group/status accessors ----
@@ -69,13 +71,17 @@ public final class ControlPanel extends VBox {
     public void setOnIntegratorChange(Consumer<IntegratorType> callback) { this.onIntegratorChange = callback; }
     public void setOnPauseChange(Consumer<Boolean> callback) { this.onPauseChange = callback; }
     public void setOnPresetApply(Consumer<Presets.Preset> callback) { this.onPresetApply = callback; }
-    public void setOnBodyClick(IntConsumer callback) { this.onBodyClick = callback; }
+    public void setOnBodySelect(IntConsumer callback) { this.onBodySelect = callback; }
+    public void setOnBodyOpen(IntConsumer callback) { this.onBodyOpen = callback; }
 
     // ---- Called from controller.NBodySimulationController every render tick, or on state changes ----
 
     public void setPausedVisual(boolean paused) { motionGroup.setPausedVisual(paused); }
     public void updateBodyCount(int n) { statusPanel.updateBodyCount(n); }
-    public void refreshBodies(NBodyConfig config) { bodiesGroup.refreshBodies(config); }
+    public void refreshBodies(NBodyConfig config) {
+        bodiesGroup.refreshBodies(config);
+        displayGroup.refreshBodies(config);
+    }
 
     public void updateStatus(NBodyState state, Double initialEnergy, Double initialMomentumX,
                               Double initialMomentumY, Double initialAngularMomentum) {

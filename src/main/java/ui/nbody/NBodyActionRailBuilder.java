@@ -16,21 +16,30 @@ import javafx.scene.layout.VBox;
  *
  * <p>No Snap toggle — nothing analogous to angle/length snapping exists for
  * free-form body placement, so this rail is deliberately smaller than the
- * pendulum's three-control one. Unlike the pendulum's Add tool, this one
- * doesn't gate body dragging either: n-body's Add gesture is a click on
- * <em>empty</em> space (see {@link NBodyInteraction}), which never competes
- * with dragging an existing body the way the pendulum's double-click-to-
- * insert-after-k did.
+ * pendulum's three-control one.
+ *
+ * <p><b>Round 1.1:</b> the Add tool now also disables dragging an existing
+ * body, mirroring the pendulum's own Add-tool gating after all. The original
+ * round 1 reasoning ("n-body's Add gesture targets empty space, never
+ * competing with dragging") is true at the level of "can these two gestures
+ * physically conflict," but it produces a rail where switching tools has no
+ * noticeable effect on the one thing most people try first — grabbing a
+ * body — which reads as "both buttons do the same thing," not as two
+ * distinct tools with a subtle third-case difference in behavior on empty
+ * space. Disabling dragging while Add is active makes the switch felt
+ * immediately, not just discoverable by deliberately clicking blank canvas.
  */
 public final class NBodyActionRailBuilder extends ActionRailBuilder {
 
-    /** Which rail tool governs click/double-click behavior on the n-body canvas. */
+    /** Which rail tool governs click/double-click/drag behavior on the n-body canvas. */
     public enum Tool { EDIT, ADD }
 
+    private final NBodyCanvas canvas;
     private Tool activeTool = Tool.EDIT;
 
-    public NBodyActionRailBuilder(VBox rail) {
+    public NBodyActionRailBuilder(VBox rail, NBodyCanvas canvas) {
         super(rail);
+        this.canvas = canvas;
     }
 
     public Tool getActiveTool() { return activeTool; }
@@ -49,7 +58,7 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
         addButton.getStyleClass().add("rail-button");
         Icons.IconView addIcon = Icons.create(Icons.Glyph.ADD, 20, Icons.idleColor(theme));
         addButton.setGraphic(addIcon);
-        Tooltip.install(addButton, new Tooltip("Add — click empty space to place a new body there."));
+        Tooltip.install(addButton, new Tooltip("Add — click empty space to place a new body there. Dragging is off while this tool is active."));
 
         editButton.setOnAction(e -> setActiveTool(Tool.EDIT, editButton, editIcon, addButton, addIcon));
         addButton.setOnAction(e -> setActiveTool(Tool.ADD, editButton, editIcon, addButton, addIcon));
@@ -63,7 +72,12 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
         });
     }
 
-    /** Switches the active rail tool: moves the "locked-active" style to whichever button is now current, and recolors both icons. */
+    /**
+     * Switches the active rail tool: moves the "locked-active" style to
+     * whichever button is now current, recolors both icons, and gates the
+     * canvas's drag-to-reposition gesture accordingly — see the class
+     * javadoc for why this gating was added in round 1.1.
+     */
     private void setActiveTool(Tool tool, Button editButton, Icons.IconView editIcon,
                                 Button addButton, Icons.IconView addIcon) {
         activeTool = tool;
@@ -76,5 +90,7 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
         Theme t = ThemeManager.getInstance().getCurrent();
         editIcon.setColor(editActive ? Icons.activeColor(t) : Icons.idleColor(t));
         addIcon.setColor(editActive ? Icons.idleColor(t) : Icons.activeColor(t));
+
+        canvas.setDragEditingEnabled(editActive);
     }
 }

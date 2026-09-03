@@ -45,7 +45,8 @@ public final class BodiesGroupPanel extends VBox {
     private final ListView<String> bodyList = new ListView<>(bodyNames);
 
     private Consumer<Presets.Preset> onPresetApply;
-    private IntConsumer onBodyClick;
+    private IntConsumer onBodySelect;
+    private IntConsumer onBodyOpen;
 
     public BodiesGroupPanel(NBodyConfig initialConfig) {
         super(10);
@@ -96,11 +97,22 @@ public final class BodiesGroupPanel extends VBox {
               + "-fx-text-fill: -ink;"
               + "-fx-border-color: -line;"
               + "-fx-border-width: 1;");
+        // Round 1.1: single click selects only (matches clicking a body on
+        // the canvas); double-click opens the parameter dialog. A double
+        // click still fires ITS first click as an ordinary single click
+        // first (JavaFX delivers clickCount 1 then 2 as two separate
+        // events), so onBodySelect always runs before onBodyOpen — same
+        // click-then-maybe-open shape the canvas itself uses.
         bodyList.setOnMouseClicked(e -> {
             int index = bodyList.getSelectionModel().getSelectedIndex();
-            if (index >= 0 && onBodyClick != null) onBodyClick.accept(index);
+            if (index < 0) return;
+            if (e.getClickCount() == 2) {
+                if (onBodyOpen != null) onBodyOpen.accept(index);
+            } else {
+                if (onBodySelect != null) onBodySelect.accept(index);
+            }
         });
-        Label listHint = hintLabel("Click a body to select it and open its parameter dialog.");
+        Label listHint = hintLabel("Click a body to select it; double-click to open its parameter dialog.");
 
         refreshBodies(initialConfig);
 
@@ -124,8 +136,11 @@ public final class BodiesGroupPanel extends VBox {
     /** Registers the callback fired when a preset is chosen (by any means — see the class javadoc). */
     public void setOnPresetApply(Consumer<Presets.Preset> callback) { this.onPresetApply = callback; }
 
-    /** Registers the callback fired with a body's index when its list row is clicked — "click to select/open" per spec §8. */
-    public void setOnBodyClick(IntConsumer callback) { this.onBodyClick = callback; }
+    /** Registers the callback fired with a body's index on a single click (select only, no dialog). */
+    public void setOnBodySelect(IntConsumer callback) { this.onBodySelect = callback; }
+
+    /** Registers the callback fired with a body's index on a double-click (opens its parameter dialog). */
+    public void setOnBodyOpen(IntConsumer callback) { this.onBodyOpen = callback; }
 
     private static Label sectionLabel(String text) {
         Label l = new Label(text);

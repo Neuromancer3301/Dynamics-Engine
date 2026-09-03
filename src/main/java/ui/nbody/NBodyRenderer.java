@@ -6,6 +6,12 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.List;
+
 /**
  * Draws the n-body scene and its HUD overlays — the n-body analogue of
  * {@code ui.pendulum.PendulumChainRenderer}, composed into {@link
@@ -23,11 +29,26 @@ import javafx.scene.text.Font;
  * already settled on, carried forward: real body radii are hopelessly tiny
  * next to real orbital distances (the Sun's own radius is ~0.5% of Earth's
  * orbit), so true-to-scale rendering would make every body an invisible
- * dot. {@link #radiusForBody} derives a screen-constant pixel size from
- * mass <em>relative to the most massive body currently in the scene</em>
- * (cbrt-scaled, clamped — same shape as {@code radiusForBob}'s factor),
- * completely independent of {@link Camera#getScale()}. Positions/orbits are
- * true-to-scale via the camera; body size is presentational only.
+ * dot. {@link #radiusForBody} derives a pixel size from mass <em>relative
+ * to the most massive body currently in the scene</em> (cbrt-scaled,
+ * clamped — same shape as {@code radiusForBob}'s factor). Positions/orbits
+ * are true-to-scale via the camera; body size is presentational only.
+ *
+ * <p><b>Round 1.1: that mass-based size is then capped against the nearest
+ * other body's actual screen distance</b> (see {@link #computeSafeRadii}).
+ * Without this, a purely screen-constant Sun radius comfortably exceeds
+ * Mercury's entire orbit at the scene's own default fitted view (the whole
+ * system, out to its outermost body, has to fit on screen at once, which
+ * puts the inner planets only a few pixels from the Sun) — the Sun's circle
+ * simply swallows them, at every zoom level tight enough for that pair's
+ * on-screen separation to still be smaller than the Sun's own radius. The
+ * cap recomputes each body's nearest-neighbor screen distance every frame
+ * and never lets its radius exceed a safe fraction of that, so any two
+ * bodies' circles stay visibly distinct at whatever zoom the camera is
+ * currently at, and the Sun visibly shrinks back down once the view is
+ * crowded, then grows back to its full size once zoomed in enough to give
+ * it room. This is why {@link #draw} must run {@link #computeSafeRadii}
+ * before either hit-testing or drawing can call {@link #radiusForBody}.
  *
  * <p><b>HUD numbers are scientific notation, not the pendulum's {@code
  * %.3f}/{@code %+.1f°} formats</b> — those are fine at pendulum magnitudes
@@ -46,6 +67,16 @@ final class NBodyRenderer {
     // than a bug: hit-radius forgiveness (see NBodyInteraction) is what
     // keeps a floor-sized body clickable, not a bigger floor.
     private static final double MIN_RADIUS_FACTOR = 0.18;
+
+    // A body's radius never exceeds this fraction of its nearest neighbor's
+    // CURRENT screen distance (see computeSafeRadii) — two bodies each
+    // capped at 0.45 of their mutual separation sum to 0.9 of it, leaving a
+    // visible gap between their circles rather than them merging at 1.0.
+    private static final double NEIGHBOR_RADIUS_FRACTION = 0.45;
+    // Absolute floor in pixels regardless of how crowded the neighborhood
+    // is — an isolated close pair still needs to render as two visible
+    // dots, not two mathematically-non-overlapping but invisible ones.
+    private static final double MIN_ABSOLUTE_RADIUS = 1.5;
 
     private static final Color[] BODY_COLORS_DEFAULT = {
         Color.web("#EA3F8C"),   // magenta (accent)
@@ -86,6 +117,11 @@ final class NBodyRenderer {
     private static final double HUD_TEXT_PADDING = 9;
     private static final double HUD_MIN_WIDTH = 190;
 
+    // Round 1.1: motion trails, per body, toggled independently rather than
+    // a single global mode — see ui.nbody.DisplayGroupPanel's checkbox
+    // list. Matches PendulumChainRenderer's own TRAIL_MAX exactly.
+    private static final int TRAIL_MAX = 600;
+
     private final Camera camera;
     private Color[] bodyColors = BODY_COLORS_DEFAULT;
     private boolean reducedMotion = false;
@@ -94,6 +130,16 @@ final class NBodyRenderer {
     // NBodyInteraction's hit-testing between frames without a full O(N)
     // rescan on every mouse-move event.
     private double cachedMaxMass = 1.0;
+    private double[] cachedSafeRadius = null; // index-aligned with the last-drawn state; see computeSafeRadii
+
+    // Trail state — self-healing against N changing (see ensureTrailCapacity):
+    // both arrays/lists are rebuilt from scratch (defaulting to OFF) the
+    // moment their length stops matching the live state's body count, since
+    // an Add/Delete/preset-load renumbers what index i even refers to.
+    // Editing a body's own parameters never changes N, so this preserves
+    // trailEnabled/history across that kind of edit for free.
+    private boolean[] trailEnabled = new boolean[0];
+    private final List<Deque<double[]>> trails = new ArrayList<>(); // world-space {x, y} per body
 
     // Reused scratch node for text-width measurement, same trick
     // PendulumChainRenderer uses to size a HUD box to its actual content.
@@ -109,6 +155,35 @@ final class NBodyRenderer {
 
     void setReducedMotion(boolean reducedMotion) {
         this.reducedMotion = reducedMotion;
+        if (reducedMotion) clearTrailHistory();
+    }
+
+    /** Number of bodies the trail state is currently sized for — what {@code ui.nbody.DisplayGroupPanel}'s checkbox list should show. */
+    int trailBodyCount() { return trailEnabled.length; }
+
+    /** Whether body {@code i} currently leaves a trail. */
+    boolean isTrailEnabled(int i) { return i >= 0 && i < trailEnabled.length && trailEnabled[i]; }
+
+    /** Toggles body {@code i}'s trail. Out-of-range indices are silently ignored (defensive against a stale UI reference across a structural edit). */
+    void setTrailEnabled(int i, boolean on) {
+        if (i >= 0 && i < trailEnabled.length) trailEnabled[i] = on;
+    }
+
+    /** Enables or disables every body's trail at once — the Display tab's "All"/"None" buttons. */
+    void setAllTrailsEnabled(boolean on) {
+        Arrays.fill(trailEnabled, on);
+    }
+
+    /**
+     * Erases recorded trail history without touching which bodies are
+     * enabled — called on Reset (a body jumping back to its initial
+     * position should not draw a line through where it used to be), never
+     * on an ordinary structural edit, where {@link #ensureTrailCapacity}'s
+     * own self-healing already handles the case that actually needs a
+     * reset (N changed).
+     */
+    void clearTrailHistory() {
+        for (Deque<double[]> t : trails) t.clear();
     }
 
     /**
@@ -122,6 +197,11 @@ final class NBodyRenderer {
         double originX = camera.originX(w);
         double originY = camera.originY(h);
         this.cachedMaxMass = maxMass(state);
+        this.cachedSafeRadius = computeSafeRadii(state, scale);
+
+        ensureTrailCapacity(state.getN());
+        recordTrailPoints(state);
+        drawTrails(gc, state, scale, originX, originY);
 
         drawBodies(gc, state, scale, originX, originY);
         drawSelectionHalo(gc, state, scale, originX, originY, selectedBody);
@@ -140,13 +220,99 @@ final class NBodyRenderer {
     double radiusForBody(NBodyState state, int i) {
         double relative = state.mass[i] / cachedMaxMass;
         double factor = Math.max(MIN_RADIUS_FACTOR, Math.min(1.0, Math.cbrt(relative)));
-        return MAX_BODY_RADIUS * factor;
+        double desired = MAX_BODY_RADIUS * factor;
+
+        double safe = (cachedSafeRadius != null && i < cachedSafeRadius.length) ? cachedSafeRadius[i] : desired;
+        return Math.max(MIN_ABSOLUTE_RADIUS, Math.min(desired, safe));
     }
 
     private static double maxMass(NBodyState state) {
         double max = 1.0e-300; // never zero — avoids a divide-by-zero if every mass were somehow ~0
         for (double m : state.mass) max = Math.max(max, m);
         return max;
+    }
+
+    /**
+     * For each body, {@link #NEIGHBOR_RADIUS_FRACTION} of its distance (in
+     * CURRENT screen pixels, i.e. already multiplied by {@code scale}) to
+     * the nearest other body — see this class's javadoc for why. O(N²), the
+     * same complexity {@code physics.nbody.NBodyEngine}'s own derivative
+     * already accepts at this N; negligible next to that at every N this
+     * app actually renders.
+     */
+    private static double[] computeSafeRadii(NBodyState state, double scale) {
+        int n = state.getN();
+        double[] safe = new double[n];
+        java.util.Arrays.fill(safe, Double.MAX_VALUE);
+        for (int i = 0; i < n; i++) {
+            for (int j = i + 1; j < n; j++) {
+                double dx = (state.positionX[i] - state.positionX[j]) * scale;
+                double dy = (state.positionY[i] - state.positionY[j]) * scale;
+                double cap = Math.hypot(dx, dy) * NEIGHBOR_RADIUS_FRACTION;
+                if (cap < safe[i]) safe[i] = cap;
+                if (cap < safe[j]) safe[j] = cap;
+            }
+        }
+        return safe;
+    }
+
+    /** Rebuilds trail state from scratch (all OFF, no history) the moment N stops matching — see the field javadoc for why this is safe/desired. */
+    private void ensureTrailCapacity(int n) {
+        if (trailEnabled.length == n) return;
+        trailEnabled = new boolean[n];
+        trails.clear();
+        for (int i = 0; i < n; i++) trails.add(new ArrayDeque<>());
+    }
+
+    private void recordTrailPoints(NBodyState state) {
+        if (reducedMotion) return;
+        for (int i = 0; i < state.getN(); i++) {
+            if (!trailEnabled[i]) continue;
+            Deque<double[]> t = trails.get(i);
+            t.addLast(new double[]{state.positionX[i], state.positionY[i]});
+            while (t.size() > TRAIL_MAX) t.removeFirst();
+        }
+    }
+
+    private void drawTrails(GraphicsContext gc, NBodyState state, double scale, double originX, double originY) {
+        if (reducedMotion) return;
+        for (int i = 0; i < state.getN(); i++) {
+            if (!trailEnabled[i]) continue;
+            drawOneTrail(gc, trails.get(i), bodyColors[i % bodyColors.length], scale, originX, originY);
+        }
+    }
+
+    /**
+     * Re-projects each recorded world-space point through the CURRENT
+     * camera every call, rather than trusting a screen position baked in
+     * when the point was recorded — same reasoning as {@code
+     * PendulumChainRenderer#drawOneTrail}: a pan/zoom (or a follow-COM
+     * frame) between two recordings would otherwise tear old segments away
+     * from the body instead of moving with it.
+     */
+    private void drawOneTrail(GraphicsContext gc, Deque<double[]> trail, Color color, double scale, double originX, double originY) {
+        if (trail.size() < 2) return;
+
+        int total = trail.size();
+        int idx = 0;
+        double prevX = 0, prevY = 0;
+        boolean havePrev = false;
+
+        for (double[] pt : trail) {
+            double x = originX + pt[0] * scale;
+            double y = originY - pt[1] * scale;
+            if (havePrev) {
+                double alpha = 0.05 + 0.65 * ((double) idx / total);
+                double width = 0.5 + 2.0 * ((double) idx / total);
+                gc.setStroke(color.deriveColor(0, 1, 1, alpha));
+                gc.setLineWidth(width);
+                gc.strokeLine(prevX, prevY, x, y);
+            }
+            prevX = x;
+            prevY = y;
+            havePrev = true;
+            idx++;
+        }
     }
 
     private void drawBodies(GraphicsContext gc, NBodyState state, double scale, double originX, double originY) {
