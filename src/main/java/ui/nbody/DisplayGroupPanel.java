@@ -1,5 +1,8 @@
 package ui.nbody;
 
+import theme.Theme;
+import theme.ThemeManager;
+import ui.icon.Icons;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.layout.VBox;
@@ -16,14 +19,29 @@ public final class DisplayGroupPanel extends VBox {
     public DisplayGroupPanel(NBodyCanvas canvas) {
         super(10);
 
-        ToggleButton btnFollowCom = new ToggleButton("🎯  Follow Center of Mass: Off");
+        Theme theme = ThemeManager.getInstance().getCurrent();
+        boolean initiallyOn = canvas.isFollowingCenterOfMass();
+
+        ToggleButton btnFollowCom = new ToggleButton(followLabel(initiallyOn));
         btnFollowCom.setMaxWidth(Double.MAX_VALUE);
         btnFollowCom.getStyleClass().add("sidebar-button");
-        btnFollowCom.setSelected(canvas.isFollowingCenterOfMass());
+        btnFollowCom.setSelected(initiallyOn);
+
+        Icons.IconView followIcon = Icons.create(Icons.Glyph.FOLLOW, 18,
+                initiallyOn ? Icons.activeColor(theme) : Icons.idleColor(theme));
+        btnFollowCom.setGraphic(followIcon);
+
         btnFollowCom.setOnAction(e -> {
             boolean on = btnFollowCom.isSelected();
             canvas.setFollowCenterOfMass(on);
-            btnFollowCom.setText(on ? "🎯  Follow Center of Mass: On" : "🎯  Follow Center of Mass: Off");
+            btnFollowCom.setText(followLabel(on));
+            Theme t = ThemeManager.getInstance().getCurrent();
+            followIcon.setColor(on ? Icons.activeColor(t) : Icons.idleColor(t));
+        });
+
+        ThemeManager.getInstance().addListener(() -> {
+            Theme t = ThemeManager.getInstance().getCurrent();
+            followIcon.setColor(btnFollowCom.isSelected() ? Icons.activeColor(t) : Icons.idleColor(t));
         });
 
         Label hint = new Label("Keeps the scene's center of mass centered on screen — useful once bodies "
@@ -32,5 +50,9 @@ public final class DisplayGroupPanel extends VBox {
         hint.setWrapText(true);
 
         getChildren().setAll(btnFollowCom, hint);
+    }
+
+    private static String followLabel(boolean on) {
+        return "Follow Center of Mass: " + (on ? "On" : "Off");
     }
 }

@@ -80,6 +80,22 @@ public final class BodiesGroupPanel extends VBox {
         Label listHeader = sectionLabel("Bodies");
         bodyList.setPrefHeight(360);
         bodyList.getStyleClass().add("sidebar-body-list");
+        // No ".sidebar-body-list" rule exists in theme.css (that file isn't
+        // part of this phase's edit list — see the n-body implementation
+        // spec §12) — without this inline fallback the list would render in
+        // JavaFX's default light Modena styling, jarring against the rest
+        // of this dark-themed sidebar. "-bg-surface"/"-ink"/"-line" are
+        // theme.css's own custom properties, defined once at the scene
+        // root and resolved by name through any descendant's style —
+        // inline or stylesheet-declared makes no difference to that lookup
+        // — so this blends in exactly like a real stylesheet rule would.
+        bodyList.setStyle(
+                "-fx-control-inner-background: -bg-surface;"
+              + "-fx-background-color: -bg-surface;"
+              + "-fx-background-insets: 0;"
+              + "-fx-text-fill: -ink;"
+              + "-fx-border-color: -line;"
+              + "-fx-border-width: 1;");
         bodyList.setOnMouseClicked(e -> {
             int index = bodyList.getSelectionModel().getSelectedIndex();
             if (index >= 0 && onBodyClick != null) onBodyClick.accept(index);

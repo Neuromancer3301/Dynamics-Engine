@@ -36,7 +36,8 @@ public final class Icons {
     /** Every glyph this app currently needs. See each draw method below for what it looks like. */
     public enum Glyph {
         SETTINGS, INFO, MANUAL, CHEVRON, SELECT, ADD, SNAP,
-        MOTION, CHAOS, GRAPHS, HISTORY, LINKS, DISPLAY, PENDULUM, RESERVED
+        MOTION, CHAOS, GRAPHS, HISTORY, LINKS, DISPLAY, PENDULUM, RESERVED,
+        NBODY, FOLLOW, BODIES
     }
 
     /** Creates a fixed-size, recolorable icon node. {@code size} is the glyph's logical (square) pixel size. */
@@ -112,6 +113,9 @@ public final class Icons {
                 case DISPLAY  -> drawDisplay(gc, w, h);
                 case PENDULUM -> drawPendulum(gc, w, h);
                 case RESERVED -> drawReserved(gc, w, h);
+                case NBODY    -> drawNBody(gc, w, h);
+                case FOLLOW   -> drawFollow(gc, w, h);
+                case BODIES   -> drawBodies(gc, w, h);
             }
         }
 
@@ -279,6 +283,66 @@ public final class Icons {
         private static void drawReserved(GraphicsContext gc, double w, double h) {
             double cx = w / 2, cy = h / 2, r = w * 0.32;
             gc.strokeOval(cx - r, cy - r, r * 2, r * 2);
+        }
+
+        /**
+         * A small central body with an elliptical orbit ring around it, and
+         * a smaller body riding that ring — the app's icon for the N-Body
+         * Gravity card/manual tab (see MainMenuController/ManualController),
+         * reading as the actual apparatus (a star and an orbiting body)
+         * rather than an unrelated glyph, same spirit as {@link
+         * #drawPendulum}. The ring is drawn as a squashed ellipse (an oval
+         * narrower than it is tall) rather than a circle, the standard
+         * way to suggest an orbit viewed at an angle rather than face-on.
+         */
+        private static void drawNBody(GraphicsContext gc, double w, double h) {
+            double cx = w / 2, cy = h / 2;
+            double ringW = w * 0.74, ringH = h * 0.42;
+
+            gc.strokeOval(cx - ringW / 2, cy - ringH / 2, ringW, ringH);
+
+            double centralR = w * 0.13;
+            gc.fillOval(cx - centralR, cy - centralR, centralR * 2, centralR * 2);
+
+            // The orbiting body, riding the ring at roughly its 2 o'clock position.
+            double bodyX = cx + ringW / 2 * Math.cos(Math.toRadians(-35));
+            double bodyY = cy + ringH / 2 * Math.sin(Math.toRadians(-35));
+            double bodyR = w * 0.07;
+            gc.fillOval(bodyX - bodyR, bodyY - bodyR, bodyR * 2, bodyR * 2);
+        }
+
+        /** A crosshair/target reticle — the Follow-Center-of-Mass toggle's icon: a ring with four ticks pointing in at it, reading as "locked on." */
+        private static void drawFollow(GraphicsContext gc, double w, double h) {
+            double cx = w / 2, cy = h / 2, r = w * 0.28;
+            gc.strokeOval(cx - r, cy - r, r * 2, r * 2);
+
+            double tickIn = r * 1.35, tickOut = r * 0.55;
+            gc.strokeLine(cx, cy - tickIn, cx, cy - tickOut);
+            gc.strokeLine(cx, cy + tickOut, cx, cy + tickIn);
+            gc.strokeLine(cx - tickIn, cy, cx - tickOut, cy);
+            gc.strokeLine(cx + tickOut, cy, cx + tickIn, cy);
+
+            double dotR = w * 0.045;
+            gc.fillOval(cx - dotR, cy - dotR, dotR * 2, dotR * 2);
+        }
+
+        /**
+         * A few dots of varying size, scattered rather than connected — the
+         * Bodies tab's icon. Echoes {@link #drawLinks}'s two-rings idea
+         * (a small, deliberately simple glyph for "more than one of the
+         * same kind of thing") but for an unordered <em>set</em> — varying
+         * size (standing in for varying mass) rather than a chain of
+         * identical linked rings.
+         */
+        private static void drawBodies(GraphicsContext gc, double w, double h) {
+            drawDot(gc, w * 0.30, h * 0.32, w * 0.15);
+            drawDot(gc, w * 0.72, h * 0.28, w * 0.09);
+            drawDot(gc, w * 0.62, h * 0.68, w * 0.12);
+            drawDot(gc, w * 0.24, h * 0.72, w * 0.07);
+        }
+
+        private static void drawDot(GraphicsContext gc, double cx, double cy, double r) {
+            gc.fillOval(cx - r, cy - r, r * 2, r * 2);
         }
     }
 }
