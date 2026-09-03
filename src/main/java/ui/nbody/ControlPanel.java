@@ -34,7 +34,7 @@ public final class ControlPanel extends VBox {
     private Consumer<IntegratorType> onIntegratorChange;
     private Consumer<Boolean> onPauseChange;
     private Consumer<Presets.Preset> onPresetApply;
-    private IntConsumer onBodySelect;
+    private IntConsumer onBodyInfo;
     private IntConsumer onBodyOpen;
 
     public ControlPanel() {
@@ -52,7 +52,7 @@ public final class ControlPanel extends VBox {
 
         bodiesGroup = new BodiesGroupPanel(initialConfig);
         bodiesGroup.setOnPresetApply(onPresetApply);
-        bodiesGroup.setOnBodySelect(onBodySelect);
+        bodiesGroup.setOnBodyInfo(onBodyInfo);
         bodiesGroup.setOnBodyOpen(onBodyOpen);
 
         displayGroup = new DisplayGroupPanel(canvas, initialConfig);
@@ -71,7 +71,7 @@ public final class ControlPanel extends VBox {
     public void setOnIntegratorChange(Consumer<IntegratorType> callback) { this.onIntegratorChange = callback; }
     public void setOnPauseChange(Consumer<Boolean> callback) { this.onPauseChange = callback; }
     public void setOnPresetApply(Consumer<Presets.Preset> callback) { this.onPresetApply = callback; }
-    public void setOnBodySelect(IntConsumer callback) { this.onBodySelect = callback; }
+    public void setOnBodyInfo(IntConsumer callback) { this.onBodyInfo = callback; }
     public void setOnBodyOpen(IntConsumer callback) { this.onBodyOpen = callback; }
 
     // ---- Called from controller.NBodySimulationController every render tick, or on state changes ----

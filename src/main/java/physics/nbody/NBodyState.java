@@ -46,7 +46,7 @@ public final class NBodyState {
     /** Each body's mass in kilograms — carried along so the renderer can size/label bodies without a second lookup. */
     public final double[] mass;
 
-    /** Each body's physical radius in meters — NOT the render radius (see {@code ui.nbody.NBodyRenderer}, which sizes bodies presentationally). */
+    /** Each body's physical radius in meters — round 1.2: this now IS the basis for its on-screen render radius too (see {@code ui.nbody.NBodyRenderer#radiusForBody}), true to scale through the same camera transform positions use, floored at a small minimum so it doesn't vanish at wide zoom. */
     public final double[] radius;
 
     /** Each body's display label — a user-created body defaults to "Body N". */

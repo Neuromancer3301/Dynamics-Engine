@@ -209,15 +209,14 @@ public final class NBodySimulationController implements Initializable, Navigable
         // establishesNewBaseline is true, so no separate call is needed
         // here — see that method's own javadoc.
         controlPanel.setOnPresetApply(preset -> applyStructuralEdit(preset.config(), true));
-        // Round 1.1: a single click in the list only selects — same
-        // press-pauses-and-selects rule as clicking a body on the canvas
-        // (see setSelectionListener below); it must NOT also open the
-        // dialog, or every click reads as "double-click," indistinguishable
-        // from one. Double-click is its own callback.
-        controlPanel.setOnBodySelect(index -> {
-            setPaused(true);
-            nbodyCanvas.setSelectedBody(index);
-        });
+        // Round 1.2: a single click in the list neither pauses nor selects
+        // (round 1.1 had it mirror the canvas's press-pauses-and-selects
+        // rule, but that defeats the actual point of a quick click-to-peek —
+        // you want to see a body's numbers changing while the sim keeps
+        // running, not freeze it). It only pins the "Watching: " live HUD
+        // (see NBodyCanvas#setInfoBody); double-click is still the only
+        // path that selects/pauses/opens anything, and is unchanged below.
+        controlPanel.setOnBodyInfo(nbodyCanvas::setInfoBody);
         // Pausing first matters here exactly as much as it does for the
         // canvas's own selection-then-pause rule: the parameter dialog
         // snapshots live state once and reuses it for every OTHER body's
@@ -287,6 +286,7 @@ public final class NBodySimulationController implements Initializable, Navigable
         if (establishesNewBaseline) originalConfig = newConfig;
 
         int selectedBefore = nbodyCanvas.getSelectedBody();
+        int infoBefore = nbodyCanvas.getInfoBody();
 
         currentConfig = newConfig;
         simLoop.submitRebuild(old -> new NBodyEngine(newConfig));
@@ -298,6 +298,10 @@ public final class NBodySimulationController implements Initializable, Navigable
         // The selected index is still meaningful if still in range;
         // otherwise there's nothing sensible left to point the halo/HUD at.
         nbodyCanvas.setSelectedBody(selectedBefore >= 0 && selectedBefore < newConfig.getN() ? selectedBefore : -1);
+        // Same reasoning, independently, for the round 1.2 "Watching: " pin —
+        // it has nothing to do with selectedBody, so a structural edit has
+        // to clamp/clear it separately rather than get this for free.
+        nbodyCanvas.setInfoBody(infoBefore >= 0 && infoBefore < newConfig.getN() ? infoBefore : -1);
 
         if (establishesNewBaseline) nbodyCanvas.fitToContent();
 

@@ -64,6 +64,14 @@ public final class NBodyCanvas extends SimCanvas {
     // PendulumCanvas#selectedLink.
     private int selectedBody = -1;
 
+    // Round 1.2: a body pinned from the Bodies tab's single click, shown
+    // with a live inspector HUD but deliberately NOT routed through
+    // selectedBody — it must not pause the sim, engage the selection halo,
+    // or become drag-eligible the way an actual selection does. See
+    // #setInfoBody and NBodyRenderer#draw's own javadoc on the "Watching: "
+    // HUD this drives.
+    private int infoBody = -1;
+
     // §7: a pure view concern, lives on the canvas rather than the engine —
     // toggled by the sidebar's Display tab.
     private boolean followCenterOfMass = false;
@@ -124,7 +132,7 @@ public final class NBodyCanvas extends SimCanvas {
 
     @Override
     protected void drawContent(GraphicsContext gc, double w, double h) {
-        renderer.draw(gc, lastState, w, h, interaction.hoveredBody(), selectedBody);
+        renderer.draw(gc, lastState, w, h, interaction.hoveredBody(), selectedBody, infoBody);
     }
 
     /**
@@ -197,6 +205,18 @@ public final class NBodyCanvas extends SimCanvas {
     public void setSelectedBody(int body) { this.selectedBody = body; }
 
     public int getSelectedBody() { return selectedBody; }
+
+    /**
+     * Round 1.2: pins a body to a live "Watching: " inspector HUD, drawn
+     * beside it exactly like hover, WITHOUT pausing the simulation or
+     * touching {@link #selectedBody} — its numbers keep updating frame to
+     * frame while the sim keeps running, which is the entire point (see the
+     * Bodies tab's single-click wiring in {@code
+     * controller.NBodySimulationController}). {@code -1} clears the pin.
+     */
+    public void setInfoBody(int body) { this.infoBody = body; }
+
+    public int getInfoBody() { return infoBody; }
 
     /** Swaps the per-body color palette for a colour-blind-safe one. */
     public void setColorBlindSafe(boolean colorBlindSafe) { renderer.setColorBlindSafe(colorBlindSafe); }

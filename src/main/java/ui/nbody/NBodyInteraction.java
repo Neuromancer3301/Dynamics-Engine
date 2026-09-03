@@ -48,7 +48,7 @@ final class NBodyInteraction {
     // A body is "hit" within its visible radius plus a few px of
     // forgiveness — this is what keeps a floor-sized (visually tiny) body
     // clickable regardless of its render size (see NBodyRenderer's own
-    // MIN_RADIUS_FACTOR floor).
+    // MIN_VISIBLE_RADIUS floor).
     private static final double HIT_RADIUS_PAD = 6.0;
 
     // A press-release on empty space that moved less than this many screen

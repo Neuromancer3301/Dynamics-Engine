@@ -45,7 +45,7 @@ public final class BodiesGroupPanel extends VBox {
     private final ListView<String> bodyList = new ListView<>(bodyNames);
 
     private Consumer<Presets.Preset> onPresetApply;
-    private IntConsumer onBodySelect;
+    private IntConsumer onBodyInfo;
     private IntConsumer onBodyOpen;
 
     public BodiesGroupPanel(NBodyConfig initialConfig) {
@@ -97,22 +97,25 @@ public final class BodiesGroupPanel extends VBox {
               + "-fx-text-fill: -ink;"
               + "-fx-border-color: -line;"
               + "-fx-border-width: 1;");
-        // Round 1.1: single click selects only (matches clicking a body on
-        // the canvas); double-click opens the parameter dialog. A double
-        // click still fires ITS first click as an ordinary single click
-        // first (JavaFX delivers clickCount 1 then 2 as two separate
-        // events), so onBodySelect always runs before onBodyOpen — same
-        // click-then-maybe-open shape the canvas itself uses.
+        // Round 1.1: single click only, no dialog; double-click opens it.
+        // Round 1.2: a single click no longer "selects" at all (that
+        // paused the sim, which fighting the whole point of a live
+        // readout) — it pins a live-updating info HUD instead, via
+        // onBodyInfo. A double click still fires ITS first click as an
+        // ordinary single click first (JavaFX delivers clickCount 1 then 2
+        // as two separate events), so onBodyInfo always runs before
+        // onBodyOpen — same click-then-maybe-open shape the canvas itself
+        // uses, just aimed at a different callback now.
         bodyList.setOnMouseClicked(e -> {
             int index = bodyList.getSelectionModel().getSelectedIndex();
             if (index < 0) return;
             if (e.getClickCount() == 2) {
                 if (onBodyOpen != null) onBodyOpen.accept(index);
             } else {
-                if (onBodySelect != null) onBodySelect.accept(index);
+                if (onBodyInfo != null) onBodyInfo.accept(index);
             }
         });
-        Label listHint = hintLabel("Click a body to select it; double-click to open its parameter dialog.");
+        Label listHint = hintLabel("Click a body to watch its live values; double-click to select it and open its parameter dialog.");
 
         refreshBodies(initialConfig);
 
@@ -136,8 +139,8 @@ public final class BodiesGroupPanel extends VBox {
     /** Registers the callback fired when a preset is chosen (by any means — see the class javadoc). */
     public void setOnPresetApply(Consumer<Presets.Preset> callback) { this.onPresetApply = callback; }
 
-    /** Registers the callback fired with a body's index on a single click (select only, no dialog). */
-    public void setOnBodySelect(IntConsumer callback) { this.onBodySelect = callback; }
+    /** Registers the callback fired with a body's index on a single click (round 1.2: pins a live info HUD — does not select, pause, or open anything). */
+    public void setOnBodyInfo(IntConsumer callback) { this.onBodyInfo = callback; }
 
     /** Registers the callback fired with a body's index on a double-click (opens its parameter dialog). */
     public void setOnBodyOpen(IntConsumer callback) { this.onBodyOpen = callback; }
