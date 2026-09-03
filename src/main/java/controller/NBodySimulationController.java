@@ -199,11 +199,15 @@ public final class NBodySimulationController implements Initializable, Navigable
             }
         });
         controlPanel.setOnIntegratorChange(this::setIntegratorType);
-        // Resuming always clears selection — mirrors SimulationController's
+        // Resuming clears selection — mirrors SimulationController's
         // identical rule; the Pause button and the Space shortcut are the
-        // two paths that can resume, so both enforce it.
+        // two paths that can resume, so both enforce it. Round 1.4's one
+        // carve-out: NOT while FollowMode.SELECTED_BODY has a body locked —
+        // see #setPaused's own note on why.
         controlPanel.setOnPauseChange(paused -> {
-            if (!paused) nbodyCanvas.setSelectedBody(-1);
+            if (!paused && nbodyCanvas.getFollowMode() != NBodyCanvas.FollowMode.SELECTED_BODY) {
+                nbodyCanvas.setSelectedBody(-1);
+            }
         });
         // Picking a preset is a deliberate "start fresh from here" — moves
         // the Reset baseline, same reasoning as LinkEditorPanel's preset
@@ -266,12 +270,20 @@ public final class NBodySimulationController implements Initializable, Navigable
     /**
      * The single place pause state changes from code (the Space shortcut
      * and body selection both call this) — mirrors {@code
-     * SimulationController#setPaused} exactly.
+     * SimulationController#setPaused} exactly, plus one round 1.4 carve-out:
+     * resuming does NOT clear selection while {@code
+     * NBodyCanvas.FollowMode#SELECTED_BODY} has a body locked — clearing it
+     * would break the follow the instant playback resumed, which is exactly
+     * the moment following starts actually mattering. Selecting a body
+     * still always pauses, unchanged; only resuming's side effect on
+     * selection is conditional now, and only in this one mode.
      */
     private void setPaused(boolean paused) {
         simLoop.setPaused(paused);
         controlPanel.setPausedVisual(paused);
-        if (!paused) nbodyCanvas.setSelectedBody(-1);
+        if (!paused && nbodyCanvas.getFollowMode() != NBodyCanvas.FollowMode.SELECTED_BODY) {
+            nbodyCanvas.setSelectedBody(-1);
+        }
     }
 
     /**

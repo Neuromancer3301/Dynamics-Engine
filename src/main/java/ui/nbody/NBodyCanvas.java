@@ -54,6 +54,31 @@ public final class NBodyCanvas extends SimCanvas {
         void onEmptySpaceClick(double worldX, double worldY);
     }
 
+    /**
+     * Round 1.4: what the camera's follow-point tracks, replacing the old
+     * plain on/off "follow center of mass" toggle now that there's a second
+     * thing worth following. A dropdown in the Display tab picks one; see
+     * {@link #setFollowMode}.
+     */
+    public enum FollowMode {
+        /** Camera stays exactly where the user last panned/zoomed it — the world origin, unless panned away from it. */
+        OFF,
+        /** Tracks the scene's mass-weighted average position every frame — useful once bodies have drifted far from the world origin. Does not itself change zoom. */
+        CENTER_OF_MASS,
+        /**
+         * Tracks {@link #selectedBody} every frame and, the moment a NEW
+         * body becomes the target, zooms in once to frame it at roughly
+         * {@link #FOLLOWED_BODY_TARGET_PIXEL_DIAMETER} screen pixels wide —
+         * see {@link #render}'s own javadoc for why that's a one-time
+         * snap rather than a continuous per-frame re-lock (the user's own
+         * subsequent zoom/pan must still work normally, exactly like
+         * {@link #CENTER_OF_MASS} already promises). The followed body
+         * cannot be drag-edited while this mode holds it — see {@link
+         * #isFollowLocked}.
+         */
+        SELECTED_BODY
+    }
+
     private final NBodyRenderer renderer;
     private final NBodyInteraction interaction;
 
@@ -73,8 +98,19 @@ public final class NBodyCanvas extends SimCanvas {
     private int infoBody = -1;
 
     // §7: a pure view concern, lives on the canvas rather than the engine —
-    // toggled by the sidebar's Display tab.
-    private boolean followCenterOfMass = false;
+    // picked by the sidebar's Display tab dropdown.
+    private FollowMode followMode = FollowMode.OFF;
+
+    // Round 1.4: which body SELECTED_BODY's one-time zoom-in has already
+    // been applied for, so switching modes away and back (or selecting a
+    // NEW body while already in SELECTED_BODY mode) re-triggers it rather
+    // than silently reusing a stale scale from a previous target. -1 means
+    // "not yet applied to anything" — see #render.
+    private int lastZoomedFollowBody = -1;
+
+    // How wide, in screen pixels, SELECTED_BODY's one-time zoom-in frames
+    // the followed body's true diameter — see FollowMode's own javadoc.
+    private static final double FOLLOWED_BODY_TARGET_PIXEL_DIAMETER = 15.0;
 
     // Round 1.1: the pendulum-tuned default zoom range (50x beyond the
     // fitted view) leaves the Moon fused into Earth even at maximum zoom —
@@ -96,7 +132,7 @@ public final class NBodyCanvas extends SimCanvas {
     protected double contentExtent() {
         if (lastState == null) return 1.0;
         double originX = 0, originY = 0;
-        if (followCenterOfMass) {
+        if (followMode == FollowMode.CENTER_OF_MASS) {
             double[] com = centerOfMass(lastState);
             originX = com[0];
             originY = com[1];
@@ -149,33 +185,81 @@ public final class NBodyCanvas extends SimCanvas {
      */
     public void render(NBodyState state) {
         this.lastState = state;
-        // §7: recomputed fresh every frame — cheap (O(N)) at this scale,
-        // and the camera itself is what actually keeps the followed point
-        // centered; this canvas doesn't need to remember the COM between
-        // frames.
+        // §7 / round 1.4: recomputed fresh every frame — cheap (O(N)) at
+        // this scale, and the camera itself is what actually keeps the
+        // followed point centered; this canvas doesn't need to remember
+        // the COM (or the followed body's position) between frames.
         if (lastState != null) {
-            if (followCenterOfMass) {
-                double[] com = centerOfMass(lastState);
-                camera.setFollowPoint(com[0], com[1]);
-            } else {
-                camera.clearFollowPoint();
+            if (followMode != FollowMode.SELECTED_BODY) {
+                // Not currently in SELECTED_BODY mode — the next time it
+                // IS entered (a dropdown switch, or the same mode with a
+                // newly-clicked different body), lastZoomedFollowBody must
+                // read as "nothing zoomed for yet" so the one-time zoom-in
+                // below actually re-fires instead of silently no-op'ing
+                // against a stale index from a previous follow session.
+                lastZoomedFollowBody = -1;
+            }
+            switch (followMode) {
+                case OFF -> camera.clearFollowPoint();
+                case CENTER_OF_MASS -> {
+                    double[] com = centerOfMass(lastState);
+                    camera.setFollowPoint(com[0], com[1]);
+                }
+                case SELECTED_BODY -> {
+                    if (selectedBody >= 0 && selectedBody < lastState.getN()) {
+                        camera.setFollowPoint(lastState.positionX[selectedBody], lastState.positionY[selectedBody]);
+                        // One-time zoom-in, not a per-frame re-lock: doing
+                        // this every frame would fight the user's own
+                        // subsequent scroll-to-zoom the instant they tried
+                        // it, unlike CENTER_OF_MASS's explicit promise that
+                        // "pan/zoom still work normally while following."
+                        if (selectedBody != lastZoomedFollowBody) {
+                            double radius = Math.max(lastState.radius[selectedBody], 1.0e-6); // guards a pathological zero/negative radius, not a realistic case
+                            camera.setScale(FOLLOWED_BODY_TARGET_PIXEL_DIAMETER / (2.0 * radius));
+                            lastZoomedFollowBody = selectedBody;
+                        }
+                    } else {
+                        // Nothing valid selected (yet) — nothing to lock
+                        // onto; leave the camera exactly where it sits,
+                        // same as OFF, until a selection actually arrives.
+                        camera.clearFollowPoint();
+                    }
+                }
             }
         }
         renderFrame();
     }
 
     /**
-     * Toggles whether the camera follows the scene's center of mass rather
-     * than the fixed world origin (see {@code ui.simcore.Camera}'s
-     * follow-point support). Does not itself re-fit the camera — toggling
-     * on/off starts following from wherever the camera currently sits, so
-     * the transition is smooth rather than a snap (n-body implementation
-     * spec §7).
+     * Sets what the camera follows — see {@link FollowMode}. Does not
+     * itself re-fit the camera; switching modes starts following from
+     * wherever the camera currently sits (or, for {@link
+     * FollowMode#SELECTED_BODY}, snaps to the new target's own framing),
+     * so the transition never resets pan/zoom the user didn't ask to lose
+     * (n-body implementation spec §7, extended round 1.4).
      */
-    public void setFollowCenterOfMass(boolean on) { this.followCenterOfMass = on; }
+    public void setFollowMode(FollowMode mode) { this.followMode = mode; }
 
-    /** Whether the camera is currently following the center of mass. */
-    public boolean isFollowingCenterOfMass() { return followCenterOfMass; }
+    /** What the camera currently follows. */
+    public FollowMode getFollowMode() { return followMode; }
+
+    /**
+     * Round 1.4: whether {@code bodyIndex} is the body {@link
+     * FollowMode#SELECTED_BODY} currently has locked the camera onto — if
+     * so, {@link NBodyInteraction} refuses to start a new drag on it. A
+     * live, camera-following, physics-driven body being simultaneously
+     * grabbable as a drag handle is confusing at best (which position wins,
+     * the physics or the pointer?) and directly undercuts the reason its
+     * selection was allowed to survive a resume in the first place — see
+     * {@code controller.NBodySimulationController#setPaused}'s own note on
+     * that carve-out. Double-click (open the parameter dialog) and
+     * right-click (delete) are untouched — both are deliberate, explicit
+     * actions with their own established safety behavior, not the
+     * "accidentally dragged it" case this specifically guards against.
+     */
+    public boolean isFollowLocked(int bodyIndex) {
+        return followMode == FollowMode.SELECTED_BODY && bodyIndex == selectedBody && bodyIndex >= 0;
+    }
 
     /** Registers the listener notified of grab/drag/release. {@code null} disables interaction. */
     public void setDragListener(DragListener listener) { interaction.setDragListener(listener); }

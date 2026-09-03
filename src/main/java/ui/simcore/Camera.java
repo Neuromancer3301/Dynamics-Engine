@@ -156,6 +156,25 @@ public final class Camera {
     public double getScale() { return baseScale * zoom; }
 
     /**
+     * Directly sets the total scale ({@link #getScale}) to as close to
+     * {@code targetScale} as the configured zoom range ({@link
+     * #setZoomRange}) allows, by solving for the {@link #zoom} factor that
+     * produces it against the current {@link #baseScale} — used by a follow
+     * mode that needs an exact render size (round: n-body "follow selected
+     * body," framing it at a fixed on-screen pixel width) rather than
+     * {@link #zoomBy}'s multiplicative, cursor-anchored gesture. No screen
+     * anchor to preserve here — the caller is expected to also be calling
+     * {@link #setFollowPoint} the same frame, which is what keeps the
+     * target centered regardless of scale. {@link #baseScale} itself is
+     * untouched, so a later {@link #fitToContent}/{@link
+     * #rescaleForViewport} behaves exactly as it always has.
+     */
+    public void setScale(double targetScale) {
+        if (baseScale <= 0) return; // nothing sane to solve zoom against
+        this.zoom = Math.max(minZoom, Math.min(maxZoom, targetScale / baseScale));
+    }
+
+    /**
      * Locks the camera onto a world-space point, which from the next
      * {@link #originX}/{@link #originY} call onward takes the place
      * world-origin (0,0) used to occupy — everything else (ordinary

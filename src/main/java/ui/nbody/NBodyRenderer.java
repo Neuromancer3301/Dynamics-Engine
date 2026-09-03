@@ -70,7 +70,7 @@ final class NBodyRenderer {
     // flat and the same for every body (round 1.3 — see this class's
     // javadoc for why it's no longer neighbor-capped), not a mass-derived
     // presentational size. See radiusForBody.
-    private static final double MIN_VISIBLE_RADIUS = 15.0;
+    private static final double MIN_VISIBLE_RADIUS = 2.0;
 
     private static final Color[] BODY_COLORS_DEFAULT = {
         Color.web("#EA3F8C"),   // magenta (accent)

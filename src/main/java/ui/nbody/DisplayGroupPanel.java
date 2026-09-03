@@ -1,23 +1,23 @@
 package ui.nbody;
 
 import physics.nbody.NBodyConfig;
-import theme.Theme;
-import theme.ThemeManager;
-import ui.icon.Icons;
+import javafx.collections.FXCollections;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
-import javafx.scene.control.ToggleButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 /**
- * The sidebar's "Display" group: the Follow-COM toggle, and (round 1.1)
- * per-body motion trails — both pure view concerns with zero physics
- * effect, the same reasoning {@code ui.pendulum.DisplayGroupPanel} already
- * applies to its own trail mode/velocity tint. See the n-body
+ * The sidebar's "Display" group: the camera-follow dropdown (round 1.1's
+ * Follow-COM toggle, extended round 1.4 with a Selected Body option), and
+ * (round 1.1) per-body motion trails — all pure view concerns with zero
+ * physics effect, the same reasoning {@code ui.pendulum.DisplayGroupPanel}
+ * already applies to its own trail mode/velocity tint. See the n-body
  * implementation spec §8.
  *
  * <p><b>Why checkboxes, not a single OFF/SELECTED/ALL cycle</b> (the
@@ -40,33 +40,24 @@ public final class DisplayGroupPanel extends VBox {
         super(10);
         this.canvas = canvas;
 
-        Theme theme = ThemeManager.getInstance().getCurrent();
-        boolean initiallyOn = canvas.isFollowingCenterOfMass();
+        // Round 1.4: was a plain on/off "Follow Center of Mass" toggle;
+        // now a dropdown, since there's a second thing worth following —
+        // see NBodyCanvas.FollowMode's own javadoc for what each option
+        // actually does.
+        Label followHeader = sectionLabel("Camera Follow");
+        ComboBox<NBodyCanvas.FollowMode> followBox =
+                new ComboBox<>(FXCollections.observableArrayList(NBodyCanvas.FollowMode.values()));
+        followBox.setMaxWidth(Double.MAX_VALUE);
+        followBox.setValue(canvas.getFollowMode());
+        followBox.setCellFactory(lv -> followModeCell());
+        followBox.setButtonCell(followModeCell());
+        followBox.setOnAction(e -> canvas.setFollowMode(followBox.getValue()));
 
-        ToggleButton btnFollowCom = new ToggleButton(followLabel(initiallyOn));
-        btnFollowCom.setMaxWidth(Double.MAX_VALUE);
-        btnFollowCom.getStyleClass().add("sidebar-button");
-        btnFollowCom.setSelected(initiallyOn);
-
-        Icons.IconView followIcon = Icons.create(Icons.Glyph.FOLLOW, 18,
-                initiallyOn ? Icons.activeColor(theme) : Icons.idleColor(theme));
-        btnFollowCom.setGraphic(followIcon);
-
-        btnFollowCom.setOnAction(e -> {
-            boolean on = btnFollowCom.isSelected();
-            canvas.setFollowCenterOfMass(on);
-            btnFollowCom.setText(followLabel(on));
-            Theme t = ThemeManager.getInstance().getCurrent();
-            followIcon.setColor(on ? Icons.activeColor(t) : Icons.idleColor(t));
-        });
-
-        ThemeManager.getInstance().addListener(() -> {
-            Theme t = ThemeManager.getInstance().getCurrent();
-            followIcon.setColor(btnFollowCom.isSelected() ? Icons.activeColor(t) : Icons.idleColor(t));
-        });
-
-        Label followHint = hintLabel("Keeps the scene's center of mass centered on screen — useful once bodies "
-                + "have drifted far from the world origin. Pan/zoom still work normally while following.");
+        Label followHint = hintLabel("Off leaves the camera exactly where you left it. Center of Mass keeps the "
+                + "scene's mass-weighted average centered — useful once bodies have drifted far from the world "
+                + "origin; pan/zoom still work normally while following. Selected Body follows whichever body is "
+                + "currently selected and zooms in to frame it — that body can't be dragged while followed this "
+                + "way; click empty space, or switch this back to Off/Center of Mass, to release it.");
 
         Label trailHeader = sectionLabel("Motion Trails");
 
@@ -97,7 +88,7 @@ public final class DisplayGroupPanel extends VBox {
         rebuildTrailCheckboxes(initialConfig);
 
         getChildren().setAll(
-                btnFollowCom, followHint,
+                followHeader, followBox, followHint,
                 sep(), trailHeader, trailButtonsRow, trailScroll, trailHint);
     }
 
@@ -129,8 +120,22 @@ public final class DisplayGroupPanel extends VBox {
         }
     }
 
-    private static String followLabel(boolean on) {
-        return "Follow Center of Mass: " + (on ? "On" : "Off");
+    /** A fresh cell for the follow-mode dropdown — used for both the popup list and the closed box's own display cell, matching {@code BodiesGroupPanel}'s preset-picker pattern. */
+    private static ListCell<NBodyCanvas.FollowMode> followModeCell() {
+        return new ListCell<>() {
+            @Override protected void updateItem(NBodyCanvas.FollowMode item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : followModeLabel(item));
+            }
+        };
+    }
+
+    private static String followModeLabel(NBodyCanvas.FollowMode mode) {
+        return switch (mode) {
+            case OFF -> "Off";
+            case CENTER_OF_MASS -> "Center of Mass";
+            case SELECTED_BODY -> "Selected Body";
+        };
     }
 
     private static Label sectionLabel(String text) {
