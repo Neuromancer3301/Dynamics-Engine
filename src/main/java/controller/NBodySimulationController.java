@@ -179,10 +179,13 @@ public final class NBodySimulationController implements Initializable, Navigable
         // spec §6.2's first simplification versus the pendulum.
         nbodyCanvas.setRightClickListener(dialogFactory::showDeleteBodyDialog);
 
-        // A clean click on empty space only does something while the Add
-        // tool is active — spec §6.2's second simplification. While Edit is
-        // active this fires too, but there is nothing to do with it.
+        // A clean click on empty space only opens the Add dialog while the
+        // Add tool is active — spec §6.2's second simplification. Round 1.3:
+        // regardless of tool, it also dismisses the "Watching: " info pin
+        // (see NBodyCanvas#setInfoBody) — clicking away from every body is
+        // the other half of "click a body to watch it, click away to stop."
         nbodyCanvas.setEmptySpaceClickListener((worldX, worldY) -> {
+            nbodyCanvas.setInfoBody(-1);
             if (actionRailBuilder.getActiveTool() == NBodyActionRailBuilder.Tool.ADD) {
                 dialogFactory.showAddBodyDialog(worldX, worldY);
             }
@@ -216,7 +219,14 @@ public final class NBodySimulationController implements Initializable, Navigable
         // running, not freeze it). It only pins the "Watching: " live HUD
         // (see NBodyCanvas#setInfoBody); double-click is still the only
         // path that selects/pauses/opens anything, and is unchanged below.
-        controlPanel.setOnBodyInfo(nbodyCanvas::setInfoBody);
+        // Round 1.3: the pin otherwise never went away on its own, so
+        // clicking the ALREADY-watched body again toggles it back off
+        // (clicking empty space, wired above, is the other way to clear
+        // it) — the toggle lives here rather than in BodiesGroupPanel since
+        // "currently watched" is state NBodyCanvas already owns; the panel
+        // itself stays a dumb "here's the index that was clicked" source.
+        controlPanel.setOnBodyInfo(index ->
+                nbodyCanvas.setInfoBody(nbodyCanvas.getInfoBody() == index ? -1 : index));
         // Pausing first matters here exactly as much as it does for the
         // canvas's own selection-then-pause rule: the parameter dialog
         // snapshots live state once and reuses it for every OTHER body's

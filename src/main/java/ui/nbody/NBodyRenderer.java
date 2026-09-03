@@ -35,19 +35,27 @@ import java.util.List;
  * only ever inflates a body's size <em>up</em> from that true value, and
  * only when it would otherwise be too small to see at all.
  *
- * <p><b>The one departure from true scale: a visibility floor</b> (see
+ * <p><b>The one departure from true scale: a flat visibility floor</b> (see
  * {@link #MIN_VISIBLE_RADIUS}). Real body radii are hopelessly tiny next to
  * real orbital distances (the Sun's own radius is ~0.5% of Earth's orbit),
  * so at the scene's default fitted view — the whole system has to fit on
  * screen at once — every body's true radius rounds down to a fraction of a
  * pixel. A body below the floor is drawn at the floor instead of vanishing.
- * That floor is itself capped against the nearest other body's actual
- * screen distance (see {@link #computeSafeRadii}), so inflating two
- * genuinely tiny, genuinely close bodies (Earth and the Moon at a wide
- * zoom, say) up to the floor never manufactures an overlap that wouldn't
- * exist at their real sizes — the floor shrinks to fit instead. This is why
- * {@link #draw} must run {@link #computeSafeRadii} before either
- * hit-testing or drawing can call {@link #radiusForBody}.
+ *
+ * <p><b>Round 1.3: that floor is flat, not neighbor-capped</b> — round 1.2
+ * shrank it against the nearest other body's screen distance, on the theory
+ * that inflating two close, below-floor bodies up to the same fixed size
+ * could make them visually merge. In practice this made otherwise-similar
+ * bodies render inconsistently for a reason that has nothing to do with
+ * either body's own size: Venus (no close neighbor) rendered at the full
+ * floor while Earth (the Moon a few px away) rendered visibly smaller,
+ * despite the two being close to the same real size. Every body's floor is
+ * now the same fixed {@link #MIN_VISIBLE_RADIUS} regardless of who's
+ * nearby; a genuinely close pair (Earth/Moon at a wide zoom) can once again
+ * visually overlap at the floor size, the same tradeoff round 1.1 first
+ * fixed and round 1.2 kept — accepted here as the more honest answer:
+ * zooming in (not a neighbor-dependent shrink) is how you resolve a close
+ * pair, exactly like it already is for true-scale sizes above the floor.
  *
  * <p><b>HUD numbers are scientific notation, not the pendulum's {@code
  * %.3f}/{@code %+.1f°} formats</b> — those are fine at pendulum magnitudes
@@ -59,19 +67,10 @@ final class NBodyRenderer {
 
     // The floor a body's TRUE render radius (state.radius[i] * scale) gets
     // inflated up to when it would otherwise round below this many pixels —
-    // "a couple of pixels," not a mass-derived presentational size. See
-    // radiusForBody. Hit-radius forgiveness (see NBodyInteraction) is what
-    // keeps a floor-sized body clickable, not a bigger floor.
-    private static final double MIN_VISIBLE_RADIUS = 2.0;
-
-    // The floor above is never inflated past this fraction of the body's
-    // nearest neighbor's CURRENT screen distance (see computeSafeRadii) —
-    // two bodies each capped at 0.45 of their mutual separation sum to 0.9
-    // of it, leaving a visible gap between their circles rather than them
-    // merging at 1.0. A body's TRUE radius is never capped this way — real
-    // bodies don't overlap, so their true sizes never need to be shrunk to
-    // avoid it.
-    private static final double NEIGHBOR_RADIUS_FRACTION = 0.45;
+    // flat and the same for every body (round 1.3 — see this class's
+    // javadoc for why it's no longer neighbor-capped), not a mass-derived
+    // presentational size. See radiusForBody.
+    private static final double MIN_VISIBLE_RADIUS = 15.0;
 
     private static final Color[] BODY_COLORS_DEFAULT = {
         Color.web("#EA3F8C"),   // magenta (accent)
@@ -120,11 +119,6 @@ final class NBodyRenderer {
     private final Camera camera;
     private Color[] bodyColors = BODY_COLORS_DEFAULT;
     private boolean reducedMotion = false;
-
-    // Cached once per draw() (see radiusForBody's javadoc), reused by
-    // NBodyInteraction's hit-testing between frames without a full O(N²)
-    // rescan on every mouse-move event.
-    private double[] cachedSafeRadius = null; // index-aligned with the last-drawn state; see computeSafeRadii
 
     // Trail state — self-healing against N changing (see ensureTrailCapacity):
     // both arrays/lists are rebuilt from scratch (defaulting to OFF) the
@@ -196,7 +190,6 @@ final class NBodyRenderer {
         double scale = camera.getScale();
         double originX = camera.originX(w);
         double originY = camera.originY(h);
-        this.cachedSafeRadius = computeSafeRadii(state, scale);
 
         ensureTrailCapacity(state.getN());
         recordTrailPoints(state);
@@ -213,40 +206,13 @@ final class NBodyRenderer {
     /**
      * This body's screen-space render radius — true to {@code
      * state.radius[i]} through the same camera scale positions use (see
-     * this class's javadoc), inflated up to {@link #MIN_VISIBLE_RADIUS}
-     * only when it would otherwise be too small to see, and even then never
-     * past a safe fraction of its nearest neighbor's screen distance. Also
-     * used by {@link NBodyInteraction} for hit-testing.
+     * this class's javadoc), floored at a flat {@link #MIN_VISIBLE_RADIUS}
+     * when it would otherwise be too small to see. Also used by {@link
+     * NBodyInteraction} for hit-testing.
      */
     double radiusForBody(NBodyState state, int i) {
         double trueRadius = state.radius[i] * camera.getScale();
-        double safeCap = (cachedSafeRadius != null && i < cachedSafeRadius.length) ? cachedSafeRadius[i] : Double.MAX_VALUE;
-        double floor = Math.min(MIN_VISIBLE_RADIUS, safeCap);
-        return Math.max(trueRadius, floor);
-    }
-
-    /**
-     * For each body, {@link #NEIGHBOR_RADIUS_FRACTION} of its distance (in
-     * CURRENT screen pixels, i.e. already multiplied by {@code scale}) to
-     * the nearest other body — see this class's javadoc for why. O(N²), the
-     * same complexity {@code physics.nbody.NBodyEngine}'s own derivative
-     * already accepts at this N; negligible next to that at every N this
-     * app actually renders.
-     */
-    private static double[] computeSafeRadii(NBodyState state, double scale) {
-        int n = state.getN();
-        double[] safe = new double[n];
-        java.util.Arrays.fill(safe, Double.MAX_VALUE);
-        for (int i = 0; i < n; i++) {
-            for (int j = i + 1; j < n; j++) {
-                double dx = (state.positionX[i] - state.positionX[j]) * scale;
-                double dy = (state.positionY[i] - state.positionY[j]) * scale;
-                double cap = Math.hypot(dx, dy) * NEIGHBOR_RADIUS_FRACTION;
-                if (cap < safe[i]) safe[i] = cap;
-                if (cap < safe[j]) safe[j] = cap;
-            }
-        }
-        return safe;
+        return Math.max(trueRadius, MIN_VISIBLE_RADIUS);
     }
 
     /** Rebuilds trail state from scratch (all OFF, no history) the moment N stops matching — see the field javadoc for why this is safe/desired. */

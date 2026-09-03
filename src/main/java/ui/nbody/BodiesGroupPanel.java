@@ -115,7 +115,7 @@ public final class BodiesGroupPanel extends VBox {
                 if (onBodyInfo != null) onBodyInfo.accept(index);
             }
         });
-        Label listHint = hintLabel("Click a body to watch its live values; double-click to select it and open its parameter dialog.");
+        Label listHint = hintLabel("Click a body to watch its live values, click it again (or click empty space on the canvas) to stop; double-click to select it and open its parameter dialog.");
 
         refreshBodies(initialConfig);
 
