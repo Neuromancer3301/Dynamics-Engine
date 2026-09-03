@@ -159,6 +159,17 @@ public final class SimulationLoop<E extends SimulationEngine<S>, S> implements R
      *                simulated-time units (seconds); must be positive
      */
     public SimulationLoop(E engine, StateBuffer<S> buffer, double initialSpeed, double fixedDt) {
+        // Unlike the old compile-time FIXED_DT constant (which could never
+        // be an invalid value by construction), this is now a caller-
+        // supplied argument — and it's used as a raw divisor in run() (the
+        // steps-per-frame computation). A non-positive or non-finite value
+        // would silently produce Infinity/NaN steps or flip the stepping
+        // direction, hanging the physics thread with no exception or log
+        // message. Validating here matches this codebase's own established
+        // discipline (see e.g. PendulumConfig/NBodyConfig's constructors).
+        if (!Double.isFinite(fixedDt) || fixedDt <= 0)
+            throw new IllegalArgumentException("fixedDt must be a positive, finite number");
+
         this.engine  = engine;
         this.buffer  = buffer;
         this.speed   = initialSpeed;

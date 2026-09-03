@@ -209,7 +209,15 @@ public final class NBodySimulationController implements Initializable, Navigable
         // establishesNewBaseline is true, so no separate call is needed
         // here — see that method's own javadoc.
         controlPanel.setOnPresetApply(preset -> applyStructuralEdit(preset.config(), true));
+        // Pausing first matters here exactly as much as it does for the
+        // canvas's own selection-then-pause rule (see setSelectionListener
+        // below): the parameter dialog snapshots live state once and reuses
+        // it for every OTHER body's position/velocity on Apply — leaving
+        // the sim running while this (potentially long-open) modal sits
+        // there would let it silently discard everyone else's intervening
+        // motion the moment Apply is pressed.
         controlPanel.setOnBodyClick(index -> {
+            setPaused(true);
             nbodyCanvas.setSelectedBody(index);
             dialogFactory.showBodyParameterDialog(index);
         });
@@ -284,12 +292,22 @@ public final class NBodySimulationController implements Initializable, Navigable
         controlPanel.updateBodyCount(newConfig.getN());
         controlPanel.refreshBodies(newConfig);
 
-        // Baseline drift values describe a scene that may no longer exist
-        // in this shape — re-capture from the next published frame.
-        initialEnergy = null;
-        initialMomentumX = null;
-        initialMomentumY = null;
-        initialAngularMomentum = null;
+        // Baseline drift values, captured directly from newConfig's own
+        // initial state rather than left for buildRenderTimer to pick up
+        // opportunistically from stateBuffer. That would race the physics
+        // thread: submitRebuild above is only *queued*, drained at the top
+        // of that thread's own next loop iteration — the very next
+        // rendered frame can still read stateBuffer.read() as the OLD
+        // (pre-rebuild) engine's last-published state, silently adopting
+        // it as the "new" baseline even though it describes a scene with a
+        // different N/masses entirely. Constructing a throwaway engine here
+        // is cheap (array copies only, no stepping) and makes the baseline
+        // depend on nothing but newConfig itself.
+        NBodyState freshBaseline = new NBodyEngine(newConfig).getState();
+        initialEnergy = freshBaseline.totalEnergy;
+        initialMomentumX = freshBaseline.totalMomentumX;
+        initialMomentumY = freshBaseline.totalMomentumY;
+        initialAngularMomentum = freshBaseline.totalAngularMomentum;
 
         titleLabel.setText("N-Body Gravity Simulator   ·   N = " + newConfig.getN()
                 + "   ·   RK4 / Newtonian Gravity");
@@ -310,6 +328,9 @@ public final class NBodySimulationController implements Initializable, Navigable
 
     @Override
     public NBodyState liveState() { return stateBuffer.read(); }
+
+    @Override
+    public double liveGravitationalConstant() { return simLoop.currentEngine().getGravitationalConstant(); }
 
     @Override
     public void applyStructuralEdit(NBodyConfig edited) { applyStructuralEdit(edited, false); }

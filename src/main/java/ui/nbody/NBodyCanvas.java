@@ -97,22 +97,35 @@ public final class NBodyCanvas extends SimCanvas {
 
     @Override
     protected void drawContent(GraphicsContext gc, double w, double h) {
-        // §7: recomputed fresh every frame, before the renderer projects
-        // anything world->screen — cheap (O(N)) at this scale, and the
-        // camera itself is what actually keeps the followed point centered;
-        // this canvas doesn't need to remember the COM between frames.
-        if (followCenterOfMass) {
-            double[] com = centerOfMass(lastState);
-            camera.setFollowPoint(com[0], com[1]);
-        } else {
-            camera.clearFollowPoint();
-        }
         renderer.draw(gc, lastState, w, h, interaction.hoveredBody(), selectedBody);
     }
 
-    /** Full render call — invoked every frame from the controller's AnimationTimer. */
+    /**
+     * Full render call — invoked every frame from the controller's
+     * AnimationTimer. The follow-point is updated HERE, before {@link
+     * #renderFrame()} runs, not inside {@link #drawContent} — {@code
+     * SimCanvas#renderFrame} draws the background (including the
+     * world-origin axes, which read {@code camera.originX}/{@code originY}
+     * directly) before ever calling {@code drawContent}, so setting the
+     * follow-point only once {@code drawContent} runs would draw those
+     * axes one frame stale relative to where the bodies themselves get
+     * projected. Updating it up front means every draw this frame —
+     * background included — sees the same, current follow-point.
+     */
     public void render(NBodyState state) {
         this.lastState = state;
+        // §7: recomputed fresh every frame — cheap (O(N)) at this scale,
+        // and the camera itself is what actually keeps the followed point
+        // centered; this canvas doesn't need to remember the COM between
+        // frames.
+        if (lastState != null) {
+            if (followCenterOfMass) {
+                double[] com = centerOfMass(lastState);
+                camera.setFollowPoint(com[0], com[1]);
+            } else {
+                camera.clearFollowPoint();
+            }
+        }
         renderFrame();
     }
 

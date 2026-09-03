@@ -49,6 +49,22 @@ public final class NBodyDialogFactory {
          */
         NBodyState liveState();
 
+        /**
+         * The gravitational constant actually in effect on the live engine
+         * right now — not {@code currentConfig().getGravitationalConstant()},
+         * which never changes after construction: the Motion tab's G slider
+         * mutates the engine directly ({@code
+         * simLoop.submit(e -> e.setGravitationalConstant(...))}), the same
+         * way the pendulum's gravity slider does, so {@code currentConfig}'s
+         * own copy goes stale the moment that slider moves. Every dialog
+         * here that rebuilds a config must carry this value forward, or a
+         * live G edit would be silently discarded on the next Add/Edit/
+         * Delete — same reasoning as {@link #liveState()} for position/
+         * velocity, just for the one runtime-mutable scalar instead of a
+         * per-body array.
+         */
+        double liveGravitationalConstant();
+
         /** Commits a validated config through the same structural-edit path every other edit uses. Never moves the Reset baseline unless the caller says so. */
         void applyStructuralEdit(NBodyConfig edited);
 
@@ -78,12 +94,24 @@ public final class NBodyDialogFactory {
     public void showBodyParameterDialog(int body) {
         NBodyConfig currentConfig = host.currentConfig();
         if (currentConfig == null || body < 0 || body >= currentConfig.getN()) return;
-        NBodyState live = host.liveState();
 
-        double liveX  = (live != null) ? live.positionX[body] : currentConfig.getPositionX(body);
-        double liveY  = (live != null) ? live.positionY[body] : currentConfig.getPositionY(body);
-        double liveVx = (live != null) ? live.velocityX[body] : currentConfig.getVelocityX(body);
-        double liveVy = (live != null) ? live.velocityY[body] : currentConfig.getVelocityY(body);
+        // The config update (this thread) and the physics thread's next
+        // state-buffer publish are asynchronous — right after an Add/Delete,
+        // currentConfig can already reflect the new N for a frame or more
+        // before a same-sized state is published. Trust `live` only when
+        // its own body count actually matches; otherwise fall back to
+        // currentConfig, which is always internally consistent with `body`
+        // (already bounds-checked above). See liveOrConfigState's javadoc.
+        double[] prefill = { currentConfig.getPositionX(body), currentConfig.getPositionY(body),
+                              currentConfig.getVelocityX(body), currentConfig.getVelocityY(body) };
+        NBodyState liveAtOpen = liveOrNullIfMismatched(host.liveState(), currentConfig);
+        if (liveAtOpen != null) {
+            prefill[0] = liveAtOpen.positionX[body];
+            prefill[1] = liveAtOpen.positionY[body];
+            prefill[2] = liveAtOpen.velocityX[body];
+            prefill[3] = liveAtOpen.velocityY[body];
+        }
+        double liveX = prefill[0], liveY = prefill[1], liveVx = prefill[2], liveVy = prefill[3];
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Edit " + currentConfig.getName(body));
@@ -131,13 +159,19 @@ public final class NBodyDialogFactory {
             // state, not currentConfig's original — otherwise applying this
             // one body's edit would snap every other body back to where the
             // scene started (same reasoning as PendulumDialogFactory's own
-            // host.liveAngles() call).
+            // host.liveAngles() call). Re-fetched HERE, at commit time, not
+            // reused from whatever was captured when the dialog opened —
+            // the sim may have kept running for the entire time this modal
+            // sat open, so an upfront snapshot would otherwise discard
+            // every intervening frame of everyone else's motion the moment
+            // Apply is pressed.
+            NBodyState freshLive = liveOrNullIfMismatched(host.liveState(), currentConfig);
             double[] mass_   = currentConfig.getMasses();
             double[] radius_ = currentConfig.getRadii();
-            double[] px = liveArrayOrConfig(live, currentConfig, 'x');
-            double[] py = liveArrayOrConfig(live, currentConfig, 'y');
-            double[] vxs = liveArrayOrConfig(live, currentConfig, 'X');
-            double[] vys = liveArrayOrConfig(live, currentConfig, 'Y');
+            double[] px = liveArrayOrConfig(freshLive, currentConfig, 'x');
+            double[] py = liveArrayOrConfig(freshLive, currentConfig, 'y');
+            double[] vxs = liveArrayOrConfig(freshLive, currentConfig, 'X');
+            double[] vys = liveArrayOrConfig(freshLive, currentConfig, 'Y');
 
             mass_[body] = mass; radius_[body] = radius;
             px[body] = x; py[body] = y; vxs[body] = vx; vys[body] = vy;
@@ -145,7 +179,7 @@ public final class NBodyDialogFactory {
             try {
                 NBodyConfig edited = new NBodyConfig(currentConfig.getN(), mass_, radius_, px, py, vxs, vys,
                         currentConfig.getNames(), currentConfig.getSofteningLength(),
-                        currentConfig.getGravitationalConstant(), currentConfig.getSpeedMultiplier());
+                        host.liveGravitationalConstant(), currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
             } catch (IllegalArgumentException ex) {
                 showDialogError(error, ex.getMessage());
@@ -209,7 +243,10 @@ public final class NBodyDialogFactory {
             if (x == null || y == null)   { showDialogError(error, "Position must be finite numbers."); evt.consume(); return; }
             if (vx == null || vy == null) { showDialogError(error, "Velocity must be finite numbers."); evt.consume(); return; }
 
-            NBodyState live = host.liveState();
+            // Fetched fresh, right here at commit time (not before the
+            // dialog opened) and size-guarded against currentConfig — see
+            // showBodyParameterDialog's identical reasoning.
+            NBodyState live = liveOrNullIfMismatched(host.liveState(), currentConfig);
             int n = currentConfig.getN();
             int newN = n + 1;
 
@@ -225,7 +262,7 @@ public final class NBodyDialogFactory {
 
             try {
                 NBodyConfig edited = new NBodyConfig(newN, mass_, radius_, px, py, vxs, vys, names,
-                        currentConfig.getSofteningLength(), currentConfig.getGravitationalConstant(),
+                        currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
                 host.selectBody(n); // the newly-added body, overriding applyStructuralEdit's default
@@ -264,7 +301,7 @@ public final class NBodyDialogFactory {
         themeDialog(confirm.getDialogPane());
 
         confirm.showAndWait().filter(bt -> bt == ButtonType.OK).ifPresent(bt -> {
-            NBodyState live = host.liveState();
+            NBodyState live = liveOrNullIfMismatched(host.liveState(), currentConfig);
             int newN = n - 1;
             double[] mass = removeFrom(liveArrayOrConfigAll(live, currentConfig, "mass"), body);
             double[] radius = removeFrom(liveArrayOrConfigAll(live, currentConfig, "radius"), body);
@@ -276,7 +313,7 @@ public final class NBodyDialogFactory {
 
             try {
                 NBodyConfig edited = new NBodyConfig(newN, mass, radius, px, py, vxs, vys, names,
-                        currentConfig.getSofteningLength(), currentConfig.getGravitationalConstant(),
+                        currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
                 host.selectBody(Math.min(body, newN - 1));
@@ -291,6 +328,23 @@ public final class NBodyDialogFactory {
     // -------------------------------------------------------------------------
     // Shared helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Returns {@code live} unchanged if it's safe to index against {@code
+     * cfg} (same body count), else {@code null} — the physics thread's
+     * state-buffer publish and this controller's {@code currentConfig}
+     * update are asynchronous, so immediately after an Add/Delete there is
+     * a real (if narrow) window where one already reflects the new N and
+     * the other doesn't. Every {@code live.<array>[i]} read in this class
+     * goes through this gate first: {@link #liveArrayOrConfig}/{@link
+     * #liveArrayOrConfigAll} already fall back to {@code cfg} whenever
+     * {@code live == null}, so filtering a size-mismatched snapshot down to
+     * {@code null} here is what keeps every call site safe without
+     * duplicating the bounds check at each one.
+     */
+    private static NBodyState liveOrNullIfMismatched(NBodyState live, NBodyConfig cfg) {
+        return (live != null && live.getN() == cfg.getN()) ? live : null;
+    }
 
     /** Live position/velocity for every body if available, else the config's own — used when only ONE body's own field is about to be overwritten by the caller. */
     private static double[] liveArrayOrConfig(NBodyState live, NBodyConfig cfg, char which) {
