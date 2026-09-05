@@ -25,13 +25,15 @@ import java.util.ResourceBundle;
  * <ul>
  *   <li><b>Simulations</b> — the hero content, one {@code NavCard} each,
  *       numbered ("01", "02", ...) because they really are a growing,
- *       ordered suite. {@link #cardSlotTwoController} and {@link
- *       #cardSlotThreeController} are reserved-but-unbuilt slots today
- *       ({@link NavCardController#configureComingSoon}) — replacing one is:
- *       swap that call for a real {@link NavCardController#configure} with
- *       its own {@link Route}, same as {@link #cardPendulumController}
- *       already is. No layout change needed either way; the grid was built
- *       for three from the start.</li>
+ *       ordered suite. {@link #cardSlotTwoController} now points at the
+ *       n-body gravity screen ({@link Route#NBODY}) — the first slot filled
+ *       in exactly the way this class's own javadoc always described:
+ *       swap {@link NavCardController#configureComingSoon} for a real
+ *       {@link NavCardController#configure} with its own {@link Route},
+ *       same as {@link #cardPendulumController} already was. {@link
+ *       #cardSlotThreeController} remains a reserved-but-unbuilt slot
+ *       today, waiting for the same treatment. No layout change was needed
+ *       either way; the grid was built for three from the start.</li>
  *   <li><b>Settings/About</b> — utility, not simulations, so they're
  *       icon-first {@link UtilityIconButton}s (built here in Java, not
  *       FXML — see {@link #initialize}) rather than competing with the hero
@@ -64,9 +66,12 @@ public final class MainMenuController implements Initializable, Navigable {
                         + "butterfly-effect ensembles, and bifurcation/Poincaré analysis.",
                 () -> router.navigate(Route.SIMULATION));
 
-        cardSlotTwoController.configureComingSoon(
-                "02", Icons.Glyph.RESERVED, "Coming Soon",
-                "A second dynamical system — reserved for what's next.");
+        cardSlotTwoController.configure(
+                "02", Icons.Glyph.NBODY, "N-Body Gravity",
+                "Load the solar system, drag a planet, and watch real gravity do the rest.",
+                "Demonstrates: softened Newtonian gravity, energy/momentum/angular-momentum "
+                        + "conservation, and orbital mechanics across 34 real bodies.",
+                () -> router.navigate(Route.NBODY));
 
         cardSlotThreeController.configureComingSoon(
                 "03", Icons.Glyph.RESERVED, "Coming Soon",

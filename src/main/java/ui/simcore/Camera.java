@@ -25,12 +25,29 @@ package ui.simcore;
  */
 public final class Camera {
 
-    private static final double MIN_ZOOM = 0.025, MAX_ZOOM = 50;
+    // Defaults tuned for the pendulum's own dynamic range (arm lengths from
+    // a few centimeters to a few meters) — see #setZoomRange for why a
+    // scene spanning a much wider range of scales (e.g. an n-body system's
+    // lunar-orbit-to-outer-planet spread) needs to override these.
+    private static final double DEFAULT_MIN_ZOOM = 0.025, DEFAULT_MAX_ZOOM = 50;
+
+    private double minZoom = DEFAULT_MIN_ZOOM, maxZoom = DEFAULT_MAX_ZOOM;
 
     private double baseScale = 1.0;
     private double originXFraction = 0.5, originYFraction = 0.46; // fraction of W/H — resize-proof
     private double zoom = 1.0;
     private double panX = 0.0, panY = 0.0;
+
+    // ---- Follow-point (round: n-body camera follow, §7) ----
+    // A world-space point that takes the place world-origin (0,0) used to
+    // occupy, so a scene with no fixed pivot (e.g. an n-body simulation's
+    // center of mass) can still be kept centered. Generic and
+    // simulation-agnostic on purpose — nothing below assumes what the
+    // followed point actually is; a caller (e.g. ui.nbody.NBodyCanvas)
+    // recomputes it fresh every frame and calls setFollowPoint/
+    // clearFollowPoint accordingly.
+    private double followWorldX = 0.0, followWorldY = 0.0;
+    private boolean following = false;
 
     /** Recomputes the base scale so {@code contentExtent} world-units fit the given viewport, and resets zoom/pan to identity. */
     public void fitToContent(double width, double height, double contentExtent) {
@@ -38,6 +55,27 @@ public final class Camera {
         this.zoom = 1.0;
         this.panX = 0.0;
         this.panY = 0.0;
+    }
+
+    /**
+     * Overrides how far {@link #zoomBy} can multiply the fitted base scale
+     * in either direction — the pendulum-tuned defaults ({@link
+     * #DEFAULT_MIN_ZOOM}/{@link #DEFAULT_MAX_ZOOM}) assume a scene whose
+     * smallest interesting separation is within roughly two orders of
+     * magnitude of its largest, which is not remotely true for an n-body
+     * solar system: the default view fits the whole system out to its
+     * outermost body (billions of km), while the Moon sits a few hundred
+     * thousand km from Earth — a ratio in the tens of thousands, not tens.
+     * 50x of additional zoom leaves the Moon and Earth fused into a single
+     * blob no matter how far in you go. Called once, at construction, by a
+     * canvas that knows its own scene's actual scale spread (see {@code
+     * ui.nbody.NBodyCanvas}); the pendulum canvas never calls this, so its
+     * behavior is completely unchanged.
+     */
+    public void setZoomRange(double minZoom, double maxZoom) {
+        this.minZoom = minZoom;
+        this.maxZoom = maxZoom;
+        this.zoom = Math.max(minZoom, Math.min(maxZoom, zoom));
     }
 
     /** Translates the origin by a screen-space delta — used for drag-to-pan. */
@@ -90,10 +128,10 @@ public final class Camera {
     }
 
     /**
-     * Multiplies the zoom factor, clamped to [{@link #MIN_ZOOM}, {@link
-     * #MAX_ZOOM}], while keeping the world point currently under {@code
-     * (anchorScreenX, anchorScreenY)} fixed on screen — standard
-     * zoom-to-cursor behaviour.
+     * Multiplies the zoom factor, clamped to [{@link #minZoom}, {@link
+     * #maxZoom}] (see {@link #setZoomRange}), while keeping the world point
+     * currently under {@code (anchorScreenX, anchorScreenY)} fixed on
+     * screen — standard zoom-to-cursor behaviour.
      *
      * <p>Needs {@code width}/{@code height}: the screen origin is {@code
      * originXFraction*width + panX} (see {@link #originX}), not {@code
@@ -106,7 +144,7 @@ public final class Camera {
      */
     public void zoomBy(double factor, double anchorScreenX, double anchorScreenY, double width, double height) {
         double oldScale = getScale();
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+        zoom = Math.max(minZoom, Math.min(maxZoom, zoom * factor));
         double newScale = getScale();
         double k = newScale / oldScale;
         double originXFrac = originXFraction * width;
@@ -117,8 +155,64 @@ public final class Camera {
 
     public double getScale() { return baseScale * zoom; }
 
-    public double originX(double width)  { return originXFraction * width  + panX; }
-    public double originY(double height) { return originYFraction * height + panY; }
+    /**
+     * Directly sets the total scale ({@link #getScale}) to as close to
+     * {@code targetScale} as the configured zoom range ({@link
+     * #setZoomRange}) allows, by solving for the {@link #zoom} factor that
+     * produces it against the current {@link #baseScale} — used by a follow
+     * mode that needs an exact render size (round: n-body "follow selected
+     * body," framing it at a fixed on-screen pixel width) rather than
+     * {@link #zoomBy}'s multiplicative, cursor-anchored gesture. No screen
+     * anchor to preserve here — the caller is expected to also be calling
+     * {@link #setFollowPoint} the same frame, which is what keeps the
+     * target centered regardless of scale. {@link #baseScale} itself is
+     * untouched, so a later {@link #fitToContent}/{@link
+     * #rescaleForViewport} behaves exactly as it always has.
+     */
+    public void setScale(double targetScale) {
+        if (baseScale <= 0) return; // nothing sane to solve zoom against
+        this.zoom = Math.max(minZoom, Math.min(maxZoom, targetScale / baseScale));
+    }
+
+    /**
+     * Locks the camera onto a world-space point, which from the next
+     * {@link #originX}/{@link #originY} call onward takes the place
+     * world-origin (0,0) used to occupy — everything else (ordinary
+     * pan/zoom, {@link #zoomBy}'s anchor math, {@link #rescaleForViewport})
+     * layers on top of it exactly as before, since both of those only ever
+     * read {@link #getScale} and the pan/origin-fraction fields, never the
+     * world origin directly.
+     *
+     * <p>Deliberately does not itself call {@link #fitToContent} — starting
+     * to follow from wherever the camera currently sits keeps the
+     * transition smooth rather than a snap; a caller wanting a fresh framed
+     * view still calls {@link #fitToContent} itself (a preset load, Reset —
+     * genuine "start over" moments, unchanged from before this existed).
+     */
+    public void setFollowPoint(double worldX, double worldY) {
+        this.followWorldX = worldX;
+        this.followWorldY = worldY;
+        this.following = true;
+    }
+
+    /** Stops following — {@link #originX}/{@link #originY} revert to centering on the true world origin (0,0), from wherever the camera currently sits. */
+    public void clearFollowPoint() { this.following = false; }
+
+    /** Whether the camera is currently locked onto a followed point rather than the world origin. */
+    public boolean isFollowing() { return following; }
+
+    /**
+     * Screen-space X of the world origin — or, while {@link #isFollowing()},
+     * of whatever point was last passed to {@link #setFollowPoint}. The
+     * follow offset is subtracted here, at read time, rather than folded
+     * into {@code panX} — recomputed fresh from the current {@link
+     * #getScale} on every call, so it stays correct across a zoom or resize
+     * without needing any of those code paths to know a follow is active.
+     */
+    public double originX(double width)  { return originXFraction * width  + panX - (following ? followWorldX * getScale() : 0); }
+
+    /** Screen-space Y of the world origin (or the followed point) — see {@link #originX}'s javadoc; the {@code +} here (versus {@code originX}'s {@code -}) matches {@link #worldToScreenY}'s own sign convention. */
+    public double originY(double height) { return originYFraction * height + panY + (following ? followWorldY * getScale() : 0); }
 
     public double worldToScreenX(double worldX, double width)  { return originX(width) + worldX * getScale(); }
     public double worldToScreenY(double worldY, double height) { return originY(height) - worldY * getScale(); }

@@ -46,8 +46,10 @@ import java.util.ResourceBundle;
  * what it is, and restyling one kind of block is a one-line change.
  *
  * <p>Everything here documents behaviour that actually exists. Where a
- * feature is deliberately absent — the two reserved simulation slots — the
- * manual says so plainly rather than describing something aspirational.
+ * feature is deliberately absent — the one remaining reserved simulation
+ * slot, or a not-yet-built piece of a real one (e.g. n-body scenario
+ * save/load) — the manual says so plainly rather than describing something
+ * aspirational.
  */
 public final class ManualController implements Initializable, Navigable {
 
@@ -64,7 +66,7 @@ public final class ManualController implements Initializable, Navigable {
      */
     private enum Tab {
         PENDULUM("01", "N-Pendulum Chain", true),
-        SLOT_TWO("02", "Coming Soon",     false),
+        SLOT_TWO("02", "N-Body Gravity",  true),
         SLOT_THREE("03", "Coming Soon",   false);
 
         final String number;
@@ -454,36 +456,245 @@ public final class ManualController implements Initializable, Navigable {
     }
 
     // -------------------------------------------------------------------------
-    // Tab 02 — a reserved slot. Explains the slot rather than inventing a
-    // simulation to describe.
+    // Tab 02 — the N-Body Gravity simulation. Parts One to Eight, the same
+    // structure tab 01 uses — see this class's own javadoc for why that
+    // structure (not a copy of tab 01's content) is the promise being kept.
     // -------------------------------------------------------------------------
 
     private static List<Node> slotTwoManual() {
         return List.of(
-            lede("A second dynamical system — reserved for what's next. There is nothing to use "
-               + "here yet, and this page says what that means rather than describing something "
-               + "that does not exist."),
+            lede("Real gravity, no shortcuts: any number of bodies, each pulling on every other "
+               + "one, starting from a roughly-real model of our own solar system."),
 
-            heading("What you will see on the menu"),
-            text("Card 02 sits in the middle of the three. It is drawn with a dashed border and "
-               + "dimmed text, and it is genuinely inert: clicking does nothing, hovering does "
-               + "not light it up, and pressing Tab skips straight past it to card 03."),
-            callout("The dashed border means \"an empty shelf\", not \"a broken button\". "
-                  + "Nothing is wrong with your copy of the program."),
+            // ---------------------------------------------------------------
+            part("PART ONE", "What is this program?"),
 
-            heading("Is anything hidden behind it?"),
-            text("No. There is no secret simulation, no key combination, and no setting that "
-               + "unlocks it. The program today contains exactly one simulation — the "
-               + "N-Pendulum Chain, under tab 01."),
+            heading("Gravity, done honestly"),
+            text("Drop two masses near each other and they pull on one another — every mass "
+               + "attracts every other mass, always. A planet orbiting a star is just this rule "
+               + "playing out for a very long time. This program computes that pull directly, "
+               + "between every pair of bodies, at every instant."),
+            text("Load the default scene and you get the Sun, the eight planets, their major "
+               + "moons, a few dwarf planets and asteroids, and Halley's Comet — 34 bodies in "
+               + "total, none of them scripted to move in a particular way. Every orbit you see "
+               + "is the actual arithmetic, not an animation of one."),
 
-            heading("Why the slot exists at all"),
-            text("The main menu was designed as a suite of simulations from the beginning, not "
-               + "as a single screen that would later be rearranged. Laying out three cards now "
-               + "means a second simulation can take this slot without the menu shifting, "
-               + "resizing, or needing to be redesigned around it."),
-            note("The same reasoning applies to this manual. Tab 02 exists now so that the "
-               + "simulation which lands here inherits a place in the documentation instead of "
-               + "being appended to the end of somebody else's guide.")
+            heading("How this differs from the pendulum"),
+            text("The pendulum chain (tab 01) is chaotic because its links fight a fixed pivot. "
+               + "Nothing here is pinned to anything — this is a free-floating system, and that "
+               + "changes what's worth watching for: not sensitivity to tiny differences, but "
+               + "whether energy, momentum, and angular momentum genuinely stay constant with "
+               + "nothing external enforcing it."),
+
+            heading("What you can do with it"),
+            bullets("Watch it — the Moon circles Earth, not the Sun; Neptune's moon Triton "
+                  + "orbits backwards",
+                    "Touch it — drag any body, add a new one, delete one, edit its numbers exactly",
+                    "Verify it — three conserved quantities, tracked live, that this program has "
+                  + "nothing to hide behind"),
+
+            // ---------------------------------------------------------------
+            part("PART TWO", "Getting here"),
+
+            text("From the main menu, click card 02, N-Body Gravity. The screen opens with the "
+               + "home solar system already loaded and running."),
+            note("If you haven't launched the program itself yet, see tab 01's Part Two — the "
+               + "launch command and the two harmless terminal warnings are the same for every "
+               + "screen in this app."),
+
+            // ---------------------------------------------------------------
+            part("PART THREE", "Understanding the screen"),
+
+            text("The layout matches tab 01's on purpose — the same shell, a different scene."),
+            row("← Menu", "Goes back. Also stops the simulation — time freezes until you return."),
+            row("Tool rail (left)", "Two buttons: Edit and Add. No third \"Snap\" tool — free-form "
+                                   + "body placement has no grid to snap to."),
+            row("The canvas", "The solar system itself, true-to-scale in position (zoom out far "
+                             + "enough and you'll see just how empty space really is)."),
+            row("[‹] button", "Top-right of the canvas. Opens the control sidebar."),
+            callout("Body SIZE on screen is not to scale — the Sun's real radius is under 1% of "
+                  + "Earth's orbit, so true-to-scale bodies would be invisible dots. Distances "
+                  + "and orbits are real; circle sizes are presentational."),
+
+            // ---------------------------------------------------------------
+            part("PART FOUR", "Your first two minutes"),
+
+            steps("Just watch for 30 seconds at the default speed — the inner planets are "
+                + "moving, just slowly at 1x.",
+                  "Open the sidebar ([‹]) and go to the Motion tab. Drag the Sim Speed slider "
+                + "right. Watch Mercury and Venus lap the screen.",
+                  "Hover over any body without clicking — a panel shows its exact mass, radius, "
+                + "position, and velocity.",
+                  "Click a body once. It pauses the simulation and highlights that body — the "
+                + "same press-to-pause rule tab 01 uses.",
+                  "Press Space to resume. Click and drag a body instead — it follows your "
+                + "pointer, then flies off with whatever velocity you released it at.",
+                  "Press R. The current setup restarts from its own beginning."),
+            expect("You now know how to change speed, inspect a body, and grab one. Everything "
+                 + "else builds on this."),
+
+            // ---------------------------------------------------------------
+            part("PART FIVE", "Every control"),
+
+            heading("The tool rail, on the left edge"),
+            row("Edit", "Normal mode, on by default. Click a body to select it, drag to move it."),
+            row("Add", "Click empty space to place a new body there, pre-filled with that position."),
+
+            heading("Mouse actions on the canvas"),
+            row("Hover a body", "Shows its live details (mass, radius, position, velocity)"),
+            row("Click a body", "Selects it and pauses the simulation"),
+            row("Drag a body", "Moves it; releasing mid-motion gives it that velocity"),
+            row("Double-click a body", "Opens a dialog to type exact mass/radius/position/velocity"),
+            row("Right-click a body", "Deletes it, after a confirmation (refused if only one remains)"),
+            row("Click empty space (Add tool)", "Opens the Add dialog at that position"),
+
+            heading("Keyboard"),
+            row("Space", "Pause and resume"),
+            row("R", "Restart the current setup from its own beginning"),
+            row("→", "Advance one tiny step; works while paused"),
+
+            heading("The sidebar's three tabs"),
+            row("Motion", "G, simulation speed, pause/step/reset, integrator picker"),
+            row("Bodies", "Preset picker and a compact, clickable list of every body"),
+            row("Display", "Follow Center of Mass — appearance only, no effect on the physics"),
+
+            heading("Reading Live Status"),
+            text("This block stays visible above the tabs, whichever tab you are on."),
+            row("N", "How many bodies are currently in the scene."),
+            row("t", "Simulated time elapsed, in seconds — not real-world seconds; see Sim Speed."),
+            row("E", "Total energy in the system."),
+            row("E Drift", "Energy conservation error, as a percentage of the starting value. "
+                          + "Green is good, red is bad — identical in spirit to tab 01's Drift."),
+            row("p Drift / L Drift", "Momentum and angular-momentum conservation error. Neither "
+                                    + "has a pendulum equivalent — a pinned pivot constantly "
+                                    + "exerts force and torque, which breaks both. Nothing pins "
+                                    + "this scene, so both are genuinely, checkably conserved."),
+
+            heading("The G and speed sliders"),
+            text("G's slider runs from zero to twice the real gravitational constant, so the "
+               + "real value sits in the middle with room to push gravity stronger or weaker in "
+               + "either direction."),
+            text("The speed slider is a LOG scale, not a straight line — the numbers involved "
+               + "make a straight slider useless. Mercury orbits the Sun in about 88 days; "
+               + "Neptune takes about 165 years. Watching Earth complete one real year in "
+               + "roughly 20 seconds needs a speed multiplier past a million. A log scale gives "
+               + "usable control across that entire range instead of cramming everything "
+               + "meaningful into the slider's first hair's-width."),
+
+            // ---------------------------------------------------------------
+            part("PART SIX", "The experiments"),
+
+            experiment("EXPERIMENT 1", "Is the simulation trustworthy?"),
+            text("The same question tab 01 asks first, for the same reason: before believing "
+               + "anything else, check the arithmetic itself is sound."),
+            steps("Press R to reset.",
+                  "Open the sidebar and watch E Drift in Live Status.",
+                  "Turn the speed up a fair way and leave it running for a minute."),
+            expect("E Drift stays small and green, even at high speed."),
+            means("RK4 is conserving energy the way it should. This is the number to cite if "
+                + "anyone asks whether the physics here is real."),
+
+            experiment("EXPERIMENT 2", "Conservation, three ways"),
+            text("This is the experiment tab 01 cannot run. A pendulum's pivot is an external "
+               + "anchor, constantly pushing and twisting to stay fixed — that quietly breaks "
+               + "momentum and angular-momentum conservation for it. Nothing here is anchored."),
+            steps("Reset, then watch p Drift and L Drift alongside E Drift for a minute or two."),
+            expect("All three stay small. p Drift in particular stays near zero — the default "
+                 + "scene is built with zero net momentum on purpose."),
+            means("Nothing is propping this system up from outside. Every gram of momentum and "
+                + "every bit of spin it started with is still there, because nothing exists to "
+                + "take it away."),
+
+            experiment("EXPERIMENT 3", "Moons follow planets, not the Sun"),
+            steps("Bodies tab → click \"Moon\" in the list. Its parameter dialog opens; note its "
+                + "position and velocity, then Cancel.",
+                  "Watch the canvas (zoom into Earth if needed, scroll wheel to zoom). Follow "
+                + "the Moon for one full loop."),
+            expect("The Moon traces a small circle around Earth while Earth itself is doing a "
+                 + "much larger one around the Sun — a circle riding on a circle."),
+            means("There is no explicit \"Moon orbits Earth\" rule anywhere in this program. It "
+                + "falls out entirely from Earth simply being far more massive than the Moon and "
+                + "far closer to it than the Sun is."),
+
+            experiment("EXPERIMENT 4", "Triton runs backwards"),
+            steps("Zoom out to Neptune. Watch its moon Triton for one full orbit.",
+                  "Compare the direction against any other moon in the system — Titan around "
+                + "Saturn is an easy one to hold in view at the same zoom level."),
+            expect("Every other moon in the default scene orbits the same way its planet orbits "
+                 + "the Sun. Triton alone goes the opposite direction."),
+            means("This isn't a bug or a random choice — Triton really does orbit retrograde, "
+                + "one of the pieces of evidence that it's a captured object rather than one "
+                + "that formed alongside Neptune."),
+
+            experiment("EXPERIMENT 5", "Follow the center of mass"),
+            steps("Display tab → turn on Follow Center of Mass.",
+                  "Let it run a while, then drag a heavy body (try Jupiter) hard, or delete one."),
+            expect("The view recenters smoothly on wherever the system's balance point actually "
+                 + "is, rather than the fixed point bodies started around."),
+            means("The Sun itself doesn't sit perfectly still — massive planets, Jupiter above "
+                + "all, tug it into a small wobble around the system's true center of mass. This "
+                + "toggle keeps that point on screen instead of the arbitrary spot the scene "
+                + "happened to be built around."),
+
+            experiment("EXPERIMENT 6", "Build your own small system"),
+            steps("Add tool → click empty space to place a body. Give it a large mass.",
+                  "Add two or three lighter bodies nearby with some sideways velocity.",
+                  "Switch back to Edit and watch what happens — some may orbit, some may escape."),
+            expect("Anything from a stable little orbit to a body flung off-screen entirely, "
+                 + "depending on the numbers you typed."),
+            means("Getting a genuinely stable orbit by typing numbers by hand is harder than it "
+                + "looks — it's the same trial-and-error every orbital mechanics student goes "
+                + "through, here made immediate instead of theoretical."),
+
+            experiment("EXPERIMENT 7", "Comparing calculation methods"),
+            text("Same three choices tab 01 offers, applied to orbital rather than pendulum "
+               + "motion."),
+            steps("Motion tab → switch Integrator from RK4 to Symplectic Euler, then Velocity "
+                + "Verlet, watching E Drift after each switch."),
+            expect("RK4 keeps drift lowest. The other two are visibly rougher, but keep running "
+                 + "without the bodies flying apart."),
+            means("Switching integrators mid-run must never freeze half the bodies in place — if "
+                + "you ever see bodies stop moving the instant you switch, that's the exact bug "
+                + "this program's own test suite was written to catch."),
+
+            // ---------------------------------------------------------------
+            part("PART SEVEN", "Scenarios"),
+
+            heading("One preset today"),
+            text("Bodies tab → the dropdown at the top. \"Home Solar System\" is the only entry "
+               + "for now — Sun, eight planets, their major moons, Ceres, Vesta, Pluto and "
+               + "Charon, and Halley's Comet, 34 bodies in total, all built from approximate "
+               + "real-world figures."),
+            note("Additional presets (other real star systems) and saving/loading your own "
+               + "scenes to a file are both planned but not built yet — this tab will grow the "
+               + "same way tab 01's Links tab did."),
+
+            heading("Positions are approximate, on purpose"),
+            text("Every orbit starts from a circular approximation, not a mission-planning-grade "
+               + "ephemeris — good enough to look and behave right, not good enough to point a "
+               + "telescope with. Halley's Comet in particular has a real orbit far too "
+               + "stretched-out for a circular approximation to resemble; it's included anyway, "
+               + "flagged here as a known simplification rather than a mistake."),
+
+            // ---------------------------------------------------------------
+            part("PART EIGHT", "If something looks wrong"),
+
+            row("Almost nothing on screen", "Normal. The sidebar starts closed. Click [‹]."),
+            row("Everything looks frozen", "You're likely at 1x speed. Motion tab → drag Sim "
+                                         + "Speed right — the outer planets barely move even at "
+                                         + "high speed; that's realistic, not broken."),
+            row("A body vanished", "It may have been flung out of view by a close encounter, or "
+                                 + "deleted. Check the Bodies tab's list — anything still in the "
+                                 + "scene is listed there regardless of where it's drifted to."),
+            row("Warnings in the terminal", "Normal — they come from the graphics library. Only "
+                                          + "Exception matters."),
+            row("A red banner appears", "The simulation has become numerically unstable — try "
+                                      + "Reset, a smaller speed, or switching back to RK4."),
+            row("\"Can't delete the only remaining body\"", "Expected — a zero-body scene has "
+                                                           + "nothing left to simulate or select."),
+            row("Accessibility settings do nothing", "Reduced motion and the colour-blind "
+                                                   + "palette apply the next time you open this "
+                                                   + "screen. Go to the menu and back.")
         );
     }
 

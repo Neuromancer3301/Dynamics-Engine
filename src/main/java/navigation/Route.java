@@ -10,6 +10,7 @@ package navigation;
 public enum Route {
     MAIN_MENU ("/fxml/MainMenu.fxml",   "Home"),
     SIMULATION("/fxml/Simulation.fxml", "Simulation"),
+    NBODY     ("/fxml/NBody.fxml",      "N-Body Gravity"),
     MANUAL    ("/fxml/Manual.fxml",     "Manual"),
     SETTINGS  ("/fxml/Settings.fxml",   "Settings"),
     ABOUT     ("/fxml/About.fxml",      "About");

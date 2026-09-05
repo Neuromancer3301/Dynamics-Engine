@@ -31,7 +31,11 @@ public abstract class SimCanvas extends Canvas {
     // Candidate reference lengths for the scale bar, in the same world units
     // a simulation's own content uses. "Nice" values, map-legend style, so
     // the bar reads as a round number rather than something like "0.73 m".
-    private static final double[] SCALE_BAR_NICE_LENGTHS =
+    // Tuned for the pendulum's own scale (rod lengths of centimeters to a
+    // few meters) — see #scaleBarNiceLengths for why a scene spanning a much
+    // wider range (an n-body system's meters-to-billions-of-km spread)
+    // needs to override this rather than share it.
+    private static final double[] DEFAULT_SCALE_BAR_NICE_LENGTHS =
             {0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500};
     private static final double SCALE_BAR_TARGET_PX = 70;
 
@@ -208,18 +212,41 @@ public abstract class SimCanvas extends Canvas {
         gc.setFill(SCALE_BAR_TEXT);
         gc.setFont(FONT_SCALE_BAR);
         gc.setTextAlign(TextAlignment.CENTER);
-        String label = (referenceLength == Math.floor(referenceLength))
-                ? String.format("%d m", (int) referenceLength)
-                : String.format("%s m", referenceLength);
-        gc.fillText(label, barX + barPx / 2.0, barY - 8);
+        gc.fillText(formatScaleBarLabel(referenceLength), barX + barPx / 2.0, barY - 8);
         gc.setTextAlign(TextAlignment.LEFT); // restore default for every other fillText
     }
 
+    /**
+     * Candidate reference lengths the scale bar picks from, in the same
+     * world units a simulation's own content uses — see {@link
+     * #DEFAULT_SCALE_BAR_NICE_LENGTHS}'s javadoc. Overridden by a subclass
+     * whose content spans a very different scale (e.g. {@code
+     * ui.nbody.NBodyCanvas}); the pendulum canvas never overrides this, so
+     * its behavior is unchanged.
+     */
+    protected double[] scaleBarNiceLengths() {
+        return DEFAULT_SCALE_BAR_NICE_LENGTHS;
+    }
+
+    /**
+     * Formats a chosen reference length for display under the bar. Default
+     * is plain meters, fine at pendulum magnitudes; a subclass whose nice
+     * lengths run into the billions overrides this too (see {@link
+     * #scaleBarNiceLengths}) rather than showing an unreadable run of
+     * zeroes.
+     */
+    protected String formatScaleBarLabel(double referenceLength) {
+        return (referenceLength == Math.floor(referenceLength))
+                ? String.format("%d m", (long) referenceLength)
+                : String.format("%s m", referenceLength);
+    }
+
     /** Picks the nice reference length whose pixel length lands closest to {@link #SCALE_BAR_TARGET_PX}. */
-    private static double pickScaleBarLength(double scale) {
-        double best = SCALE_BAR_NICE_LENGTHS[0];
+    private double pickScaleBarLength(double scale) {
+        double[] niceLengths = scaleBarNiceLengths();
+        double best = niceLengths[0];
         double bestDiff = Double.MAX_VALUE;
-        for (double candidate : SCALE_BAR_NICE_LENGTHS) {
+        for (double candidate : niceLengths) {
             double diff = Math.abs(candidate * scale - SCALE_BAR_TARGET_PX);
             if (diff < bestDiff) {
                 bestDiff = diff;
