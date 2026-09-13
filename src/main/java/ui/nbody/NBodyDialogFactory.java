@@ -116,6 +116,7 @@ public final class NBodyDialogFactory {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Edit " + currentConfig.getName(body));
+        dialog.getDialogPane().setMinWidth(480);
         themeDialog(dialog.getDialogPane());
 
         ButtonType applyButtonType = new ButtonType("Apply", ButtonBar.ButtonData.OK_DONE);
@@ -235,6 +236,7 @@ public final class NBodyDialogFactory {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Add Body");
+        dialog.getDialogPane().setMinWidth(480);
         themeDialog(dialog.getDialogPane());
 
         ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);

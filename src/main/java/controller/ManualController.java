@@ -670,18 +670,23 @@ public final class ManualController implements Initializable, Navigable {
                   + "Proxima Centauri, and habitable-zone planet Proxima b.",
                     "Clear All — empties the universe (N = 0) so you can construct custom stellar systems from scratch."),
 
+            heading("Dynamic Space-Fabric & Spacetime Curvature"),
+            text("Deep space features an infinite coordinate fabric behaving like CAD, Blender, and game engines: "
+               + "as you pan and zoom, grid cells stretch continuously and break into smaller 1-2-5 subdivisions. "
+               + "Every celestial body (stars, planets, moons, and black holes) dynamically warps the fabric around it, "
+               + "with zoom-coupled potential revealing prominent local spacetime wells whether viewing Jupiter or the Sun."),
+
             heading("True Colors & Adaptive Level of Detail"),
-            text("Deep space features a deterministic backdrop starfield with parallax drift and a "
-               + "spacetime curvature mesh warped by mass. Celestial bodies adaptively render in two levels of detail:"),
+            text("Celestial bodies adaptively render in two levels of detail:"),
             bullets("LOD 0 (D < 10 px) — rendered with a 2.0 px floor and photometric glow halo.",
                     "LOD 1: Fusion Stars (M ≥ 0.08 M☉) — brilliant white/yellow discs with expansive coronal flare halos.",
                     "LOD 1: Black Holes (rs = 2GM/c² ≥ r) — pitch-black event horizon core surrounded by a pulsating photon ring and chromatic lensing halo.",
                     "LOD 1: Planets & Moons — rotating spherical billboards with surface bands and dynamic longitude meridians rotating in lockstep with their sidereal period, shaded with 3D limb darkening."),
 
-            heading("Logarithmic controls & relativistic classification"),
-            text("In the Edit and Add dialogs, mass and radius are governed by dual-coupled logarithmic sliders "
-               + "and scientific notation fields. Real-time chips compute the Schwarzschild radius (rs) and classify "
-               + "each body as Normal, Star, or Black Hole."),
+            heading("Multi-Mode Scale Sliders & Relativistic Classification"),
+            text("In the Edit and Add dialogs, mass and radius feature configurable scale modes: Log Scale (log₁₀ response), "
+               + "Normal Scale (linear response), and Dual Sliders (one slider for the mantissa constant and another for the power of 10). "
+               + "Live chips calculate the Schwarzschild radius (rs) and classify each body as Normal, Star, or Black Hole."),
 
             // ---------------------------------------------------------------
             part("PART EIGHT", "If something looks wrong"),

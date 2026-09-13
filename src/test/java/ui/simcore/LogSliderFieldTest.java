@@ -91,4 +91,57 @@ class LogSliderFieldTest {
         field.setValue(3.5e21);
         assertTrue(listenerFired.get(), "DoubleProperty listener should fire on value change");
     }
+
+    @Test
+    void testScaleModesAndSwitching() {
+        LogSliderField field = new LogSliderField(1.0e14, 1.0e32, 1.0e20);
+        assertEquals(LogSliderField.ScaleMode.LOGARITHMIC, field.getScaleMode());
+
+        field.setScaleMode(LogSliderField.ScaleMode.LINEAR);
+        assertEquals(LogSliderField.ScaleMode.LINEAR, field.getScaleMode());
+        assertEquals(1.0e20, field.getValue(), 1.0e15);
+
+        field.setScaleMode(LogSliderField.ScaleMode.EXPONENT);
+        assertEquals(LogSliderField.ScaleMode.EXPONENT, field.getScaleMode());
+        assertEquals(1.0e20, field.getValue(), 1.0e15);
+
+        // Switching back to LOGARITHMIC preserves value
+        field.setScaleMode(LogSliderField.ScaleMode.LOGARITHMIC);
+        assertEquals(1.0e20, field.getValue(), 1.0e15);
+    }
+
+    @Test
+    void testLinearSliderSync() {
+        LogSliderField field = new LogSliderField(1.0e14, 1.0e32, 1.0e20);
+        field.setScaleMode(LogSliderField.ScaleMode.LINEAR);
+
+        field.getLinearSlider().setValue(5.0e25);
+        assertEquals(5.0e25, field.getValue(), 1.0e20);
+        assertEquals("5.000e+25", field.getTextField().getText());
+    }
+
+    @Test
+    void testMantissaAndExponentSliderSync() {
+        LogSliderField field = new LogSliderField(1.0e14, 1.0e32, 1.0e20);
+        field.setScaleMode(LogSliderField.ScaleMode.EXPONENT);
+
+        // Move mantissa to 2.5 and exponent to 26 -> 2.5e26
+        field.getMantissaSlider().setValue(2.5);
+        field.getExponentSlider().setValue(26);
+
+        assertEquals(2.5e26, field.getValue(), 1.0e21);
+        assertEquals("2.500e+26", field.getTextField().getText());
+
+        // Value update syncs back to mantissa and exponent
+        field.setValue(3.8e29);
+        assertEquals(3.8, field.getMantissaSlider().getValue(), 1.0e-2);
+        assertEquals(29, (int) Math.round(field.getExponentSlider().getValue()));
+    }
+
+    @Test
+    void testFormatExponent() {
+        assertEquals("10³⁰", LogSliderField.formatExponent(30));
+        assertEquals("10⁻¹¹", LogSliderField.formatExponent(-11));
+        assertEquals("10⁰", LogSliderField.formatExponent(0));
+    }
 }

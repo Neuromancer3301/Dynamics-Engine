@@ -120,12 +120,10 @@ final class NBodyRenderer {
     // list. Matches PendulumChainRenderer's own TRAIL_MAX exactly.
     private static final int TRAIL_MAX = 600;
 
-    // Spacetime curvature mesh: 45 px grid across viewport displaced towards massive bodies
-    private static final double MESH_STEP_PX = 45.0;
-    private static final double MESH_COUPLING_FACTOR = 2.0e-16;
-    private static final double MESH_EPSILON_PX = 35.0;
-    private static final double MESH_MAX_DISPLACEMENT_PX = 25.0;
-    private static final Color MESH_COLOR = Color.web("#22222E");
+    // Dynamic spacetime fabric & CAD/Blender infinite grid constants
+    private static final double MESH_TARGET_SPACING_PX = 55.0;
+    private static final double MESH_COUPLING_FACTOR = 2.5e-3;
+    private static final double MESH_MAX_DISPLACEMENT_PX = 28.0;
 
     private final Camera camera;
     private Color[] bodyColors = BODY_COLORS_DEFAULT;
@@ -411,35 +409,91 @@ final class NBodyRenderer {
     }
 
     /**
-     * Draws the spacetime curvature mesh across the viewport.
-     * Evaluates gravitational displacement at each vertex of a 45 px grid and
-     * strokes the resulting curved mesh lines. Safely skips when N = 0.
+     * Draws the dynamic spacetime curvature fabric across the viewport.
+     * Functions like an infinite CAD / Blender / game-engine coordinate grid:
+     * <ul>
+     *     <li>Grid lines are anchored in world coordinates, stretching smoothly with zoom and pan.</li>
+     *     <li>When zoom increases, grid cells stretch and seamlessly subdivide into finer grids via 1-2-5 steps.</li>
+     *     <li>Gravitational warping is evaluated for EVERY body in the universe, using scale-coupled potential
+     *         so that zooming into any body (e.g. Jupiter, Earth, Moon) reveals its prominent local spacetime indentation.</li>
+     *     <li>In an empty universe (N = 0), a flat, unperturbed spacetime grid is rendered and responds to pan/zoom.</li>
+     * </ul>
      */
     private void drawSpacetimeMesh(GraphicsContext gc, NBodyState state, double w, double h, double scale, double originX, double originY) {
-        if (state == null || state.getN() == 0) return;
+        if (w <= 0 || h <= 0 || !Double.isFinite(scale) || scale <= 0) return;
 
-        int cols = (int) Math.ceil(w / MESH_STEP_PX) + 1;
-        int rows = (int) Math.ceil(h / MESH_STEP_PX) + 1;
+        // 1. Determine world grid step using 1-2-5 decade sequence
+        double targetWorldSpacing = MESH_TARGET_SPACING_PX / scale;
+        if (!Double.isFinite(targetWorldSpacing) || targetWorldSpacing <= 0) return;
+
+        double exp = Math.floor(Math.log10(targetWorldSpacing));
+        double base = Math.pow(10.0, exp);
+        double fraction = targetWorldSpacing / base;
+
+        double step;
+        int subdiv;
+        if (fraction < 2.0) {
+            step = base;         // 1 x 10^exp
+            subdiv = 10;
+        } else if (fraction < 5.0) {
+            step = 2.0 * base;   // 2 x 10^exp
+            subdiv = 5;
+        } else {
+            step = 5.0 * base;   // 5 x 10^exp
+            subdiv = 2;
+        }
+
+        double minWorldX = (0.0 - originX) / scale;
+        double maxWorldX = (w - originX) / scale;
+        double minWorldY = (originY - h) / scale;
+        double maxWorldY = (originY - 0.0) / scale;
+
+        long cMin = (long) Math.floor(minWorldX / step) - 1;
+        long cMax = (long) Math.ceil(maxWorldX / step) + 1;
+        long rMin = (long) Math.floor(minWorldY / step) - 1;
+        long rMax = (long) Math.ceil(maxWorldY / step) + 1;
+
+        int cols = (int) (cMax - cMin + 1);
+        int rows = (int) (rMax - rMin + 1);
+        if (cols < 2 || rows < 2 || cols > 100 || rows > 100) return;
 
         double[][] dispX = new double[cols][rows];
         double[][] dispY = new double[cols][rows];
 
-        int n = state.getN();
+        int n = (state != null) ? state.getN() : 0;
+        double G = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT;
+
+        // Precompute screen positions, scale-coupled potential strengths, and softening radiuses for all bodies
         double[] bx = new double[n];
         double[] by = new double[n];
-        double[] gm = new double[n];
+        double[] vStrength = new double[n];
+        double[] eps2 = new double[n];
+
         for (int i = 0; i < n; i++) {
             bx[i] = originX + state.positionX[i] * scale;
             by[i] = originY - state.positionY[i] * scale;
-            gm[i] = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT * state.mass[i];
+            double rWorld = Math.max(state.radius[i], 1.0);
+            double rScreen = rWorld * scale;
+            double phiSurf = (G * state.mass[i]) / rWorld; // Surface potential (m^2/s^2)
+
+            // Scaled perceptual visual potential: phiSurf^0.65 * rScreen
+            vStrength[i] = Math.pow(phiSurf, 0.65) * rScreen;
+
+            double eps;
+            if (state.isCompactObject(i, G)) {
+                eps = Math.max(rScreen * 0.8, 5.0);
+            } else {
+                eps = Math.max(rScreen * 0.9, 12.0);
+            }
+            eps2[i] = eps * eps;
         }
 
-        double eps2 = MESH_EPSILON_PX * MESH_EPSILON_PX;
-
         for (int c = 0; c < cols; c++) {
-            double px = c * MESH_STEP_PX;
+            double wx = (cMin + c) * step;
+            double px = originX + wx * scale;
             for (int r = 0; r < rows; r++) {
-                double py = r * MESH_STEP_PX;
+                double wy = (rMin + r) * step;
+                double py = originY - wy * scale;
 
                 double dxTotal = 0.0;
                 double dyTotal = 0.0;
@@ -448,15 +502,23 @@ final class NBodyRenderer {
                     double rx = bx[i] - px;
                     double ry = by[i] - py;
                     double dist2 = rx * rx + ry * ry;
-                    double denom = Math.pow(dist2 + eps2, 1.5);
-                    double factor = (gm[i] / denom) * MESH_COUPLING_FACTOR;
-                    dxTotal += rx * factor;
-                    dyTotal += ry * factor;
+                    if (dist2 < 0.01) continue;
+                    double d = Math.sqrt(dist2);
+
+                    // Scale-invariant screen coupling: local potential gradient
+                    double denom = Math.pow(dist2 + eps2[i], 0.75);
+                    double rawPull = MESH_COUPLING_FACTOR * (vStrength[i] / denom);
+
+                    // Soft-saturate and prevent crossing over body center
+                    double bodyPull = Math.min(d * 0.65, MESH_MAX_DISPLACEMENT_PX * Math.tanh(rawPull / MESH_MAX_DISPLACEMENT_PX));
+
+                    dxTotal += (rx / d) * bodyPull;
+                    dyTotal += (ry / d) * bodyPull;
                 }
 
-                double dispMag = Math.hypot(dxTotal, dyTotal);
-                if (dispMag > MESH_MAX_DISPLACEMENT_PX) {
-                    double cap = MESH_MAX_DISPLACEMENT_PX / dispMag;
+                double totalDispMag = Math.hypot(dxTotal, dyTotal);
+                if (totalDispMag > MESH_MAX_DISPLACEMENT_PX) {
+                    double cap = MESH_MAX_DISPLACEMENT_PX / totalDispMag;
                     dxTotal *= cap;
                     dyTotal *= cap;
                 }
@@ -466,11 +528,20 @@ final class NBodyRenderer {
             }
         }
 
-        gc.setStroke(MESH_COLOR);
-        gc.setLineWidth(0.75);
+        // Screen spacing and fade factor for smooth subdivision transition
+        double screenSpacing = step * scale;
+        double t = (screenSpacing - 25.0) / (65.0 - 25.0);
+        t = Math.max(0.0, Math.min(1.0, t));
+        double minorAlpha = 0.40 + 0.45 * t;
 
-        // Horizontal grid curves
+        // 1. Draw Minor grid lines
+        gc.setLineWidth(0.5);
+        gc.setStroke(Color.color(0.13, 0.13, 0.20, minorAlpha));
+
+        // Horizontal minor lines
         for (int r = 0; r < rows; r++) {
+            long lineIndex = rMin + r;
+            if (Math.floorMod(lineIndex, subdiv) == 0) continue;
             gc.beginPath();
             gc.moveTo(dispX[0][r], dispY[0][r]);
             for (int c = 1; c < cols; c++) {
@@ -479,8 +550,38 @@ final class NBodyRenderer {
             gc.stroke();
         }
 
-        // Vertical grid curves
+        // Vertical minor lines
         for (int c = 0; c < cols; c++) {
+            long lineIndex = cMin + c;
+            if (Math.floorMod(lineIndex, subdiv) == 0) continue;
+            gc.beginPath();
+            gc.moveTo(dispX[c][0], dispY[c][0]);
+            for (int r = 1; r < rows; r++) {
+                gc.lineTo(dispX[c][r], dispY[c][r]);
+            }
+            gc.stroke();
+        }
+
+        // 2. Draw Major grid lines
+        gc.setLineWidth(0.85);
+        gc.setStroke(Color.web("#32324A"));
+
+        // Horizontal major lines
+        for (int r = 0; r < rows; r++) {
+            long lineIndex = rMin + r;
+            if (Math.floorMod(lineIndex, subdiv) != 0) continue;
+            gc.beginPath();
+            gc.moveTo(dispX[0][r], dispY[0][r]);
+            for (int c = 1; c < cols; c++) {
+                gc.lineTo(dispX[c][r], dispY[c][r]);
+            }
+            gc.stroke();
+        }
+
+        // Vertical major lines
+        for (int c = 0; c < cols; c++) {
+            long lineIndex = cMin + c;
+            if (Math.floorMod(lineIndex, subdiv) != 0) continue;
             gc.beginPath();
             gc.moveTo(dispX[c][0], dispY[c][0]);
             for (int r = 1; r < rows; r++) {

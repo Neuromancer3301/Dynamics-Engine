@@ -125,10 +125,24 @@ class NBodySnapshotVerificationTest {
 
                 // 7. Rotating Planet billboard (Jupiter)
                 solarEngine.step(15000.0); // Advance time
-                canvas.setSelectedBody(5); // Jupiter
+                canvas.setSelectedBody(8); // Jupiter is index 8 (Sun=0, Merc=1, Ven=2, Earth=3, Moon=4, Mars=5, Phob=6, Deim=7, Jup=8)
                 canvas.render(solarEngine.getState());
                 WritableImage img7 = canvas.snapshot(null, null);
                 saveSnapshot(img7, "07_jupiter_rotating_billboard.png");
+
+                // 8. Zoomed-in Jupiter Spacetime Curvature
+                canvas.setFollowMode(NBodyCanvas.FollowMode.SELECTED_BODY);
+                canvas.setSelectedBody(8); // Jupiter
+                canvas.render(solarEngine.getState());
+                WritableImage img8 = canvas.snapshot(null, null);
+                saveSnapshot(img8, "08_jupiter_zoomed_spacetime_warping.png");
+
+                // 9. Zoomed-in Earth Spacetime Curvature
+                canvas.setSelectedBody(3); // Earth
+                canvas.getCamera().setScale(5.0e-6); // Zoomed in so Earth is ~64px across
+                canvas.render(solarEngine.getState());
+                WritableImage img9 = canvas.snapshot(null, null);
+                saveSnapshot(img9, "09_earth_zoomed_spacetime_warping.png");
 
             } catch (Throwable t) {
                 failure[0] = t;
