@@ -12,6 +12,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 import javafx.stage.Window;
@@ -116,7 +117,9 @@ public final class NBodyDialogFactory {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Edit " + currentConfig.getName(body));
-        dialog.getDialogPane().setMinWidth(480);
+        dialog.setResizable(true);
+        dialog.getDialogPane().setMinWidth(500);
+        dialog.getDialogPane().setPrefHeight(520);
         themeDialog(dialog.getDialogPane());
 
         ButtonType applyButtonType = new ButtonType("Apply", ButtonBar.ButtonData.OK_DONE);
@@ -172,7 +175,12 @@ public final class NBodyDialogFactory {
         grid.addRow(6, new Label("Vx (m/s)"), vxField);
         grid.addRow(7, new Label("Vy (m/s)"), vyField);
         grid.add(error, 0, 8, 2, 1);
-        dialog.getDialogPane().setContent(grid);
+        ScrollPane scrollPane = new ScrollPane(grid);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
+        dialog.getDialogPane().setContent(scrollPane);
 
         Node applyButtonNode = dialog.getDialogPane().lookupButton(applyButtonType);
         applyButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {
@@ -236,7 +244,9 @@ public final class NBodyDialogFactory {
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Add Body");
-        dialog.getDialogPane().setMinWidth(480);
+        dialog.setResizable(true);
+        dialog.getDialogPane().setMinWidth(500);
+        dialog.getDialogPane().setPrefHeight(520);
         themeDialog(dialog.getDialogPane());
 
         ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
@@ -290,7 +300,12 @@ public final class NBodyDialogFactory {
         grid.addRow(6, new Label("Vx (m/s)"), vxField);
         grid.addRow(7, new Label("Vy (m/s)"), vyField);
         grid.add(error, 0, 8, 2, 1);
-        dialog.getDialogPane().setContent(grid);
+        ScrollPane scrollPane = new ScrollPane(grid);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
+        dialog.getDialogPane().setContent(scrollPane);
 
         Node addButtonNode = dialog.getDialogPane().lookupButton(addButtonType);
         addButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {

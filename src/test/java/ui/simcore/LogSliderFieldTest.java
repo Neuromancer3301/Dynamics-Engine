@@ -115,9 +115,14 @@ class LogSliderFieldTest {
         LogSliderField field = new LogSliderField(1.0e14, 1.0e32, 1.0e20);
         field.setScaleMode(LogSliderField.ScaleMode.LINEAR);
 
-        field.getLinearSlider().setValue(5.0e25);
-        assertEquals(5.0e25, field.getValue(), 1.0e20);
-        assertEquals("5.000e+25", field.getTextField().getText());
+        field.getLinearSlider().setValue(5.0e20);
+        assertEquals(5.0e20, field.getValue(), 1.0e16);
+        assertEquals("5.000e+20", field.getTextField().getText());
+
+        // Setting a new value dynamically expands linear slider decade
+        field.setValue(3.0e25);
+        assertEquals(3.0e25, field.getValue(), 1.0e20);
+        assertEquals(1.0e26, field.getLinearSlider().getMax(), 1.0e21);
     }
 
     @Test

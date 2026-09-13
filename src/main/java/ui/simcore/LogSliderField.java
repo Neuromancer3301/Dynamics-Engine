@@ -1,5 +1,6 @@
 package ui.simcore;
 
+import javafx.application.Platform;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.geometry.Pos;
@@ -18,7 +19,7 @@ import java.util.Locale;
  * scale modes:
  * <ul>
  *     <li>{@link ScaleMode#LOGARITHMIC}: Single slider mapping [log10(min), log10(max)] linearly</li>
- *     <li>{@link ScaleMode#LINEAR}: Single slider mapping [min, max] linearly</li>
+ *     <li>{@link ScaleMode#LINEAR}: Single linear slider dynamically scoped to the current decade [0, 10ⁿ⁺¹] for uniform precision</li>
  *     <li>{@link ScaleMode#EXPONENT}: Dual sliders — one for the mantissa [1.0, 10.0) and one for integer powers of 10</li>
  * </ul>
  * Synchronized with an editable {@link TextField} formatted in scientific notation (%.3e).
@@ -43,6 +44,9 @@ public class LogSliderField extends VBox {
 
     private final Slider slider;         // Logarithmic slider (preserved for backwards-compatibility & getSlider())
     private final Slider linearSlider;   // Linear normal scale slider
+    private final Label linearInfoLabel;
+    private final VBox linearBox;
+
     private final Slider mantissaSlider; // Mantissa slider [1.0, 10.0)
     private final Slider exponentSlider; // Exponent slider [minExp, maxExp]
     private final Label mantissaLabel;
@@ -87,9 +91,13 @@ public class LogSliderField extends VBox {
         slider = new Slider(logMin, logMax, logInit);
         slider.setMaxWidth(Double.MAX_VALUE);
 
-        // 2. Linear slider
-        linearSlider = new Slider(minVal, maxVal, clampedInit);
+        // 2. Linear slider (dynamically bounded to current decade)
+        linearInfoLabel = new Label();
+        linearInfoLabel.setStyle("-fx-font-size: 10px; -fx-text-fill: -color-fg-muted;");
+        linearSlider = new Slider(0.0, maxVal, clampedInit);
         linearSlider.setMaxWidth(Double.MAX_VALUE);
+        linearBox = new VBox(2, linearInfoLabel, linearSlider);
+        updateLinearBounds(clampedInit);
 
         // 3. Dual sliders: Mantissa [1.0, 10.0) and Exponent [minExp, maxExp]
         int initExp = (int) Math.floor(Math.log10(clampedInit));
@@ -170,7 +178,19 @@ public class LogSliderField extends VBox {
             if (updating) return;
             updating = true;
             try {
-                double realVal = Math.max(minVal, Math.min(maxVal, newVal.doubleValue()));
+                double v = newVal.doubleValue();
+                // Dynamic decade expansion / contraction if dragging at bounds
+                if (v >= linearSlider.getMax() * 0.999 && linearSlider.getMax() < maxVal) {
+                    double newMax = Math.min(maxVal, linearSlider.getMax() * 10.0);
+                    linearSlider.setMax(newMax);
+                    linearInfoLabel.setText(String.format(Locale.US, "Linear Range: 0 to %.2e %s", newMax, unitLabel));
+                } else if (v <= linearSlider.getMax() * 0.08 && linearSlider.getMax() > minVal * 10.0 && v > 0) {
+                    double newMax = Math.max(minVal * 10.0, linearSlider.getMax() / 10.0);
+                    linearSlider.setMax(newMax);
+                    linearInfoLabel.setText(String.format(Locale.US, "Linear Range: 0 to %.2e %s", newMax, unitLabel));
+                }
+
+                double realVal = Math.max(minVal, Math.min(maxVal, v));
                 value.set(realVal);
                 textField.setText(String.format(Locale.US, "%.3e", realVal));
                 textField.setStyle("");
@@ -264,15 +284,36 @@ public class LogSliderField extends VBox {
         sliderContainer.getChildren().clear();
         switch (mode) {
             case LOGARITHMIC -> sliderContainer.getChildren().add(slider);
-            case LINEAR -> sliderContainer.getChildren().add(linearSlider);
+            case LINEAR -> sliderContainer.getChildren().add(linearBox);
             case EXPONENT -> sliderContainer.getChildren().add(exponentBox);
         }
         syncAllSliders(value.get());
+
+        // Automatically resize the dialog stage window to fit content without hiding the ButtonBar
+        Platform.runLater(() -> {
+            if (getScene() != null && getScene().getWindow() != null) {
+                getScene().getWindow().sizeToScene();
+            }
+        });
+    }
+
+    private void updateLinearBounds(double realVal) {
+        if (realVal <= 0 || !Double.isFinite(realVal)) return;
+        int exp = (int) Math.floor(Math.log10(realVal));
+        double decadeMax = Math.min(maxVal, Math.pow(10.0, exp + 1));
+        double decadeMin = 0.0;
+        if (decadeMax <= minVal) {
+            decadeMax = Math.min(maxVal, minVal * 10.0);
+        }
+        linearSlider.setMin(decadeMin);
+        linearSlider.setMax(decadeMax);
+        linearSlider.setValue(realVal);
+        linearInfoLabel.setText(String.format(Locale.US, "Linear Range: 0 to %.2e %s", decadeMax, unitLabel));
     }
 
     private void syncAllSliders(double realVal) {
         slider.setValue(Math.log10(realVal));
-        linearSlider.setValue(realVal);
+        updateLinearBounds(realVal);
 
         int exp = (int) Math.floor(Math.log10(realVal));
         exp = Math.max(minExp, Math.min(maxExp, exp));
@@ -292,7 +333,7 @@ public class LogSliderField extends VBox {
             slider.setValue(Math.log10(realVal));
         }
         if (activeMode != ScaleMode.LINEAR) {
-            linearSlider.setValue(realVal);
+            updateLinearBounds(realVal);
         }
         if (activeMode != ScaleMode.EXPONENT) {
             int exp = (int) Math.floor(Math.log10(realVal));

@@ -137,12 +137,33 @@ class NBodySnapshotVerificationTest {
                 WritableImage img8 = canvas.snapshot(null, null);
                 saveSnapshot(img8, "08_jupiter_zoomed_spacetime_warping.png");
 
-                // 9. Zoomed-in Earth Spacetime Curvature
+                // 9. Zoomed-in Earth Model & Spacetime Curvature
                 canvas.setSelectedBody(3); // Earth
                 canvas.getCamera().setScale(5.0e-6); // Zoomed in so Earth is ~64px across
                 canvas.render(solarEngine.getState());
                 WritableImage img9 = canvas.snapshot(null, null);
                 saveSnapshot(img9, "09_earth_zoomed_spacetime_warping.png");
+
+                // 10. Saturn Model with 3D circumstellar rings and Cassini Division
+                canvas.setSelectedBody(13); // Saturn
+                canvas.getCamera().setScale(45.0 / solarEngine.getState().radius[13]);
+                canvas.render(solarEngine.getState());
+                WritableImage img10 = canvas.snapshot(null, null);
+                saveSnapshot(img10, "10_saturn_3d_rings.png");
+
+                // 11. Mars Model with Syrtis Major and Polar Ice Caps
+                canvas.setSelectedBody(5); // Mars
+                canvas.getCamera().setScale(40.0 / solarEngine.getState().radius[5]);
+                canvas.render(solarEngine.getState());
+                WritableImage img11 = canvas.snapshot(null, null);
+                saveSnapshot(img11, "11_mars_polar_ice_and_features.png");
+
+                // 12. Halley's Comet with Coma, Ion Tail, and Dust Tail
+                canvas.setSelectedBody(33); // Halley's Comet
+                canvas.getCamera().setScale(5.0e-6);
+                canvas.render(solarEngine.getState());
+                WritableImage img12 = canvas.snapshot(null, null);
+                saveSnapshot(img12, "12_halley_comet_tail_and_coma.png");
 
             } catch (Throwable t) {
                 failure[0] = t;
