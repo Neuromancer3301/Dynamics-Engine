@@ -64,6 +64,7 @@ class NBodySnapshotVerificationTest {
                 // 1. Home Solar System
                 NBodyConfig solar = Presets.homeSolarSystem();
                 NBodyEngine solarEngine = new NBodyEngine(solar);
+                canvas.render(solarEngine.getState());
                 canvas.fitToContent();
                 canvas.render(solarEngine.getState());
                 WritableImage img1 = canvas.snapshot(null, null);
@@ -72,6 +73,7 @@ class NBodySnapshotVerificationTest {
                 // 2. TRAPPIST-1
                 NBodyConfig trappist = Presets.trappist1();
                 NBodyEngine trappistEngine = new NBodyEngine(trappist);
+                canvas.render(trappistEngine.getState());
                 canvas.fitToContent();
                 canvas.render(trappistEngine.getState());
                 WritableImage img2 = canvas.snapshot(null, null);
@@ -80,6 +82,7 @@ class NBodySnapshotVerificationTest {
                 // 3. Alpha Centauri
                 NBodyConfig alpha = Presets.alphaCentauri();
                 NBodyEngine alphaEngine = new NBodyEngine(alpha);
+                canvas.render(alphaEngine.getState());
                 canvas.fitToContent();
                 canvas.render(alphaEngine.getState());
                 WritableImage img3 = canvas.snapshot(null, null);
@@ -133,6 +136,7 @@ class NBodySnapshotVerificationTest {
                 // 8. Zoomed-in Jupiter Spacetime Curvature
                 canvas.setFollowMode(NBodyCanvas.FollowMode.SELECTED_BODY);
                 canvas.setSelectedBody(8); // Jupiter
+                canvas.getCamera().setScale(45.0 / solarEngine.getState().radius[8]); // Zoomed in so Jupiter is prominent
                 canvas.render(solarEngine.getState());
                 WritableImage img8 = canvas.snapshot(null, null);
                 saveSnapshot(img8, "08_jupiter_zoomed_spacetime_warping.png");

@@ -336,42 +336,31 @@ final class NBodyRenderer {
                     gc.strokeOval(bx - 1.8 * r, by - 0.7 * r, 3.6 * r, 1.4 * r);
                 }
             } else {
-                // LOD 1: dScreen >= 10 px
-                Image customTexture = CelestialBodyTextureManager.getTexture(bodyName);
-                if (customTexture != null) {
-                    drawTexturedBodyModel(gc, customTexture, bx, by, r, state.time, rotPeriod, lower.contains("saturn"));
-                } else if (lower.contains("trappist-1") && !lower.matches(".*trappist-1\\s+[b-h].*") || lower.contains("proxima centauri")) {
-                    drawRedDwarfModel(gc, bx, by, r, state.time);
-                } else if (state.isStar(i) || lower.contains("sun") || lower.contains("star") || lower.contains("centauri a") || lower.contains("centauri b")) {
-                    drawSunModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("saturn")) {
-                    drawSaturnModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("earth")) {
-                    drawEarthModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("jupiter")) {
-                    drawJupiterModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("mars")) {
-                    drawMarsModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("moon") || lower.contains("mercury")) {
-                    drawMoonModel(gc, bx, by, r, state.time, rotPeriod, lower.contains("mercury"));
-                } else if (lower.contains("venus")) {
-                    drawVenusModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("uranus")) {
-                    drawUranusModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("neptune")) {
-                    drawNeptuneModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("titan")) {
-                    drawTitanModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("io")) {
-                    drawIoModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("europa")) {
-                    drawEuropaModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("enceladus")) {
-                    drawEnceladusModel(gc, bx, by, r);
-                } else if (lower.contains("pluto")) {
-                    drawPlutoModel(gc, bx, by, r, state.time, rotPeriod);
-                } else if (lower.contains("charon")) {
-                    drawCharonModel(gc, bx, by, r, state.time, rotPeriod);
+                // LOD 1: dScreen >= 10 px -> 2D snapshot of the real 3D model for current rotation frame
+                CelestialBody3DModel model = CelestialBody3DRegistry.getModel(bodyName, bodyColor, state.isStar(i), isCompact, isComet);
+
+                if (model.isStar()) {
+                    // Coronal flare glow behind the 3D star sphere
+                    double rCorona = 1.9 * r;
+                    double pulse = reducedMotion ? 1.0 : (1.0 + 0.04 * Math.sin(state.time * 0.05));
+                    RadialGradient coronaGrad = new RadialGradient(
+                            0, 0, bx, by, rCorona * pulse, false, CycleMethod.NO_CYCLE,
+                            new Stop(0.0, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#FF5722", 0.85) : Color.web("#FFFBE0", 0.85)),
+                            new Stop(0.45, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#C62828", 0.45) : Color.web("#FFA439", 0.45)),
+                            new Stop(0.75, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#4A0000", 0.15) : Color.web("#EA3F8C", 0.15)),
+                            new Stop(1.0, Color.TRANSPARENT)
+                    );
+                    gc.setFill(coronaGrad);
+                    gc.fillOval(bx - rCorona * pulse, by - rCorona * pulse, 2 * rCorona * pulse, 2 * rCorona * pulse);
+                }
+
+                double phi = (rotPeriod > 0.0) ? ((state.time / rotPeriod) % 1.0) : 0.0;
+                if (phi < 0) phi += 1.0;
+                Image snapshot = model.getSnapshot(phi);
+
+                if (snapshot != null) {
+                    double drawR = model.getDrawRadius(r);
+                    gc.drawImage(snapshot, bx - drawR, by - drawR, 2 * drawR, 2 * drawR);
                 } else {
                     drawGenericPlanetModel(gc, bx, by, r, bodyColor, state.time, rotPeriod);
                 }
@@ -532,9 +521,20 @@ final class NBodyRenderer {
         gc.setFill(comaGrad);
         gc.fillOval(bx - comaR, by - comaR, 2 * comaR, 2 * comaR);
 
-        // 4. Comet Nucleus (dark, irregular rocky icy core)
-        gc.setFill(Color.web("#2A2624"));
-        gc.fillOval(bx - r * 0.65, by - r * 0.55, r * 1.3, r * 1.1);
+        // 4. Comet Nucleus (2D snapshot of real 3D comet model)
+        String cName = (state.name != null && i < state.name.length && state.name[i] != null) ? state.name[i] : "comet";
+        CelestialBody3DModel cometModel = CelestialBody3DRegistry.getModel(cName, false, false, true);
+        double rotPeriod = (state.rotationPeriod != null && i < state.rotationPeriod.length) ? state.rotationPeriod[i] : 0.0;
+        double phi = (rotPeriod > 0.0) ? ((state.time / rotPeriod) % 1.0) : 0.0;
+        if (phi < 0) phi += 1.0;
+        Image cometSnapshot = cometModel.getSnapshot(phi);
+        if (cometSnapshot != null) {
+            double drawR = cometModel.getDrawRadius(r * 0.9);
+            gc.drawImage(cometSnapshot, bx - drawR, by - drawR, 2 * drawR, 2 * drawR);
+        } else {
+            gc.setFill(Color.web("#2A2624"));
+            gc.fillOval(bx - r * 0.65, by - r * 0.55, r * 1.3, r * 1.1);
+        }
     }
 
     private void drawSunModel(GraphicsContext gc, double bx, double by, double r, double time, double rotPeriod) {
