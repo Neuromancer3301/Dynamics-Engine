@@ -42,8 +42,12 @@ import java.util.Deque;
 final class NBodyInteraction {
 
     // How far back to look when estimating a fling velocity on release —
-    // matches PendulumInteraction's own window exactly.
-    private static final long FLING_WINDOW_NANOS = 150_000_000L;
+    // 80ms window per Phase 2 spec.
+    private static final long FLING_WINDOW_NANOS = 80_000_000L;
+
+    // If the pointer pauses for >40ms before release, decay velocity to zero
+    // so deliberate placement isn't treated as a fling.
+    private static final long FLING_IDLE_CUTOFF_NANOS = 40_000_000L;
 
     // Round 1.4: converts the pointer's on-SCREEN speed (px/s) at release
     // into a world-space fling velocity (m/s) — deliberately NOT derived
@@ -123,12 +127,30 @@ final class NBodyInteraction {
     void setRightClickListener(NBodyCanvas.RightClickListener listener) { this.rightClickListener = listener; }
     void setEmptySpaceClickListener(NBodyCanvas.EmptySpaceClickListener listener) { this.emptySpaceClickListener = listener; }
 
-    void setDragEditingEnabled(boolean dragEditingEnabled) { this.dragEditingEnabled = dragEditingEnabled; }
+    void setDragEditingEnabled(boolean dragEditingEnabled) {
+        this.dragEditingEnabled = dragEditingEnabled;
+        updateCursor();
+    }
+
+    void cancelDrag() {
+        draggedBody = -1;
+        panning = false;
+        dragSamples.clear();
+        updateCursor();
+    }
+
+    private void updateCursor() {
+        if (!dragEditingEnabled) {
+            canvas.setCursor(Cursor.CROSSHAIR);
+        } else {
+            canvas.setCursor(hoveredBody >= 0 ? Cursor.HAND : Cursor.DEFAULT);
+        }
+    }
 
     private void wireInteraction() {
         canvas.setOnMouseMoved(e -> {
             hoveredBody = hitTestBody(e.getX(), e.getY());
-            canvas.setCursor(hoveredBody >= 0 ? Cursor.HAND : Cursor.DEFAULT);
+            updateCursor();
         });
 
         canvas.setOnMouseExited(e -> {
@@ -207,7 +229,7 @@ final class NBodyInteraction {
             draggedBody = -1;
             dragSamples.clear();
             hoveredBody = hitTestBody(e.getX(), e.getY());
-            canvas.setCursor(hoveredBody >= 0 ? Cursor.HAND : Cursor.DEFAULT);
+            updateCursor();
         });
     }
 
@@ -246,7 +268,7 @@ final class NBodyInteraction {
     }
 
     /**
-     * {vx, vy} in world m/s, estimated from the last ~150ms of drag samples
+     * {vx, vy} in world m/s, estimated from the last ~80ms of drag samples
      * — the "fling" this canvas's release hands to {@link
      * NBodyCanvas.DragListener#onRelease}. Computed from the pointer's
      * SCREEN-space speed converted through a fixed calibration, then capped
@@ -255,8 +277,11 @@ final class NBodyInteraction {
      */
     private double[] estimateVelocity() {
         if (dragSamples.size() < 2) return new double[]{0.0, 0.0};
-        double[] first = dragSamples.peekFirst();
         double[] last = dragSamples.peekLast();
+        if (System.nanoTime() - (long) last[0] > FLING_IDLE_CUTOFF_NANOS) {
+            return new double[]{0.0, 0.0};
+        }
+        double[] first = dragSamples.peekFirst();
         double dt = (last[0] - first[0]) / 1_000_000_000.0;
         if (dt <= 1.0e-4) return new double[]{0.0, 0.0};
 

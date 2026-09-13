@@ -3,6 +3,7 @@ package ui.nbody;
 import physics.nbody.NBodyConfig;
 import physics.nbody.NBodyState;
 import theme.ThemeManager;
+import ui.simcore.LogSliderField;
 import javafx.event.ActionEvent;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
@@ -120,8 +121,36 @@ public final class NBodyDialogFactory {
         ButtonType applyButtonType = new ButtonType("Apply", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(applyButtonType, ButtonType.CANCEL);
 
-        TextField massField   = dialogField(String.format("%.6e", currentConfig.getMass(body)));
-        TextField radiusField = dialogField(String.format("%.6e", currentConfig.getRadius(body)));
+        double initMass = currentConfig.getMass(body);
+        double initRadius = currentConfig.getRadius(body);
+        LogSliderField massField = new LogSliderField(Math.min(1.0e14, initMass), Math.max(1.0e32, initMass), initMass, "kg");
+        LogSliderField radiusField = new LogSliderField(Math.min(1.0e3, initRadius), Math.max(1.0e10, initRadius), initRadius, "m");
+
+        Label rsLabel = new Label();
+        rsLabel.getStyleClass().add("sidebar-mono-readout");
+        Label classLabel = new Label();
+        Runnable updateDerived = () -> {
+            double m = massField.getValue();
+            double r = radiusField.getValue();
+            double g = host.liveGravitationalConstant();
+            double rs = NBodyState.schwarzschildRadius(m, g);
+            rsLabel.setText(String.format(java.util.Locale.US, "%.3e m", rs));
+
+            if (rs >= r) {
+                classLabel.setText("Black Hole (Compact)");
+                classLabel.setStyle("-fx-text-fill: #EA3F8C; -fx-font-weight: bold; -fx-background-color: rgba(234, 63, 140, 0.2); -fx-padding: 2 8 2 8; -fx-background-radius: 10;");
+            } else if (m >= 0.08 * NBodyState.SOLAR_MASS) {
+                classLabel.setText("Star (Fusion Active)");
+                classLabel.setStyle("-fx-text-fill: #E8D34A; -fx-font-weight: bold; -fx-background-color: rgba(232, 211, 74, 0.2); -fx-padding: 2 8 2 8; -fx-background-radius: 10;");
+            } else {
+                classLabel.setText("Normal Body");
+                classLabel.setStyle("-fx-text-fill: #3DDCC7; -fx-font-weight: normal; -fx-background-color: rgba(61, 220, 199, 0.2); -fx-padding: 2 8 2 8; -fx-background-radius: 10;");
+            }
+        };
+        massField.valueProperty().addListener((o, ov, nv) -> updateDerived.run());
+        radiusField.valueProperty().addListener((o, ov, nv) -> updateDerived.run());
+        updateDerived.run();
+
         TextField xField      = dialogField(String.format("%.6e", liveX));
         TextField yField      = dialogField(String.format("%.6e", liveY));
         TextField vxField     = dialogField(String.format("%.6e", liveVx));
@@ -133,19 +162,21 @@ public final class NBodyDialogFactory {
         grid.getStyleClass().add("dialog-grid");
         grid.setHgap(10);
         grid.setVgap(10);
-        grid.addRow(0, new Label("Mass (kg)"), massField);
-        grid.addRow(1, new Label("Radius (m)"), radiusField);
-        grid.addRow(2, new Label("X (m)"), xField);
-        grid.addRow(3, new Label("Y (m)"), yField);
-        grid.addRow(4, new Label("Vx (m/s)"), vxField);
-        grid.addRow(5, new Label("Vy (m/s)"), vyField);
-        grid.add(error, 0, 6, 2, 1);
+        grid.addRow(0, new Label("Mass"), massField);
+        grid.addRow(1, new Label("Radius"), radiusField);
+        grid.addRow(2, new Label("Schwarzschild (rₛ)"), rsLabel);
+        grid.addRow(3, new Label("Classification"), classLabel);
+        grid.addRow(4, new Label("X (m)"), xField);
+        grid.addRow(5, new Label("Y (m)"), yField);
+        grid.addRow(6, new Label("Vx (m/s)"), vxField);
+        grid.addRow(7, new Label("Vy (m/s)"), vyField);
+        grid.add(error, 0, 8, 2, 1);
         dialog.getDialogPane().setContent(grid);
 
         Node applyButtonNode = dialog.getDialogPane().lookupButton(applyButtonType);
         applyButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {
-            Double mass   = parsePositive(massField.getText());
-            Double radius = parsePositive(radiusField.getText());
+            Double mass   = parsePositive(massField.getTextField().getText());
+            Double radius = parsePositive(radiusField.getTextField().getText());
             Double x      = parseFinite(xField.getText());
             Double y      = parseFinite(yField.getText());
             Double vx     = parseFinite(vxField.getText());
@@ -178,7 +209,8 @@ public final class NBodyDialogFactory {
 
             try {
                 NBodyConfig edited = new NBodyConfig(currentConfig.getN(), mass_, radius_, px, py, vxs, vys,
-                        currentConfig.getNames(), currentConfig.getSofteningLength(),
+                        currentConfig.getNames(), currentConfig.getRotationPeriods(),
+                        currentConfig.getSofteningLength(),
                         host.liveGravitationalConstant(), currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
             } catch (IllegalArgumentException ex) {
@@ -208,8 +240,34 @@ public final class NBodyDialogFactory {
         ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
 
-        TextField massField   = dialogField(String.format("%.6e", 1.0e22));
-        TextField radiusField = dialogField(String.format("%.6e", 1.0e6));
+        LogSliderField massField   = new LogSliderField(1.0e18, 1.0e32, 1.0e22, "kg");
+        LogSliderField radiusField = new LogSliderField(1.0e3, 1.0e10, 1.0e6, "m");
+
+        Label rsLabel = new Label();
+        rsLabel.getStyleClass().add("sidebar-mono-readout");
+        Label classLabel = new Label();
+        Runnable updateDerived = () -> {
+            double m = massField.getValue();
+            double r = radiusField.getValue();
+            double g = host.liveGravitationalConstant();
+            double rs = NBodyState.schwarzschildRadius(m, g);
+            rsLabel.setText(String.format(java.util.Locale.US, "%.3e m", rs));
+
+            if (rs >= r) {
+                classLabel.setText("Black Hole (Compact)");
+                classLabel.setStyle("-fx-text-fill: #EA3F8C; -fx-font-weight: bold; -fx-background-color: rgba(234, 63, 140, 0.2); -fx-padding: 2 8 2 8; -fx-background-radius: 10;");
+            } else if (m >= 0.08 * NBodyState.SOLAR_MASS) {
+                classLabel.setText("Star (Fusion Active)");
+                classLabel.setStyle("-fx-text-fill: #E8D34A; -fx-font-weight: bold; -fx-background-color: rgba(232, 211, 74, 0.2); -fx-padding: 2 8 2 8; -fx-background-radius: 10;");
+            } else {
+                classLabel.setText("Normal Body");
+                classLabel.setStyle("-fx-text-fill: #3DDCC7; -fx-font-weight: normal; -fx-background-color: rgba(61, 220, 199, 0.2); -fx-padding: 2 8 2 8; -fx-background-radius: 10;");
+            }
+        };
+        massField.valueProperty().addListener((o, ov, nv) -> updateDerived.run());
+        radiusField.valueProperty().addListener((o, ov, nv) -> updateDerived.run());
+        updateDerived.run();
+
         TextField xField      = dialogField(String.format("%.6e", prefillX));
         TextField yField      = dialogField(String.format("%.6e", prefillY));
         TextField vxField     = dialogField("0.0");
@@ -221,19 +279,21 @@ public final class NBodyDialogFactory {
         grid.getStyleClass().add("dialog-grid");
         grid.setHgap(10);
         grid.setVgap(10);
-        grid.addRow(0, new Label("Mass (kg)"), massField);
-        grid.addRow(1, new Label("Radius (m)"), radiusField);
-        grid.addRow(2, new Label("X (m)"), xField);
-        grid.addRow(3, new Label("Y (m)"), yField);
-        grid.addRow(4, new Label("Vx (m/s)"), vxField);
-        grid.addRow(5, new Label("Vy (m/s)"), vyField);
-        grid.add(error, 0, 6, 2, 1);
+        grid.addRow(0, new Label("Mass"), massField);
+        grid.addRow(1, new Label("Radius"), radiusField);
+        grid.addRow(2, new Label("Schwarzschild (rₛ)"), rsLabel);
+        grid.addRow(3, new Label("Classification"), classLabel);
+        grid.addRow(4, new Label("X (m)"), xField);
+        grid.addRow(5, new Label("Y (m)"), yField);
+        grid.addRow(6, new Label("Vx (m/s)"), vxField);
+        grid.addRow(7, new Label("Vy (m/s)"), vyField);
+        grid.add(error, 0, 8, 2, 1);
         dialog.getDialogPane().setContent(grid);
 
         Node addButtonNode = dialog.getDialogPane().lookupButton(addButtonType);
         addButtonNode.addEventFilter(ActionEvent.ACTION, evt -> {
-            Double mass   = parsePositive(massField.getText());
-            Double radius = parsePositive(radiusField.getText());
+            Double mass   = parsePositive(massField.getTextField().getText());
+            Double radius = parsePositive(radiusField.getTextField().getText());
             Double x      = parseFinite(xField.getText());
             Double y      = parseFinite(yField.getText());
             Double vx     = parseFinite(vxField.getText());
@@ -256,13 +316,14 @@ public final class NBodyDialogFactory {
             double[] py = appendTo(liveArrayOrConfigAll(live, currentConfig, "y"), y);
             double[] vxs = appendTo(liveArrayOrConfigAll(live, currentConfig, "vx"), vx);
             double[] vys = appendTo(liveArrayOrConfigAll(live, currentConfig, "vy"), vy);
+            double[] periods_ = appendTo(currentConfig.getRotationPeriods(), 0.0);
             String[] names = new String[newN];
             System.arraycopy(currentConfig.getNames(), 0, names, 0, n);
             names[n] = null; // NBodyConfig defaults this to "Body " + (n+1)
 
             try {
                 NBodyConfig edited = new NBodyConfig(newN, mass_, radius_, px, py, vxs, vys, names,
-                        currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
+                        periods_, currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
                 host.selectBody(n); // the newly-added body, overriding applyStructuralEdit's default
@@ -278,22 +339,12 @@ public final class NBodyDialogFactory {
     }
 
     /**
-     * Opens the delete-confirmation dialog: plain confirm, refuses at N=1
-     * same as the pendulum's refusal at N=1 and for the same reason (a
-     * zero-body scene is meaningless — nothing to render, nothing for a
-     * selection index to point at). No pose-preservation checkbox — see
-     * the class javadoc.
+     * Opens the delete-confirmation dialog: allows deleting down to N = 0.
      */
     public void showDeleteBodyDialog(int body) {
         NBodyConfig currentConfig = host.currentConfig();
         if (currentConfig == null || body < 0 || body >= currentConfig.getN()) return;
         int n = currentConfig.getN();
-        if (n <= 1) {
-            Alert info = new Alert(Alert.AlertType.INFORMATION, "Can't delete the only remaining body.");
-            themeDialog(info.getDialogPane());
-            info.showAndWait();
-            return;
-        }
 
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.setTitle("Delete " + currentConfig.getName(body));
@@ -301,26 +352,39 @@ public final class NBodyDialogFactory {
         themeDialog(confirm.getDialogPane());
 
         confirm.showAndWait().filter(bt -> bt == ButtonType.OK).ifPresent(bt -> {
-            NBodyState live = liveOrNullIfMismatched(host.liveState(), currentConfig);
             int newN = n - 1;
+            if (newN == 0) {
+                NBodyConfig empty = new NBodyConfig(0,
+                        new double[0], new double[0],
+                        new double[0], new double[0],
+                        new double[0], new double[0],
+                        new String[0], new double[0],
+                        currentConfig.getSofteningLength(),
+                        host.liveGravitationalConstant(),
+                        currentConfig.getSpeedMultiplier());
+                host.applyStructuralEdit(empty);
+                host.selectBody(-1);
+                return;
+            }
+
+            NBodyState live = liveOrNullIfMismatched(host.liveState(), currentConfig);
             double[] mass = removeFrom(liveArrayOrConfigAll(live, currentConfig, "mass"), body);
             double[] radius = removeFrom(liveArrayOrConfigAll(live, currentConfig, "radius"), body);
             double[] px = removeFrom(liveArrayOrConfigAll(live, currentConfig, "x"), body);
             double[] py = removeFrom(liveArrayOrConfigAll(live, currentConfig, "y"), body);
             double[] vxs = removeFrom(liveArrayOrConfigAll(live, currentConfig, "vx"), body);
             double[] vys = removeFrom(liveArrayOrConfigAll(live, currentConfig, "vy"), body);
+            double[] periods = removeFrom(currentConfig.getRotationPeriods(), body);
             String[] names = removeFrom(currentConfig.getNames(), body);
 
             try {
                 NBodyConfig edited = new NBodyConfig(newN, mass, radius, px, py, vxs, vys, names,
-                        currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
+                        periods, currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
                 host.selectBody(Math.min(body, newN - 1));
             } catch (IllegalArgumentException ignored) {
-                // Shouldn't happen given the checks above (n>1, valid index) —
-                // fail quietly rather than crash, same convention as the
-                // pendulum's delete-link commit.
+                // Fail quietly rather than crash
             }
         });
     }

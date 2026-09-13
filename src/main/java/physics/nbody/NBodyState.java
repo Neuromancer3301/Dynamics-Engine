@@ -52,6 +52,9 @@ public final class NBodyState {
     /** Each body's display label — a user-created body defaults to "Body N". */
     public final String[] name;
 
+    /** Each body's sidereal rotation period in seconds (0 = unassigned or non-rotating). */
+    public final double[] rotationPeriod;
+
     /** Energy of motion at this instant. */
     public final double kineticEnergy;
 
@@ -72,6 +75,15 @@ public final class NBodyState {
                        double[] velocityX, double[] velocityY,
                        double[] mass, double[] radius, String[] name,
                        double kineticEnergy, double potentialEnergy) {
+        this(time, positionX, positionY, velocityX, velocityY, mass, radius, name,
+                new double[positionX.length], kineticEnergy, potentialEnergy);
+    }
+
+    public NBodyState(double time, double[] positionX, double[] positionY,
+                       double[] velocityX, double[] velocityY,
+                       double[] mass, double[] radius, String[] name,
+                       double[] rotationPeriod,
+                       double kineticEnergy, double potentialEnergy) {
         this.time            = time;
         this.positionX       = positionX.clone();
         this.positionY       = positionY.clone();
@@ -80,6 +92,7 @@ public final class NBodyState {
         this.mass            = mass.clone();
         this.radius          = radius.clone();
         this.name            = name.clone();
+        this.rotationPeriod  = rotationPeriod != null ? rotationPeriod.clone() : new double[positionX.length];
         this.kineticEnergy   = kineticEnergy;
         this.potentialEnergy = potentialEnergy;
         this.totalEnergy     = kineticEnergy + potentialEnergy;
@@ -98,4 +111,46 @@ public final class NBodyState {
 
     /** Number of bodies in this snapshot. Derived from the array length rather than stored separately, so it can never disagree. */
     public int getN() { return positionX.length; }
+
+    /** Standard speed of light in vacuum, in m/s. */
+    public static final double SPEED_OF_LIGHT = 299_792_458.0;
+
+    /** Standard solar mass (M_☉), in kg. */
+    public static final double SOLAR_MASS = 1.989e30;
+
+    /**
+     * Fusion star classification: returns true if mass M >= 0.08 M_☉ (~1.5912e29 kg).
+     */
+    public boolean isStar(int i) {
+        return mass[i] >= 0.08 * SOLAR_MASS;
+    }
+
+    /**
+     * Schwarzschild radius r_s = 2GM / c^2 in meters.
+     */
+    public double schwarzschildRadius(int i, double G) {
+        return (2.0 * G * mass[i]) / (SPEED_OF_LIGHT * SPEED_OF_LIGHT);
+    }
+
+    /**
+     * Black hole compactness classification: returns true if r_s >= radius.
+     */
+    public boolean isCompactObject(int i, double G) {
+        return schwarzschildRadius(i, G) >= radius[i];
+    }
+
+    /** Static helper: computes Schwarzschild radius r_s = 2GM / c^2 for a given mass and G. */
+    public static double schwarzschildRadius(double m, double G) {
+        return (2.0 * G * m) / (SPEED_OF_LIGHT * SPEED_OF_LIGHT);
+    }
+
+    /** Static helper: returns true if mass M >= 0.08 M_☉. */
+    public static boolean isStar(double m) {
+        return m >= 0.08 * SOLAR_MASS;
+    }
+
+    /** Static helper: returns true if r_s >= radius. */
+    public static boolean isCompactObject(double m, double r, double G) {
+        return schwarzschildRadius(m, G) >= r;
+    }
 }

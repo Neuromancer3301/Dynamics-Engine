@@ -57,6 +57,7 @@ public final class NBodyConfig {
     private final double[] positionX, positionY;
     private final double[] velocityX, velocityY;
     private final String[] name;
+    private final double[] rotationPeriod;
     private final double softeningLength;
     private volatile double gravitationalConstant;
     private volatile double speedMultiplier;
@@ -66,12 +67,24 @@ public final class NBodyConfig {
                         double[] velocityX, double[] velocityY,
                         String[] name, double softeningLength,
                         double gravitationalConstant, double speedMultiplier) {
-        if (n < 1) throw new IllegalArgumentException("N must be >= 1");
+        this(n, mass, radius, positionX, positionY, velocityX, velocityY, name, null,
+                softeningLength, gravitationalConstant, speedMultiplier);
+    }
+
+    public NBodyConfig(int n, double[] mass, double[] radius,
+                        double[] positionX, double[] positionY,
+                        double[] velocityX, double[] velocityY,
+                        String[] name, double[] rotationPeriod,
+                        double softeningLength, double gravitationalConstant,
+                        double speedMultiplier) {
+        if (n < 0) throw new IllegalArgumentException("N must be >= 0");
         if (mass.length != n || radius.length != n || positionX.length != n || positionY.length != n
                 || velocityX.length != n || velocityY.length != n)
             throw new IllegalArgumentException("Array lengths must equal N");
         if (name != null && name.length != n)
             throw new IllegalArgumentException("name array length must equal N");
+        if (rotationPeriod != null && rotationPeriod.length != n)
+            throw new IllegalArgumentException("rotationPeriod array length must equal N");
 
         // isFinite rejects both NaN and +/-Infinity — neither is caught by a
         // plain "<= 0" check — so without this a malformed dialog field or a
@@ -90,6 +103,12 @@ public final class NBodyConfig {
             if (!Double.isFinite(vx)) throw new IllegalArgumentException("All x velocities must be finite");
         for (double vy : velocityY)
             if (!Double.isFinite(vy)) throw new IllegalArgumentException("All y velocities must be finite");
+        if (rotationPeriod != null) {
+            for (double p : rotationPeriod) {
+                if (p != 0.0 && (!Double.isFinite(p) || p <= 0))
+                    throw new IllegalArgumentException("All non-zero rotation periods must be a positive, finite number");
+            }
+        }
         if (!Double.isFinite(softeningLength) || softeningLength <= 0)
             throw new IllegalArgumentException("Softening length must be a positive, finite number");
         if (!Double.isFinite(gravitationalConstant) || gravitationalConstant <= 0)
@@ -104,6 +123,7 @@ public final class NBodyConfig {
         this.positionY = positionY.clone();
         this.velocityX = velocityX.clone();
         this.velocityY = velocityY.clone();
+        this.rotationPeriod = (rotationPeriod != null) ? rotationPeriod.clone() : new double[n];
 
         // Structural, non-null: any missing/blank entry defaults to "Body N"
         // (1-indexed, matching how every other index is shown in this app's UI).
@@ -176,6 +196,12 @@ public final class NBodyConfig {
 
     /** Defensive copy of every body's display name. */
     public String[] getNames() { return name.clone(); }
+
+    /** Rotation period of body {@code i}, in seconds (0.0 if non-rotating). */
+    public double getRotationPeriod(int i) { return rotationPeriod[i]; }
+
+    /** Defensive copy of every body's rotation period, in seconds. */
+    public double[] getRotationPeriods() { return rotationPeriod.clone(); }
 
     /** Sets G mid-simulation. Clamped to a tiny positive floor (well below any physically meaningful value) so it can never reach zero or negative — see {@code physics.PendulumConfig#setGravity} for the identical reasoning at pendulum-appropriate magnitudes. */
     public void setGravitationalConstant(double g) { this.gravitationalConstant = Math.max(1.0e-15, g); }

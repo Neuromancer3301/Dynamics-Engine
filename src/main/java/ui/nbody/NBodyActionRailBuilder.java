@@ -37,6 +37,10 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
     private final NBodyCanvas canvas;
     private Tool activeTool = Tool.EDIT;
 
+    private Icons.IconView editIcon;
+    private Icons.IconView addIcon;
+    private Runnable themeListener;
+
     public NBodyActionRailBuilder(VBox rail, NBodyCanvas canvas) {
         super(rail);
         this.canvas = canvas;
@@ -50,13 +54,13 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
 
         Button editButton = new Button();
         editButton.getStyleClass().addAll("rail-button", "rail-button-locked-active"); // starts active
-        Icons.IconView editIcon = Icons.create(Icons.Glyph.SELECT, 20, Icons.activeColor(theme));
+        editIcon = Icons.create(Icons.Glyph.SELECT, 20, Icons.activeColor(theme));
         editButton.setGraphic(editIcon);
         Tooltip.install(editButton, new Tooltip("Edit — click a body to select it; drag to reposition it live."));
 
         Button addButton = new Button();
         addButton.getStyleClass().add("rail-button");
-        Icons.IconView addIcon = Icons.create(Icons.Glyph.ADD, 20, Icons.idleColor(theme));
+        addIcon = Icons.create(Icons.Glyph.ADD, 20, Icons.idleColor(theme));
         addButton.setGraphic(addIcon);
         Tooltip.install(addButton, new Tooltip("Add — click empty space to place a new body there. Dragging is off while this tool is active."));
 
@@ -65,18 +69,34 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
 
         rail.getChildren().addAll(editButton, addButton);
 
-        ThemeManager.getInstance().addListener(() -> {
-            Theme t = ThemeManager.getInstance().getCurrent();
-            editIcon.setColor(activeTool == Tool.EDIT ? Icons.activeColor(t) : Icons.idleColor(t));
-            addIcon.setColor(activeTool == Tool.ADD ? Icons.activeColor(t) : Icons.idleColor(t));
-        });
+        registerThemeListener();
+    }
+
+    /** Registers the theme listener if not already registered. */
+    public void registerThemeListener() {
+        if (themeListener == null && editIcon != null && addIcon != null) {
+            themeListener = () -> {
+                Theme t = ThemeManager.getInstance().getCurrent();
+                editIcon.setColor(activeTool == Tool.EDIT ? Icons.activeColor(t) : Icons.idleColor(t));
+                addIcon.setColor(activeTool == Tool.ADD ? Icons.activeColor(t) : Icons.idleColor(t));
+            };
+            ThemeManager.getInstance().addListener(themeListener);
+        }
+    }
+
+    /** Unregisters the theme listener to prevent memory leaks across scene transitions. */
+    public void teardown() {
+        if (themeListener != null) {
+            ThemeManager.getInstance().removeListener(themeListener);
+            themeListener = null;
+        }
     }
 
     /**
      * Switches the active rail tool: moves the "locked-active" style to
-     * whichever button is now current, recolors both icons, and gates the
-     * canvas's drag-to-reposition gesture accordingly — see the class
-     * javadoc for why this gating was added in round 1.1.
+     * whichever button is now current, recolors both icons, cancels any active
+     * drag or selection, and gates the canvas's drag-to-reposition gesture
+     * accordingly — see the class javadoc for why this gating was added in round 1.1.
      */
     private void setActiveTool(Tool tool, Button editButton, Icons.IconView editIcon,
                                 Button addButton, Icons.IconView addIcon) {
@@ -91,6 +111,8 @@ public final class NBodyActionRailBuilder extends ActionRailBuilder {
         editIcon.setColor(editActive ? Icons.activeColor(t) : Icons.idleColor(t));
         addIcon.setColor(editActive ? Icons.idleColor(t) : Icons.activeColor(t));
 
+        canvas.cancelDrag();
+        canvas.setSelectedBody(-1);
         canvas.setDragEditingEnabled(editActive);
     }
 }

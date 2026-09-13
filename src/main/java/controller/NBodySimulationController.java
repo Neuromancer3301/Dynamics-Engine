@@ -433,6 +433,10 @@ public final class NBodySimulationController implements Initializable, Navigable
         simLoop.start();
         renderTimer.start();
 
+        if (actionRailBuilder != null) {
+            actionRailBuilder.registerThemeListener();
+        }
+
         keyHandler = this::handleKeyPress;
         Scene scene = btnBack.getScene();
         if (scene != null) scene.addEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
@@ -443,6 +447,10 @@ public final class NBodySimulationController implements Initializable, Navigable
     public void onHide() {
         renderTimer.stop();
         simLoop.stop();
+
+        if (actionRailBuilder != null) {
+            actionRailBuilder.teardown();
+        }
 
         Scene scene = btnBack.getScene();
         if (scene != null && keyHandler != null) scene.removeEventFilter(KeyEvent.KEY_PRESSED, keyHandler);

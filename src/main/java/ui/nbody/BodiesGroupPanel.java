@@ -48,6 +48,8 @@ public final class BodiesGroupPanel extends VBox {
     private IntConsumer onBodyInfo;
     private IntConsumer onBodyOpen;
 
+    private boolean applyingPreset = false;
+
     public BodiesGroupPanel(NBodyConfig initialConfig) {
         super(10);
 
@@ -77,6 +79,13 @@ public final class BodiesGroupPanel extends VBox {
             });
             return cell;
         });
+        presetBox.setButtonCell(new ListCell<>() {
+            @Override protected void updateItem(Presets.Preset item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.toString());
+            }
+        });
+        presetBox.setOnAction(e -> applyPreset(presetBox.getValue()));
 
         Label listHeader = sectionLabel("Bodies");
         bodyList.setPrefHeight(360);
@@ -123,14 +132,22 @@ public final class BodiesGroupPanel extends VBox {
     }
 
     private void applyPreset(Presets.Preset selected) {
-        if (selected == null) return;
-        if (onPresetApply != null) onPresetApply.accept(selected);
-        presetBox.setValue(selected); // keeps the closed box's own label in sync — never the trigger itself
+        if (selected == null || applyingPreset) return;
+        applyingPreset = true;
+        try {
+            if (onPresetApply != null) onPresetApply.accept(selected);
+            presetBox.setValue(selected); // keeps the closed box's own label in sync — never the trigger itself
+        } finally {
+            applyingPreset = false;
+        }
     }
 
     /** Repopulates the compact list from the current config — call after every structural edit (Add/Delete/preset load changes N and/or names). */
     public void refreshBodies(NBodyConfig config) {
         bodyNames.clear();
+        if (config.getN() == 0) {
+            bodyList.setPlaceholder(new Label("Empty cosmos. Click canvas to add bodies."));
+        }
         for (int i = 0; i < config.getN(); i++) {
             bodyNames.add((i + 1) + "   " + config.getName(i));
         }

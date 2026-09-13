@@ -1,8 +1,10 @@
 package ui.nbody;
 
 import physics.nbody.NBodyState;
+import ui.simcore.Camera;
 import ui.simcore.SimCanvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.paint.Color;
 
 /**
  * JavaFX Canvas that renders the n-body scene and owns direct-manipulation
@@ -21,6 +23,24 @@ import javafx.scene.canvas.GraphicsContext;
  * overlay — see {@link NBodyRenderer}.
  */
 public final class NBodyCanvas extends SimCanvas {
+
+    private static final int STAR_COUNT = 250;
+    private static final double[] STAR_X = new double[STAR_COUNT];
+    private static final double[] STAR_Y = new double[STAR_COUNT];
+    private static final double[] STAR_RADIUS = new double[STAR_COUNT];
+    private static final double[] STAR_ALPHA = new double[STAR_COUNT];
+    private static final double[] STAR_PARALLAX = new double[STAR_COUNT];
+
+    static {
+        java.util.Random rng = new java.util.Random(0x4E424F4459L); // deterministic seed
+        for (int i = 0; i < STAR_COUNT; i++) {
+            STAR_X[i] = rng.nextDouble();
+            STAR_Y[i] = rng.nextDouble();
+            STAR_RADIUS[i] = 0.75 + rng.nextDouble() * 0.75; // 0.75 - 1.5 px
+            STAR_ALPHA[i] = 0.20 + rng.nextDouble() * 0.65;  // 0.20 - 0.85
+            STAR_PARALLAX[i] = 0.02 + rng.nextDouble() * 0.06; // subtle parallax
+        }
+    }
 
     /** Notified as the user grabs, drags, and releases a body. See the class javadoc. */
     public interface DragListener {
@@ -130,7 +150,7 @@ public final class NBodyCanvas extends SimCanvas {
 
     @Override
     protected double contentExtent() {
-        if (lastState == null) return 1.0;
+        if (lastState == null || lastState.getN() == 0) return 1.0;
         double originX = 0, originY = 0;
         if (followMode == FollowMode.CENTER_OF_MASS) {
             double[] com = centerOfMass(lastState);
@@ -144,6 +164,27 @@ public final class NBodyCanvas extends SimCanvas {
             max = Math.max(max, Math.hypot(dx, dy));
         }
         return max;
+    }
+
+    @Override
+    protected void drawBackground(GraphicsContext gc, double w, double h) {
+        gc.setFill(Color.web("#08080B"));
+        gc.fillRect(0, 0, w, h);
+
+        double panOffsetX = camera.originX(w) - w * 0.5;
+        double panOffsetY = camera.originY(h) - h * 0.46;
+
+        for (int i = 0; i < STAR_COUNT; i++) {
+            double sx = (STAR_X[i] * w + panOffsetX * STAR_PARALLAX[i]) % w;
+            if (sx < 0) sx += w;
+            double sy = (STAR_Y[i] * h + panOffsetY * STAR_PARALLAX[i]) % h;
+            if (sy < 0) sy += h;
+            double r = STAR_RADIUS[i];
+            gc.setFill(Color.color(1.0, 1.0, 1.0, STAR_ALPHA[i]));
+            gc.fillOval(sx - r, sy - r, r * 2, r * 2);
+        }
+
+        drawOriginAxes(gc, w, h);
     }
 
     // Round 1.1: powers of ten from 10km to 10 billion km — the pendulum's
@@ -202,8 +243,12 @@ public final class NBodyCanvas extends SimCanvas {
             switch (followMode) {
                 case OFF -> camera.clearFollowPoint();
                 case CENTER_OF_MASS -> {
-                    double[] com = centerOfMass(lastState);
-                    camera.setFollowPoint(com[0], com[1]);
+                    if (lastState.getN() > 0) {
+                        double[] com = centerOfMass(lastState);
+                        camera.setFollowPoint(com[0], com[1]);
+                    } else {
+                        camera.clearFollowPoint();
+                    }
                 }
                 case SELECTED_BODY -> {
                     if (selectedBody >= 0 && selectedBody < lastState.getN()) {
@@ -243,6 +288,9 @@ public final class NBodyCanvas extends SimCanvas {
     /** What the camera currently follows. */
     public FollowMode getFollowMode() { return followMode; }
 
+    /** Returns the underlying camera controlling pan and zoom. */
+    public Camera getCamera() { return camera; }
+
     /**
      * Round 1.4: whether {@code bodyIndex} is the body {@link
      * FollowMode#SELECTED_BODY} currently has locked the camera onto — if
@@ -266,6 +314,9 @@ public final class NBodyCanvas extends SimCanvas {
 
     /** Enables or disables drag-to-reposition of bodies, independent of selection — gated by the Add tool (round 1.1; see {@code NBodyActionRailBuilder}). On by default. */
     public void setDragEditingEnabled(boolean dragEditingEnabled) { interaction.setDragEditingEnabled(dragEditingEnabled); }
+
+    /** Cancels any active drag or pan gesture, clearing drag history. */
+    public void cancelDrag() { interaction.cancelDrag(); }
 
     /** Registers the listener notified when a body becomes selected. {@code null} disables that notification (selection can still be set programmatically). */
     public void setSelectionListener(SelectionListener listener) { interaction.setSelectionListener(listener); }
@@ -332,6 +383,7 @@ public final class NBodyCanvas extends SimCanvas {
      * purely a render-side convenience (n-body implementation spec §7).
      */
     private static double[] centerOfMass(NBodyState state) {
+        if (state == null || state.getN() == 0) return new double[]{0, 0};
         double totalMass = 0, cx = 0, cy = 0;
         for (int i = 0; i < state.getN(); i++) {
             totalMass += state.mass[i];

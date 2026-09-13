@@ -1,9 +1,13 @@
 package ui.nbody;
 
+import physics.nbody.NBodyConfig;
 import physics.nbody.NBodyState;
 import ui.simcore.Camera;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.RadialGradient;
+import javafx.scene.paint.Stop;
 import javafx.scene.text.Font;
 
 import java.util.ArrayDeque;
@@ -116,6 +120,13 @@ final class NBodyRenderer {
     // list. Matches PendulumChainRenderer's own TRAIL_MAX exactly.
     private static final int TRAIL_MAX = 600;
 
+    // Spacetime curvature mesh: 45 px grid across viewport displaced towards massive bodies
+    private static final double MESH_STEP_PX = 45.0;
+    private static final double MESH_COUPLING_FACTOR = 2.0e-16;
+    private static final double MESH_EPSILON_PX = 35.0;
+    private static final double MESH_MAX_DISPLACEMENT_PX = 25.0;
+    private static final Color MESH_COLOR = Color.web("#22222E");
+
     private final Camera camera;
     private Color[] bodyColors = BODY_COLORS_DEFAULT;
     private boolean reducedMotion = false;
@@ -175,8 +186,8 @@ final class NBodyRenderer {
     }
 
     /**
-     * Draws one full frame's worth of n-body content: every body, the
-     * selection halo, the status overlay, and the hovered/selected/watched
+     * Draws one full frame's worth of n-body content: spacetime mesh, every body,
+     * the selection halo, the status overlay, and the hovered/selected/watched
      * body's inspector HUD. Background/waiting-message/scale-bar are
      * already handled by {@code SimCanvas} by the time this is called.
      *
@@ -187,20 +198,26 @@ final class NBodyRenderer {
      *        its numbers keep changing live while the simulation runs.
      */
     void draw(GraphicsContext gc, NBodyState state, double w, double h, int hoveredBody, int selectedBody, int infoBody) {
+        if (state == null) return;
         double scale = camera.getScale();
         double originX = camera.originX(w);
         double originY = camera.originY(h);
 
-        ensureTrailCapacity(state.getN());
-        recordTrailPoints(state);
-        drawTrails(gc, state, scale, originX, originY);
+        drawSpacetimeMesh(gc, state, w, h, scale, originX, originY);
 
-        drawBodies(gc, state, scale, originX, originY);
-        drawSelectionHalo(gc, state, scale, originX, originY, selectedBody);
+        if (state.getN() > 0) {
+            ensureTrailCapacity(state.getN());
+            recordTrailPoints(state);
+            drawTrails(gc, state, scale, originX, originY);
+
+            drawBodies(gc, state, scale, originX, originY);
+            drawSelectionHalo(gc, state, scale, originX, originY, selectedBody);
+            drawBodyHud(gc, state, hoveredBody, scale, originX, originY, w, "", false);
+            if (selectedBody != hoveredBody) drawBodyHud(gc, state, selectedBody, scale, originX, originY, w, "Selected: ", true);
+            if (infoBody != hoveredBody && infoBody != selectedBody) drawBodyHud(gc, state, infoBody, scale, originX, originY, w, "Watching: ", false);
+        }
+
         drawStatusOverlay(gc, state);
-        drawBodyHud(gc, state, hoveredBody, scale, originX, originY, w, "", false);
-        if (selectedBody != hoveredBody) drawBodyHud(gc, state, selectedBody, scale, originX, originY, w, "Selected: ", true);
-        if (infoBody != hoveredBody && infoBody != selectedBody) drawBodyHud(gc, state, infoBody, scale, originX, originY, w, "Watching: ", false);
     }
 
     /**
@@ -275,16 +292,201 @@ final class NBodyRenderer {
     }
 
     private void drawBodies(GraphicsContext gc, NBodyState state, double scale, double originX, double originY) {
+        double G = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT;
         for (int i = 0; i < state.getN(); i++) {
             double bx = originX + state.positionX[i] * scale;
             double by = originY - state.positionY[i] * scale;
             double r = radiusForBody(state, i);
+            double dScreen = 2.0 * r;
+            Color bodyColor = bodyColors[i % bodyColors.length];
 
-            gc.setFill(BLACK_A35);
-            gc.fillOval(bx - r + 1.5, by - r + 1.5, r * 2, r * 2);
+            if (dScreen < 10.0) {
+                // LOD 0: solid anti-aliased circle with soft photometric glow halo
+                double rGlow = r + 3.0;
+                gc.setFill(bodyColor.deriveColor(0, 1.0, 1.0, 0.25));
+                gc.fillOval(bx - rGlow, by - rGlow, rGlow * 2, rGlow * 2);
 
-            gc.setFill(bodyColors[i % bodyColors.length]);
-            gc.fillOval(bx - r, by - r, r * 2, r * 2);
+                gc.setFill(bodyColor);
+                gc.fillOval(bx - r, by - r, r * 2, r * 2);
+            } else {
+                // LOD 1: dScreen >= 10 px
+                if (state.isCompactObject(i, G)) {
+                    // Black hole: pitch-black core, glowing photon ring & lensing halo
+                    double rCore = Math.max(r, 3.0);
+                    double pulse = reducedMotion ? 0.7 : (0.7 + 0.15 * Math.sin((System.nanoTime() / 1.0e9) * 2.0 * Math.PI * 0.5));
+
+                    // Lensing halo from 1.5 r_core to 2.6 r_core
+                    RadialGradient lensingGrad = new RadialGradient(
+                            0, 0, bx, by, 2.6 * rCore, false, CycleMethod.NO_CYCLE,
+                            new Stop(0.0, Color.TRANSPARENT),
+                            new Stop(0.50, Color.web("#3DDCC7", pulse)),
+                            new Stop(0.80, Color.web("#EA3F8C", pulse * 0.7)),
+                            new Stop(1.0, Color.TRANSPARENT)
+                    );
+                    gc.setFill(lensingGrad);
+                    gc.fillOval(bx - 2.6 * rCore, by - 2.6 * rCore, 5.2 * rCore, 5.2 * rCore);
+
+                    // Glowing photon ring
+                    gc.setStroke(Color.web("#3DDCC7", Math.min(1.0, pulse * 1.1)));
+                    gc.setLineWidth(Math.max(1.0, 0.12 * rCore));
+                    gc.strokeOval(bx - 1.25 * rCore, by - 1.25 * rCore, 2.5 * rCore, 2.5 * rCore);
+
+                    // Event horizon (pitch black core)
+                    gc.setFill(Color.BLACK);
+                    gc.fillOval(bx - rCore, by - rCore, rCore * 2, rCore * 2);
+                } else if (state.isStar(i)) {
+                    // Fusion star: brilliant white/yellow disc with luminous coronal flare halo expanding 1.8x r
+                    double rCorona = 1.8 * r;
+                    RadialGradient coronaGrad = new RadialGradient(
+                            0, 0, bx, by, rCorona, false, CycleMethod.NO_CYCLE,
+                            new Stop(0.0, Color.web("#FFF5C0", 0.75)),
+                            new Stop(0.50, Color.web("#FF9E3D", 0.40)),
+                            new Stop(0.80, Color.web("#EA3F8C", 0.15)),
+                            new Stop(1.0, Color.TRANSPARENT)
+                    );
+                    gc.setFill(coronaGrad);
+                    gc.fillOval(bx - rCorona, by - rCorona, rCorona * 2, rCorona * 2);
+
+                    RadialGradient starGrad = new RadialGradient(
+                            0, 0, bx, by, r, false, CycleMethod.NO_CYCLE,
+                            new Stop(0.0, Color.WHITE),
+                            new Stop(0.65, Color.web("#FFFBE0")),
+                            new Stop(1.0, Color.web("#FFD147"))
+                    );
+                    gc.setFill(starGrad);
+                    gc.fillOval(bx - r, by - r, r * 2, r * 2);
+                } else {
+                    // Planet/moon/body: rotating spherical billboard
+                    gc.save();
+                    gc.beginPath();
+                    gc.arc(bx, by, r, r, 0, 360);
+                    gc.closePath();
+                    gc.clip();
+
+                    gc.setFill(bodyColor);
+                    gc.fillRect(bx - r, by - r, r * 2, r * 2);
+
+                    double rotPeriod = (state.rotationPeriod != null && i < state.rotationPeriod.length)
+                            ? state.rotationPeriod[i] : 0.0;
+                    if (rotPeriod > 0.0) {
+                        double phi = (state.time / rotPeriod) % 1.0;
+                        if (phi < 0) phi += 1.0;
+
+                        // Surface bands (latitude belts)
+                        gc.setFill(bodyColor.deriveColor(0, 1.15, 0.75, 0.30));
+                        gc.fillRect(bx - r, by - 0.45 * r, 2 * r, 0.25 * r);
+                        gc.fillRect(bx - r, by + 0.15 * r, 2 * r, 0.20 * r);
+                        gc.setFill(bodyColor.deriveColor(0, 0.85, 1.25, 0.20));
+                        gc.fillRect(bx - r, by - 0.15 * r, 2 * r, 0.22 * r);
+
+                        // Rotating longitude meridians
+                        gc.setStroke(bodyColor.deriveColor(0, 1.2, 0.7, 0.35));
+                        gc.setLineWidth(Math.max(1.0, r * 0.08));
+                        for (int m = 0; m < 6; m++) {
+                            double angle = m * (Math.PI / 3.0) + phi * 2.0 * Math.PI;
+                            double sin = Math.sin(angle);
+                            if (sin > 0) {
+                                double cos = Math.cos(angle);
+                                double mrx = Math.max(0.5, r * cos);
+                                gc.strokeOval(bx - mrx, by - r, mrx * 2, r * 2);
+                            }
+                        }
+                    }
+
+                    // 3D spherical shading and limb darkening (applies to both rotating and unassigned period)
+                    RadialGradient shading = new RadialGradient(
+                            0, 0, bx - 0.3 * r, by - 0.3 * r, 1.4 * r, false, CycleMethod.NO_CYCLE,
+                            new Stop(0.0, Color.color(1, 1, 1, 0.25)),
+                            new Stop(0.45, Color.color(1, 1, 1, 0.0)),
+                            new Stop(0.75, Color.color(0, 0, 0, 0.35)),
+                            new Stop(1.0, Color.color(0, 0, 0, 0.75))
+                    );
+                    gc.setFill(shading);
+                    gc.fillRect(bx - r, by - r, r * 2, r * 2);
+
+                    gc.restore();
+                }
+            }
+        }
+    }
+
+    /**
+     * Draws the spacetime curvature mesh across the viewport.
+     * Evaluates gravitational displacement at each vertex of a 45 px grid and
+     * strokes the resulting curved mesh lines. Safely skips when N = 0.
+     */
+    private void drawSpacetimeMesh(GraphicsContext gc, NBodyState state, double w, double h, double scale, double originX, double originY) {
+        if (state == null || state.getN() == 0) return;
+
+        int cols = (int) Math.ceil(w / MESH_STEP_PX) + 1;
+        int rows = (int) Math.ceil(h / MESH_STEP_PX) + 1;
+
+        double[][] dispX = new double[cols][rows];
+        double[][] dispY = new double[cols][rows];
+
+        int n = state.getN();
+        double[] bx = new double[n];
+        double[] by = new double[n];
+        double[] gm = new double[n];
+        for (int i = 0; i < n; i++) {
+            bx[i] = originX + state.positionX[i] * scale;
+            by[i] = originY - state.positionY[i] * scale;
+            gm[i] = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT * state.mass[i];
+        }
+
+        double eps2 = MESH_EPSILON_PX * MESH_EPSILON_PX;
+
+        for (int c = 0; c < cols; c++) {
+            double px = c * MESH_STEP_PX;
+            for (int r = 0; r < rows; r++) {
+                double py = r * MESH_STEP_PX;
+
+                double dxTotal = 0.0;
+                double dyTotal = 0.0;
+
+                for (int i = 0; i < n; i++) {
+                    double rx = bx[i] - px;
+                    double ry = by[i] - py;
+                    double dist2 = rx * rx + ry * ry;
+                    double denom = Math.pow(dist2 + eps2, 1.5);
+                    double factor = (gm[i] / denom) * MESH_COUPLING_FACTOR;
+                    dxTotal += rx * factor;
+                    dyTotal += ry * factor;
+                }
+
+                double dispMag = Math.hypot(dxTotal, dyTotal);
+                if (dispMag > MESH_MAX_DISPLACEMENT_PX) {
+                    double cap = MESH_MAX_DISPLACEMENT_PX / dispMag;
+                    dxTotal *= cap;
+                    dyTotal *= cap;
+                }
+
+                dispX[c][r] = px + dxTotal;
+                dispY[c][r] = py + dyTotal;
+            }
+        }
+
+        gc.setStroke(MESH_COLOR);
+        gc.setLineWidth(0.75);
+
+        // Horizontal grid curves
+        for (int r = 0; r < rows; r++) {
+            gc.beginPath();
+            gc.moveTo(dispX[0][r], dispY[0][r]);
+            for (int c = 1; c < cols; c++) {
+                gc.lineTo(dispX[c][r], dispY[c][r]);
+            }
+            gc.stroke();
+        }
+
+        // Vertical grid curves
+        for (int c = 0; c < cols; c++) {
+            gc.beginPath();
+            gc.moveTo(dispX[c][0], dispY[c][0]);
+            for (int r = 1; r < rows; r++) {
+                gc.lineTo(dispX[c][r], dispY[c][r]);
+            }
+            gc.stroke();
         }
     }
 

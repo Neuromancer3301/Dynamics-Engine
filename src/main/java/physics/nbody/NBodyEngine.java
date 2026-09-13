@@ -53,6 +53,7 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
     private final int n;
     private final double[] mass, radius;
     private final String[] name;
+    private final double[] rotationPeriod;
     private final double softeningLength;
     private volatile double gravitationalConstant;
 
@@ -81,6 +82,7 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
         this.mass            = cfg.getMasses();
         this.radius          = cfg.getRadii();
         this.name            = cfg.getNames();
+        this.rotationPeriod  = cfg.getRotationPeriods();
         this.softeningLength = cfg.getSofteningLength();
         this.gravitationalConstant = cfg.getGravitationalConstant();
 
@@ -147,6 +149,10 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
      */
     @Override
     public void step(double dt) {
+        if (n == 0) {
+            time += dt;
+            return;
+        }
         dt = Math.max(-MAX_ABS_DT, Math.min(dt, MAX_ABS_DT));
         // n-parameter here is halfLen (2n), the position/velocity boundary
         // — NOT body count. See the class javadoc's warning.
@@ -172,6 +178,11 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
      */
     @Override
     public NBodyState getState() {
+        if (n == 0) {
+            return new NBodyState(time, new double[0], new double[0], new double[0], new double[0],
+                    new double[0], new double[0], new String[0], new double[0], 0.0, 0.0);
+        }
+
         double[] posX = new double[n], posY = new double[n];
         double[] velX = new double[n], velY = new double[n];
         int halfLen = 2 * n;
@@ -199,7 +210,7 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
             }
         }
 
-        return new NBodyState(time, posX, posY, velX, velY, mass, radius, name, Math.max(0, ke), pe);
+        return new NBodyState(time, posX, posY, velX, velY, mass, radius, name, rotationPeriod, Math.max(0, ke), pe);
     }
 
     /** Simulation time in seconds since the last reset. */
@@ -239,6 +250,8 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
 
         // Acceleration half: zero, then accumulate the pairwise sum below.
         for (int i = halfLen; i < 2 * halfLen; i++) out[i] = 0.0;
+
+        if (n < 2) return;
 
         double g = gravitationalConstant;
         double eps2 = softeningLength * softeningLength;
