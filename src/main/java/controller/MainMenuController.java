@@ -21,35 +21,43 @@ import java.util.ResourceBundle;
 /**
  * Controller for the application's landing screen.
  *
- * <p>Two tiers of destination, styled and wired differently on purpose:
+ * <p>
+ * Two tiers of destination, styled and wired differently on purpose:
  * <ul>
- *   <li><b>Simulations</b> — the hero content, one {@code NavCard} each,
- *       numbered ("01", "02", ...) because they really are a growing,
- *       ordered suite. {@link #cardSlotTwoController} and {@link
- *       #cardSlotThreeController} are reserved-but-unbuilt slots today
- *       ({@link NavCardController#configureComingSoon}) — replacing one is:
- *       swap that call for a real {@link NavCardController#configure} with
- *       its own {@link Route}, same as {@link #cardPendulumController}
- *       already is. No layout change needed either way; the grid was built
- *       for three from the start.</li>
- *   <li><b>Settings/About</b> — utility, not simulations, so they're
- *       icon-first {@link UtilityIconButton}s (built here in Java, not
- *       FXML — see {@link #initialize}) rather than competing with the hero
- *       grid.</li>
+ * <li><b>Simulations</b> — the hero content, one {@code NavCard} each,
+ * numbered ("01", "02", ...) because they really are a growing,
+ * ordered suite. {@link #cardSlotTwoController} and {@link
+ * #cardSlotThreeController} are reserved-but-unbuilt slots today
+ * ({@link NavCardController#configureComingSoon}) — replacing one is:
+ * swap that call for a real {@link NavCardController#configure} with
+ * its own {@link Route}, same as {@link #cardPendulumController}
+ * already is. No layout change needed either way; the grid was built
+ * for three from the start.</li>
+ * <li><b>Settings/About</b> — utility, not simulations, so they're
+ * icon-first {@link UtilityIconButton}s (built here in Java, not
+ * FXML — see {@link #initialize}) rather than competing with the hero
+ * grid.</li>
  * </ul>
  */
 public final class MainMenuController implements Initializable, Navigable {
 
-    @FXML private BorderPane root;
-    @FXML private Label versionLabel;
-    @FXML private HBox utilityLinksBox;
+    @FXML
+    private BorderPane root;
+    @FXML
+    private Label versionLabel;
+    @FXML
+    private HBox utilityLinksBox;
 
     // fx:include fx:id="cardPendulum" auto-injects both the included root
     // (as `cardPendulum`) and its controller (as `cardPendulumController`).
-    @FXML private Parent cardPendulum;
-    @FXML private NavCardController cardPendulumController;
-    @FXML private NavCardController cardSlotTwoController;
-    @FXML private NavCardController cardSlotThreeController;
+    @FXML
+    private Parent cardPendulum;
+    @FXML
+    private NavCardController cardPendulumController;
+    @FXML
+    private NavCardController cardSlotTwoController;
+    @FXML
+    private NavCardController cardSlotThreeController;
 
     private SceneRouter router;
 
@@ -66,11 +74,13 @@ public final class MainMenuController implements Initializable, Navigable {
 
         cardSlotTwoController.configureComingSoon(
                 "02", Icons.Glyph.RESERVED, "Coming Soon",
-                "A second dynamical system — reserved for what's next.");
+                "A second slot, waiting for its simulation.");
 
-        cardSlotThreeController.configureComingSoon(
-                "03", Icons.Glyph.RESERVED, "Coming Soon",
-                "A third slot, waiting for its simulation.");
+        cardSlotThreeController.configure(
+                "03", Icons.Glyph.MOTION, "Boids Flocking",
+                "Watch complex emergent flocking behavior arise from simple rules.",
+                "Demonstrates: Craig Reynolds' boids algorithm, separation, alignment, and cohesion with interactive predators.",
+                () -> router.navigate(Route.BOIDS));
 
         UtilityIconButton manualButton = new UtilityIconButton(Icons.Glyph.MANUAL, "Manual");
         manualButton.setOnActivate(() -> router.navigate(Route.MANUAL));
@@ -99,7 +109,8 @@ public final class MainMenuController implements Initializable, Navigable {
      * focus-visibility system itself (still a real accessibility feature for
      * Settings/About when the user actually reaches them).
      *
-     * <p>Runs on every return to this screen (this method fires each time,
+     * <p>
+     * Runs on every return to this screen (this method fires each time,
      * per {@link Navigable}), not just first launch — one mechanism for
      * both. {@link Platform#runLater} defers past JavaFX's own automatic
      * initial-focus pass for this pulse so it reliably overrides it instead
