@@ -130,8 +130,8 @@ public final class NBodyCanvas extends SimCanvas {
     private int lastZoomedFollowBody = -1;
 
     // How wide, in screen pixels, SELECTED_BODY's dynamic zoom frames
-    // the followed body's true diameter (round 2.5: dynamic zoom to ~16px).
-    private static final double FOLLOWED_BODY_TARGET_PIXEL_DIAMETER = 16.0;
+    // the followed body's true diameter (round 2.5.1: dynamic zoom to 22px).
+    private static final double FOLLOWED_BODY_TARGET_PIXEL_DIAMETER = 22.0;
     private static final double TRANSITION_DURATION_SECONDS = 1.3;
 
     // Smooth follow transition animation state (round 2.5)
@@ -321,7 +321,7 @@ public final class NBodyCanvas extends SimCanvas {
 
     /**
      * Starts a smooth 1-2s transition animation centering and dynamically zooming
-     * to the selected body (apparent diameter ~16px). Zooms in if smaller, zooms out
+     * to the selected body (apparent diameter ~22px). Zooms in if smaller, zooms out
      * if larger, and handles offscreen bodies smoothly.
      */
     public void startFollowTransition(int bodyIndex) {
