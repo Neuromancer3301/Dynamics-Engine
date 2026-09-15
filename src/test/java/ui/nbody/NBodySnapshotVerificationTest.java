@@ -96,8 +96,10 @@ class NBodySnapshotVerificationTest {
                 saveSnapshot(img4, "04_clear_all.png");
 
                 // 5. Sun with coronal flare (LOD 1 Star)
+                canvas.render(solarEngine.getState());
                 canvas.setFollowMode(NBodyCanvas.FollowMode.SELECTED_BODY);
                 canvas.setSelectedBody(0);
+                canvas.finishFollowTransition();
                 canvas.render(solarEngine.getState());
                 WritableImage img5 = canvas.snapshot(null, null);
                 saveSnapshot(img5, "05_sun_corona.png");
@@ -119,6 +121,7 @@ class NBodySnapshotVerificationTest {
                 );
                 NBodyEngine bhEngine = new NBodyEngine(bhCfg);
                 canvas.setSelectedBody(0);
+                canvas.finishFollowTransition();
                 canvas.render(bhEngine.getState());
                 // Set scale directly so Cygnus X-1 renders with radius 25px (D = 50px >= 10px LOD 1)
                 canvas.getCamera().setScale(25.0 / bhCfg.getRadius(0));
@@ -128,7 +131,9 @@ class NBodySnapshotVerificationTest {
 
                 // 7. Rotating Planet billboard (Jupiter)
                 solarEngine.step(15000.0); // Advance time
+                canvas.render(solarEngine.getState());
                 canvas.setSelectedBody(8); // Jupiter is index 8 (Sun=0, Merc=1, Ven=2, Earth=3, Moon=4, Mars=5, Phob=6, Deim=7, Jup=8)
+                canvas.finishFollowTransition();
                 canvas.render(solarEngine.getState());
                 WritableImage img7 = canvas.snapshot(null, null);
                 saveSnapshot(img7, "07_jupiter_rotating_billboard.png");
@@ -136,6 +141,7 @@ class NBodySnapshotVerificationTest {
                 // 8. Zoomed-in Jupiter Spacetime Curvature
                 canvas.setFollowMode(NBodyCanvas.FollowMode.SELECTED_BODY);
                 canvas.setSelectedBody(8); // Jupiter
+                canvas.finishFollowTransition();
                 canvas.getCamera().setScale(45.0 / solarEngine.getState().radius[8]); // Zoomed in so Jupiter is prominent
                 canvas.render(solarEngine.getState());
                 WritableImage img8 = canvas.snapshot(null, null);
@@ -143,13 +149,15 @@ class NBodySnapshotVerificationTest {
 
                 // 9. Zoomed-in Earth Model & Spacetime Curvature
                 canvas.setSelectedBody(3); // Earth
+                canvas.finishFollowTransition();
                 canvas.getCamera().setScale(5.0e-6); // Zoomed in so Earth is ~64px across
                 canvas.render(solarEngine.getState());
                 WritableImage img9 = canvas.snapshot(null, null);
                 saveSnapshot(img9, "09_earth_zoomed_spacetime_warping.png");
 
-                // 10. Saturn Model with 3D circumstellar rings and Cassini Division
+                // 10. Saturn Model without rings (clean evenly illuminated 3D sphere)
                 canvas.setSelectedBody(13); // Saturn
+                canvas.finishFollowTransition();
                 canvas.getCamera().setScale(45.0 / solarEngine.getState().radius[13]);
                 canvas.render(solarEngine.getState());
                 WritableImage img10 = canvas.snapshot(null, null);
@@ -157,6 +165,7 @@ class NBodySnapshotVerificationTest {
 
                 // 11. Mars Model with Syrtis Major and Polar Ice Caps
                 canvas.setSelectedBody(5); // Mars
+                canvas.finishFollowTransition();
                 canvas.getCamera().setScale(40.0 / solarEngine.getState().radius[5]);
                 canvas.render(solarEngine.getState());
                 WritableImage img11 = canvas.snapshot(null, null);
@@ -164,6 +173,7 @@ class NBodySnapshotVerificationTest {
 
                 // 12. Halley's Comet with Coma, Ion Tail, and Dust Tail
                 canvas.setSelectedBody(33); // Halley's Comet
+                canvas.finishFollowTransition();
                 canvas.getCamera().setScale(5.0e-6);
                 canvas.render(solarEngine.getState());
                 WritableImage img12 = canvas.snapshot(null, null);

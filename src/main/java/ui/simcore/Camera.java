@@ -195,6 +195,27 @@ public final class Camera {
         this.following = true;
     }
 
+    public void setOriginFraction(double xFraction, double yFraction) {
+        this.originXFraction = xFraction;
+        this.originYFraction = yFraction;
+    }
+
+    public double getOriginXFraction() { return originXFraction; }
+    public double getOriginYFraction() { return originYFraction; }
+
+    public double getPanX() { return panX; }
+    public double getPanY() { return panY; }
+
+    public void setPan(double panX, double panY) {
+        this.panX = panX;
+        this.panY = panY;
+    }
+
+    public double getBaseScale() { return baseScale; }
+    public double getZoom() { return zoom; }
+    public double getFollowWorldX() { return followWorldX; }
+    public double getFollowWorldY() { return followWorldY; }
+
     /** Stops following — {@link #originX}/{@link #originY} revert to centering on the true world origin (0,0), from wherever the camera currently sits. */
     public void clearFollowPoint() { this.following = false; }
 

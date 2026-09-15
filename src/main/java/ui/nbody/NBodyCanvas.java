@@ -1,6 +1,7 @@
 package ui.nbody;
 
 import physics.nbody.NBodyState;
+import theme.ThemeManager;
 import ui.simcore.Camera;
 import ui.simcore.SimCanvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -128,9 +129,21 @@ public final class NBodyCanvas extends SimCanvas {
     // "not yet applied to anything" — see #render.
     private int lastZoomedFollowBody = -1;
 
-    // How wide, in screen pixels, SELECTED_BODY's one-time zoom-in frames
-    // the followed body's true diameter — see FollowMode's own javadoc.
-    private static final double FOLLOWED_BODY_TARGET_PIXEL_DIAMETER = 15.0;
+    // How wide, in screen pixels, SELECTED_BODY's dynamic zoom frames
+    // the followed body's true diameter (round 2.5: dynamic zoom to ~16px).
+    private static final double FOLLOWED_BODY_TARGET_PIXEL_DIAMETER = 16.0;
+    private static final double TRANSITION_DURATION_SECONDS = 1.3;
+
+    // Smooth follow transition animation state (round 2.5)
+    private boolean followTransitionActive = false;
+    private long transitionStartNanos = -1;
+    private double transitionStartCenterX = 0.0;
+    private double transitionStartCenterY = 0.0;
+    private double transitionStartScale = 1.0;
+    private double transitionStartPanX = 0.0;
+    private double transitionStartPanY = 0.0;
+    private double transitionTargetScale = 1.0;
+    private int transitionTargetBody = -1;
 
     // Round 1.1: the pendulum-tuned default zoom range (50x beyond the
     // fitted view) leaves the Moon fused into Earth even at maximum zoom —
@@ -139,13 +152,17 @@ public final class NBodyCanvas extends SimCanvas {
     // thousand km apart) needs on the order of 10^5-10^6x more zoom than
     // that, not 50x. See Camera#setZoomRange's own javadoc for the math.
     private static final double MIN_ZOOM = 0.025;   // unchanged — no need to zoom out further than the pendulum ever did
-    private static final double MAX_ZOOM = 1.0e7;
+    private static final double MAX_ZOOM = 1.0e8;
 
     public NBodyCanvas(double width, double height) {
         super(width, height);
         this.renderer = new NBodyRenderer(camera);
         this.interaction = new NBodyInteraction(this, camera, renderer);
         camera.setZoomRange(MIN_ZOOM, MAX_ZOOM);
+        camera.setOriginFraction(0.5, 0.5);
+
+        // Cancel follow transition if user scrolls
+        addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> cancelFollowTransition());
     }
 
     @Override
@@ -172,7 +189,7 @@ public final class NBodyCanvas extends SimCanvas {
         gc.fillRect(0, 0, w, h);
 
         double panOffsetX = camera.originX(w) - w * 0.5;
-        double panOffsetY = camera.originY(h) - h * 0.46;
+        double panOffsetY = camera.originY(h) - h * 0.5;
 
         for (int i = 0; i < STAR_COUNT; i++) {
             double sx = (STAR_X[i] * w + panOffsetX * STAR_PARALLAX[i]) % w;
@@ -232,42 +249,69 @@ public final class NBodyCanvas extends SimCanvas {
         // the COM (or the followed body's position) between frames.
         if (lastState != null) {
             if (followMode != FollowMode.SELECTED_BODY) {
-                // Not currently in SELECTED_BODY mode — the next time it
-                // IS entered (a dropdown switch, or the same mode with a
-                // newly-clicked different body), lastZoomedFollowBody must
-                // read as "nothing zoomed for yet" so the one-time zoom-in
-                // below actually re-fires instead of silently no-op'ing
-                // against a stale index from a previous follow session.
                 lastZoomedFollowBody = -1;
+                followTransitionActive = false;
             }
-            switch (followMode) {
-                case OFF -> camera.clearFollowPoint();
-                case CENTER_OF_MASS -> {
-                    if (lastState.getN() > 0) {
-                        double[] com = centerOfMass(lastState);
-                        camera.setFollowPoint(com[0], com[1]);
-                    } else {
-                        camera.clearFollowPoint();
+
+            if (followTransitionActive) {
+                if (transitionTargetBody >= 0 && transitionTargetBody < lastState.getN() && selectedBody == transitionTargetBody) {
+                    long now = System.nanoTime();
+                    double elapsed = (now - transitionStartNanos) / 1.0e9;
+                    boolean reduced = ThemeManager.getInstance().isReducedMotion();
+                    double u = (reduced || TRANSITION_DURATION_SECONDS <= 0) ? 1.0 : Math.min(1.0, elapsed / TRANSITION_DURATION_SECONDS);
+
+                    // Smooth cubic smoothstep easing: zero velocity at start and end
+                    double alpha = u * u * (3.0 - 2.0 * u);
+
+                    // Dynamically interpolate world center towards live moving body position
+                    double targetX = lastState.positionX[transitionTargetBody];
+                    double targetY = lastState.positionY[transitionTargetBody];
+                    double curCenterX = (1.0 - alpha) * transitionStartCenterX + alpha * targetX;
+                    double curCenterY = (1.0 - alpha) * transitionStartCenterY + alpha * targetY;
+
+                    // Logarithmic scale interpolation: smoothly zooms in or zooms out
+                    double lnStart = Math.log(Math.max(transitionStartScale, 1.0e-30));
+                    double lnTarget = Math.log(Math.max(transitionTargetScale, 1.0e-30));
+                    double curScale = Math.exp((1.0 - alpha) * lnStart + alpha * lnTarget);
+
+                    // Pan offset smoothly decays to 0 so target is centered at (0.5 * W, 0.5 * H)
+                    double curPanX = (1.0 - alpha) * transitionStartPanX;
+                    double curPanY = (1.0 - alpha) * transitionStartPanY;
+
+                    camera.setPan(curPanX, curPanY);
+                    camera.setFollowPoint(curCenterX, curCenterY);
+                    camera.setScale(curScale);
+
+                    if (u >= 1.0) {
+                        camera.setPan(0.0, 0.0);
+                        camera.setFollowPoint(targetX, targetY);
+                        camera.setScale(transitionTargetScale);
+                        followTransitionActive = false;
+                        lastZoomedFollowBody = transitionTargetBody;
                     }
+                } else {
+                    followTransitionActive = false;
                 }
-                case SELECTED_BODY -> {
-                    if (selectedBody >= 0 && selectedBody < lastState.getN()) {
-                        camera.setFollowPoint(lastState.positionX[selectedBody], lastState.positionY[selectedBody]);
-                        // One-time zoom-in, not a per-frame re-lock: doing
-                        // this every frame would fight the user's own
-                        // subsequent scroll-to-zoom the instant they tried
-                        // it, unlike CENTER_OF_MASS's explicit promise that
-                        // "pan/zoom still work normally while following."
-                        if (selectedBody != lastZoomedFollowBody) {
-                            double radius = Math.max(lastState.radius[selectedBody], 1.0e-6); // guards a pathological zero/negative radius, not a realistic case
-                            camera.setScale(FOLLOWED_BODY_TARGET_PIXEL_DIAMETER / (2.0 * radius));
-                            lastZoomedFollowBody = selectedBody;
+            } else {
+                switch (followMode) {
+                    case OFF -> camera.clearFollowPoint();
+                    case CENTER_OF_MASS -> {
+                        if (lastState.getN() > 0) {
+                            double[] com = centerOfMass(lastState);
+                            camera.setFollowPoint(com[0], com[1]);
+                        } else {
+                            camera.clearFollowPoint();
                         }
-                    } else {
-                        // Nothing valid selected (yet) — nothing to lock
-                        // onto; leave the camera exactly where it sits,
-                        // same as OFF, until a selection actually arrives.
-                        camera.clearFollowPoint();
+                    }
+                    case SELECTED_BODY -> {
+                        if (selectedBody >= 0 && selectedBody < lastState.getN()) {
+                            camera.setFollowPoint(lastState.positionX[selectedBody], lastState.positionY[selectedBody]);
+                            if (selectedBody != lastZoomedFollowBody) {
+                                startFollowTransition(selectedBody);
+                            }
+                        } else {
+                            camera.clearFollowPoint();
+                        }
                     }
                 }
             }
@@ -276,14 +320,85 @@ public final class NBodyCanvas extends SimCanvas {
     }
 
     /**
-     * Sets what the camera follows — see {@link FollowMode}. Does not
-     * itself re-fit the camera; switching modes starts following from
-     * wherever the camera currently sits (or, for {@link
-     * FollowMode#SELECTED_BODY}, snaps to the new target's own framing),
-     * so the transition never resets pan/zoom the user didn't ask to lose
-     * (n-body implementation spec §7, extended round 1.4).
+     * Starts a smooth 1-2s transition animation centering and dynamically zooming
+     * to the selected body (apparent diameter ~16px). Zooms in if smaller, zooms out
+     * if larger, and handles offscreen bodies smoothly.
      */
-    public void setFollowMode(FollowMode mode) { this.followMode = mode; }
+    public void startFollowTransition(int bodyIndex) {
+        if (lastState == null || bodyIndex < 0 || bodyIndex >= lastState.getN()) return;
+
+        double w = getWidth() > 0 ? getWidth() : 500;
+        double h = getHeight() > 0 ? getHeight() : 580;
+
+        // Current world position at viewport center
+        transitionStartCenterX = camera.screenToWorldX(w * 0.5, w);
+        transitionStartCenterY = camera.screenToWorldY(h * 0.5, h);
+        transitionStartScale = camera.getScale();
+        transitionStartPanX = camera.getPanX();
+        transitionStartPanY = camera.getPanY();
+
+        double radius = Math.max(lastState.radius[bodyIndex], 1.0e-6);
+        transitionTargetScale = FOLLOWED_BODY_TARGET_PIXEL_DIAMETER / (2.0 * radius);
+        double minScale = camera.getBaseScale() * MIN_ZOOM;
+        double maxScale = camera.getBaseScale() * MAX_ZOOM;
+        transitionTargetScale = Math.max(minScale, Math.min(maxScale, transitionTargetScale));
+
+        transitionTargetBody = bodyIndex;
+        transitionStartNanos = System.nanoTime();
+        followTransitionActive = true;
+
+        if (ThemeManager.getInstance().isReducedMotion()) {
+            finishFollowTransition();
+        }
+    }
+
+    /** Instantly completes the follow transition without waiting for duration. */
+    public void finishFollowTransition() {
+        if (followTransitionActive && lastState != null && transitionTargetBody >= 0 && transitionTargetBody < lastState.getN()) {
+            camera.setPan(0.0, 0.0);
+            camera.setFollowPoint(lastState.positionX[transitionTargetBody], lastState.positionY[transitionTargetBody]);
+            camera.setScale(transitionTargetScale);
+            followTransitionActive = false;
+            lastZoomedFollowBody = transitionTargetBody;
+        }
+    }
+
+    /** Cancels the follow transition (e.g. if the user manually pans or scrolls). */
+    public void cancelFollowTransition() {
+        followTransitionActive = false;
+    }
+
+    public boolean isFollowTransitionActive() {
+        return followTransitionActive;
+    }
+
+    @Override
+    protected void onViewportResized(double oldWidth, double oldHeight, double newWidth, double newHeight) {
+        if (followMode == FollowMode.SELECTED_BODY) {
+            // Keep followed body centered in viewport
+            camera.rescaleForViewport(oldWidth, oldHeight, newWidth, newHeight);
+        } else if (camera.getZoom() == 1.0 && camera.getPanX() == 0.0 && camera.getPanY() == 0.0) {
+            // In overview mode: re-fit so content stays framed in the smaller area (no offscreen shifting)
+            fitToContent();
+        } else {
+            camera.rescaleForViewport(oldWidth, oldHeight, newWidth, newHeight);
+        }
+    }
+
+    /**
+     * Sets what the camera follows — see {@link FollowMode}.
+     */
+    public void setFollowMode(FollowMode mode) {
+        this.followMode = mode;
+        if (mode == FollowMode.SELECTED_BODY) {
+            if (selectedBody >= 0 && lastState != null && selectedBody < lastState.getN()) {
+                startFollowTransition(selectedBody);
+            }
+        } else {
+            cancelFollowTransition();
+            lastZoomedFollowBody = -1;
+        }
+    }
 
     /** What the camera currently follows. */
     public FollowMode getFollowMode() { return followMode; }
@@ -337,7 +452,17 @@ public final class NBodyCanvas extends SimCanvas {
      * PendulumCanvas#setSelectedLink} — the controller owns pause/resume
      * policy and calls this to reflect it visually.
      */
-    public void setSelectedBody(int body) { this.selectedBody = body; }
+    public void setSelectedBody(int body) {
+        int old = this.selectedBody;
+        this.selectedBody = body;
+        if (followMode == FollowMode.SELECTED_BODY) {
+            if (body >= 0 && lastState != null && body < lastState.getN() && body != old) {
+                startFollowTransition(body);
+            }
+        } else if (body < 0) {
+            cancelFollowTransition();
+        }
+    }
 
     public int getSelectedBody() { return selectedBody; }
 
@@ -356,8 +481,13 @@ public final class NBodyCanvas extends SimCanvas {
     /** Swaps the per-body color palette for a colour-blind-safe one. */
     public void setColorBlindSafe(boolean colorBlindSafe) { renderer.setColorBlindSafe(colorBlindSafe); }
 
+    private boolean reducedMotion = false;
+
     /** Disables the selection halo's pulse animation and motion trails (a global accessibility preference, read once at screen construction — see {@code theme.ThemeManager#isReducedMotion}). */
-    public void setReducedMotion(boolean reducedMotion) { renderer.setReducedMotion(reducedMotion); }
+    public void setReducedMotion(boolean reducedMotion) {
+        this.reducedMotion = reducedMotion;
+        renderer.setReducedMotion(reducedMotion);
+    }
 
     // ---- Round 1.1: motion trails, per body — see ui.nbody.DisplayGroupPanel ----
 

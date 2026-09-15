@@ -85,11 +85,8 @@ public final class CelestialBody3DRegistry {
                                                    boolean isStar, boolean isCompact, boolean isComet) {
         Image texture = CelestialBodyTextureManager.getTexture(rawName);
 
-        // Ring texture for Saturn
+        // Saturn rings removed per Round 2.5 instructions
         Image ringTexture = null;
-        if (normalizedKey.contains("saturn")) {
-            ringTexture = CelestialBodyTextureManager.getTexture("saturn_ring");
-        }
 
         double tilt = AXIAL_TILTS.getOrDefault(normalizedKey, 15.0);
 

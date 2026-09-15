@@ -201,6 +201,7 @@ final class NBodyInteraction {
 
         canvas.setOnMouseDragged(e -> {
             if (panning) {
+                canvas.cancelFollowTransition();
                 double dx = e.getX() - lastPanScreenX, dy = e.getY() - lastPanScreenY;
                 camera.pan(dx, dy);
                 totalPanDragPx += Math.hypot(dx, dy);
