@@ -538,14 +538,14 @@ public final class ManualController implements Initializable, Navigable {
 
             heading("The tool rail, on the left edge"),
             row("Edit", "Normal mode, on by default. Click a body to select it, drag to move it."),
-            row("Add", "Click empty space to place a new body there, pre-filled with that position."),
+            row("Add", "Click empty space to place a new body there, pre-filled with that position. Dragging existing bodies is locked while active."),
 
             heading("Mouse actions on the canvas"),
             row("Hover a body", "Shows its live details (mass, radius, position, velocity)"),
             row("Click a body", "Selects it and pauses the simulation"),
-            row("Drag a body", "Moves it; releasing mid-motion gives it that velocity"),
-            row("Double-click a body", "Opens a dialog to type exact mass/radius/position/velocity"),
-            row("Right-click a body", "Deletes it, after a confirmation (refused if only one remains)"),
+            row("Drag a body", "Moves it; releasing mid-motion gives it that velocity (flings under 80ms)"),
+            row("Double-click a body", "Opens a dialog with logarithmic sliders to edit mass, radius, position, velocity, and rotation period"),
+            row("Right-click a body", "Deletes it, after a confirmation (can delete down to an empty universe, N = 0)"),
             row("Click empty space (Add tool)", "Opens the Add dialog at that position"),
 
             heading("Keyboard"),
@@ -611,7 +611,7 @@ public final class ManualController implements Initializable, Navigable {
                   "Watch the canvas (zoom into Earth if needed, scroll wheel to zoom). Follow "
                 + "the Moon for one full loop."),
             expect("The Moon traces a small circle around Earth while Earth itself is doing a "
-                 + "much larger one around the Sun — a circle riding on a circle."),
+                + "much larger one around the Sun — a circle riding on a circle."),
             means("There is no explicit \"Moon orbits Earth\" rule anywhere in this program. It "
                 + "falls out entirely from Earth simply being far more massive than the Moon and "
                 + "far closer to it than the Sun is."),
@@ -658,23 +658,35 @@ public final class ManualController implements Initializable, Navigable {
                 + "this program's own test suite was written to catch."),
 
             // ---------------------------------------------------------------
-            part("PART SEVEN", "Scenarios"),
+            part("PART SEVEN", "Scenarios & Visuals"),
 
-            heading("One preset today"),
-            text("Bodies tab → the dropdown at the top. \"Home Solar System\" is the only entry "
-               + "for now — Sun, eight planets, their major moons, Ceres, Vesta, Pluto and "
-               + "Charon, and Halley's Comet, 34 bodies in total, all built from approximate "
-               + "real-world figures."),
-            note("Additional presets (other real star systems) and saving/loading your own "
-               + "scenes to a file are both planned but not built yet — this tab will grow the "
-               + "same way tab 01's Links tab did."),
+            heading("Four preset scenarios"),
+            text("Bodies tab → the dropdown at the top provides four preconfigured scenarios:"),
+            bullets("Home Solar System — Sun, eight planets, their major moons, dwarf planets (Ceres, "
+                  + "Pluto, Charon), and Halley's Comet (34 bodies total), with real sidereal rotation periods.",
+                    "TRAPPIST-1 — an ultra-cool red dwarf with seven resonant Earth-sized exoplanets (b–h) "
+                  + "in compact orbits.",
+                    "Alpha Centauri — our closest stellar neighbors: the binary pair Rigil Kentaurus and Toliman, "
+                  + "Proxima Centauri, and habitable-zone planet Proxima b.",
+                    "Clear All — empties the universe (N = 0) so you can construct custom stellar systems from scratch."),
 
-            heading("Positions are approximate, on purpose"),
-            text("Every orbit starts from a circular approximation, not a mission-planning-grade "
-               + "ephemeris — good enough to look and behave right, not good enough to point a "
-               + "telescope with. Halley's Comet in particular has a real orbit far too "
-               + "stretched-out for a circular approximation to resemble; it's included anyway, "
-               + "flagged here as a known simplification rather than a mistake."),
+            heading("Dynamic Space-Fabric & Spacetime Curvature"),
+            text("Deep space features an infinite coordinate fabric behaving like CAD, Blender, and game engines: "
+               + "as you pan and zoom, grid cells stretch continuously and break into smaller 1-2-5 subdivisions. "
+               + "Every celestial body (stars, planets, moons, and black holes) dynamically warps the fabric around it, "
+               + "with zoom-coupled potential revealing prominent local spacetime wells whether viewing Jupiter or the Sun."),
+
+            heading("True Colors & Adaptive Level of Detail"),
+            text("Celestial bodies adaptively render in two levels of detail:"),
+            bullets("LOD 0 (D < 10 px) — rendered with a 2.0 px floor and photometric glow halo.",
+                    "LOD 1: Fusion Stars (M ≥ 0.08 M☉) — brilliant white/yellow discs with expansive coronal flare halos.",
+                    "LOD 1: Black Holes (rs = 2GM/c² ≥ r) — pitch-black event horizon core surrounded by a pulsating photon ring and chromatic lensing halo.",
+                    "LOD 1: Planets & Moons — rotating spherical billboards with surface bands and dynamic longitude meridians rotating in lockstep with their sidereal period, shaded with 3D limb darkening."),
+
+            heading("Multi-Mode Scale Sliders & Relativistic Classification"),
+            text("In the Edit and Add dialogs, mass and radius feature configurable scale modes: Log Scale (log₁₀ response), "
+               + "Normal Scale (linear response), and Dual Sliders (one slider for the mantissa constant and another for the power of 10). "
+               + "Live chips calculate the Schwarzschild radius (rs) and classify each body as Normal, Star, or Black Hole."),
 
             // ---------------------------------------------------------------
             part("PART EIGHT", "If something looks wrong"),
@@ -690,8 +702,8 @@ public final class ManualController implements Initializable, Navigable {
                                           + "Exception matters."),
             row("A red banner appears", "The simulation has become numerically unstable — try "
                                       + "Reset, a smaller speed, or switching back to RK4."),
-            row("\"Can't delete the only remaining body\"", "Expected — a zero-body scene has "
-                                                           + "nothing left to simulate or select."),
+            row("Deleting the last body", "An empty universe (N = 0) is fully supported. Space "
+                                        + "goes silent until you place a new body with the Add tool or load a preset."),
             row("Accessibility settings do nothing", "Reduced motion and the colour-blind "
                                                    + "palette apply the next time you open this "
                                                    + "screen. Go to the menu and back.")

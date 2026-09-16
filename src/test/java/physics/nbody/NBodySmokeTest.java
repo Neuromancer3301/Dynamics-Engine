@@ -80,7 +80,7 @@ class NBodySmokeTest {
         assertThrows(IllegalArgumentException.class, () -> new NBodyConfig(1,
                 new double[]{1.0}, new double[]{1.0}, new double[]{0.0}, new double[]{0.0},
                 new double[]{0.0}, new double[]{0.0}, null, 1.0e7, Double.NaN, 1.0));
-        assertThrows(IllegalArgumentException.class, () -> new NBodyConfig(0,
+        assertThrows(IllegalArgumentException.class, () -> new NBodyConfig(-1,
                 new double[]{}, new double[]{}, new double[]{}, new double[]{},
                 new double[]{}, new double[]{}, null, 1.0e7, G, 1.0));
     }

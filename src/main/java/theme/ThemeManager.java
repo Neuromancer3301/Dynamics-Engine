@@ -109,13 +109,27 @@ public final class ThemeManager {
         listeners.add(onChange);
     }
 
+    /** Unregisters a previously added theme change listener. */
+    public void removeListener(Runnable onChange) {
+        listeners.remove(onChange);
+    }
+
+    /** Number of currently registered listeners — useful for leak verification tests. */
+    public int getListenerCount() {
+        return listeners.size();
+    }
+
+    private void notifyListeners() {
+        new ArrayList<>(listeners).forEach(Runnable::run);
+    }
+
     /** Switches theme, persists the choice, restyles the visible screen, and notifies listeners. No-ops if already active, so listeners don't fire spuriously. */
     public void setTheme(Theme theme) {
         if (theme == current) return;
         this.current = theme;
         prefs.put(PREF_KEY_THEME, theme.name());
         if (activeRoot != null) applyTo(activeRoot);
-        listeners.forEach(Runnable::run);
+        notifyListeners();
     }
 
     /** Flips between the two themes — what the Settings button calls. */
@@ -131,7 +145,7 @@ public final class ThemeManager {
         if (reducedMotion == this.reducedMotion) return;
         this.reducedMotion = reducedMotion;
         prefs.putBoolean(PREF_KEY_REDUCED_MOTION, reducedMotion);
-        listeners.forEach(Runnable::run);
+        notifyListeners();
     }
 
     /** Whether the Okabe-Ito colour-blind-safe bob palette should be used. */
@@ -142,7 +156,7 @@ public final class ThemeManager {
         if (colorBlindSafe == this.colorBlindSafePalette) return;
         this.colorBlindSafePalette = colorBlindSafe;
         prefs.putBoolean(PREF_KEY_COLORBLIND_SAFE, colorBlindSafe);
-        listeners.forEach(Runnable::run);
+        notifyListeners();
     }
 
     /** Current UI zoom factor, between {@link #MIN_FONT_SCALE} and {@link #MAX_FONT_SCALE}. */
@@ -157,7 +171,7 @@ public final class ThemeManager {
         // Deliberately does NOT touch the scene graph: navigation.SceneRouter
         // owns layout and listens for this notification. Applying a transform
         // from here as well would compound with the router's and double-scale.
-        listeners.forEach(Runnable::run);
+        notifyListeners();
     }
 
     /** Forces any value — including a corrupted stored preference — into the supported range. */

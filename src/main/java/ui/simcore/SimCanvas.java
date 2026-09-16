@@ -141,13 +141,26 @@ public abstract class SimCanvas extends Canvas {
                 fitToContent();
                 everFitted = true;
             } else if (w != lastWidth || h != lastHeight) {
-                camera.rescaleForViewport(lastWidth, lastHeight, w, h);
+                onViewportResized(lastWidth, lastHeight, w, h);
             }
             lastWidth = w;
             lastHeight = h;
         }
         drawContent(gc, w, h);
         drawScaleIndicator(gc, w, h);
+    }
+
+    /**
+     * Called whenever the viewport width or height changes (e.g. sidebar or graph toggle).
+     * If the camera is at default overview framing (zoom 1.0, pan 0), smoothly re-fits
+     * the content so it stays properly framed and doesn't get pushed offscreen.
+     */
+    protected void onViewportResized(double oldWidth, double oldHeight, double newWidth, double newHeight) {
+        if (camera.getZoom() == 1.0 && camera.getPanX() == 0.0 && camera.getPanY() == 0.0) {
+            fitToContent();
+        } else {
+            camera.rescaleForViewport(oldWidth, oldHeight, newWidth, newHeight);
+        }
     }
 
     /** Near-void, neutral grey grid plus the world-origin axes — moved verbatim from {@code ui.PendulumCanvas}, minus the old fixed-center line (see {@link #drawOriginAxes}). */
