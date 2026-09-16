@@ -503,8 +503,31 @@ public final class NBodyCanvas extends SimCanvas {
     /** Enables or disables every body's trail at once. */
     public void setAllTrailsEnabled(boolean on) { renderer.setAllTrailsEnabled(on); }
 
-    /** Erases recorded trail history (not which bodies are enabled) — call on Reset, where a body jumping back to its initial position shouldn't draw a line through where it used to be. */
-    public void clearTrails() { renderer.clearTrailHistory(); }
+    /** Erases recorded trail history and resets solar wind particles — call on Reset. */
+    public void clearTrails() {
+        renderer.clearTrailHistory();
+        renderer.resetSolarWind();
+    }
+
+    public NBodyRenderer getRenderer() { return renderer; }
+
+    public NBodyRenderer.TracingMode getTracingMode() { return renderer.getTracingMode(); }
+    public void setTracingMode(NBodyRenderer.TracingMode mode) { renderer.setTracingMode(mode); }
+
+    public boolean isShowMagneticFields() { return renderer.isShowMagneticFields(); }
+    public void setShowMagneticFields(boolean show) { renderer.setShowMagneticFields(show); }
+
+    public boolean isShowSolarWind() { return renderer.isShowSolarWind(); }
+    public void setShowSolarWind(boolean show) { renderer.setShowSolarWind(show); }
+
+    public boolean isShowBowShock() { return renderer.isShowBowShock(); }
+    public void setShowBowShock(boolean show) { renderer.setShowBowShock(show); }
+
+    public int getFieldLineDensity() { return renderer.getFieldLineDensity(); }
+    public void setFieldLineDensity(int density) { renderer.setFieldLineDensity(density); }
+
+    public double getAuroralLuminescence() { return renderer.getAuroralLuminescence(); }
+    public void setAuroralLuminescence(double lum) { renderer.setAuroralLuminescence(lum); }
 
     /**
      * Mass-weighted average position — the scene's center of mass. Computed

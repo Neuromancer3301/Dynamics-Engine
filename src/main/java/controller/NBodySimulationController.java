@@ -256,7 +256,8 @@ public final class NBodySimulationController implements Initializable, Navigable
                 controlPanel.getStatusBlock(),
                 new SidebarTabs.Tab("Motion", Icons.Glyph.MOTION, controlPanel.getMotionGroup()),
                 new SidebarTabs.Tab("Bodies", Icons.Glyph.BODIES, controlPanel.getBodiesGroup()),
-                new SidebarTabs.Tab("Display", Icons.Glyph.DISPLAY, controlPanel.getDisplayGroup()));
+                new SidebarTabs.Tab("Display", Icons.Glyph.DISPLAY, controlPanel.getDisplayGroup()),
+                new SidebarTabs.Tab("Magnetism", Icons.Glyph.MAGNETISM, controlPanel.getMagnetismGroup()));
         VBox.setVgrow(sidebarTabs, Priority.ALWAYS);
         controlHost.getChildren().setAll(sidebarTabs);
         controlHost.minHeightProperty().bind(sidebarScroll.heightProperty());

@@ -689,7 +689,43 @@ public final class ManualController implements Initializable, Navigable {
                + "Live chips calculate the Schwarzschild radius (rs) and classify each body as Normal, Star, or Black Hole."),
 
             // ---------------------------------------------------------------
-            part("PART EIGHT", "If something looks wrong"),
+            part("PART EIGHT", "Lines of Force — Magnetospheres & Solar Wind"),
+
+            heading("Planetary Magnetism & Epistemic Dynamos"),
+            text("Phase 3 introduces realistic planetary and stellar magnetic fields modeled after empirical spacecraft measurements "
+               + "and dynamo physics:"),
+            bullets("Empirical Catalog — Earth (31.0 µT, tilt 11.3°), Jupiter (428.0 µT, tilt 9.6°), Saturn (21.0 µT, axial 0.0°), "
+                  + "Uranus (23.0 µT, tilt 58.6°), Neptune (14.0 µT, tilt 46.8°), Mercury (0.3 µT, tilt 2.0°), Ganymede (1.2 µT, tilt 176.0°), "
+                  + "and the Sun (150.0 µT, tilt 7.25°).",
+                    "Glow Clutter Stripping — non-magnetic inactive bodies (Venus, Mars, Moon, Ceres, Vesta) have photometric glow stripped, "
+                  + "eliminating false atmospheric clutter.",
+                    "Epistemic Scaling Law — uncharacterized or user-created bodies dynamically roll magnetic moments scaled from mass and "
+                  + "rotation (B₀ ∝ M^0.7 · T_rot^-0.5) with deterministic session caching."),
+
+            heading("Solar Wind Dynamics & Parker Spirals"),
+            text("Active stars continuously eject high-velocity solar wind plasma (400–600 km/s). As stars rotate, the interplanetary "
+               + "magnetic field winds into classical Archimedean Parker spirals:"),
+            bullets("Binary Wind Collision — in Alpha Centauri, stellar winds from Rigil Kentaurus and Toliman collide at an interstellar contact plane, "
+                  + "deflecting plasma outwards.",
+                    "Planetary Sheath Cavities — solar wind sparks deflect smoothly around planetary magnetopause boundaries, maintaining an "
+                  + "evacuated plasma-free cavity inside each magnetosphere."),
+
+            heading("Dual-Mode Field Tracing & Bow Shocks"),
+            bullets("Closed-Form Parametric — analytic dipole loops deformed by dayside Chapman-Ferraro/Shue ram pressure balance "
+                  + "and stretched downstream into nightside magnetotails (< 0.1 ms/body).",
+                    "Numerical RK4 Streamlines — 4th-order Runge-Kutta integration across the full superposition vector field B_total = ∑ Bᵢ.",
+                    "Magnetopause Bow Shocks — hyperbolic shock fronts highlighting dayside pressure equilibrium.",
+                    "Adaptive Standoff Indicators — zoomed-out dynamos project minimum indicator circles that expand into detailed magnetic loops upon zooming in."),
+
+            heading("The Magnetism Sidebar Tab"),
+            text("Sidebar → Magnetism tab provides comprehensive control over field visualization:"),
+            bullets("Tracing Mode picker (Closed-Form Parametric vs. Numerical RK4 Streamlines)",
+                    "Visibility toggles for Magnetic Fields, Solar Wind Plasma, and Magnetopause Bow Shocks",
+                    "Field Line Density slider (4–24 loops/streamlines)",
+                    "Auroral Luminescence slider (10%–100% emission intensity)"),
+
+            // ---------------------------------------------------------------
+            part("PART NINE", "If something looks wrong"),
 
             row("Almost nothing on screen", "Normal. The sidebar starts closed. Click [‹]."),
             row("Everything looks frozen", "You're likely at 1x speed. Motion tab → drag Sim "
