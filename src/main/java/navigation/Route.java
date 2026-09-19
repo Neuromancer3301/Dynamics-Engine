@@ -7,13 +7,14 @@ package navigation;
  * here pointing at its FXML file, add the FXML + controller pair it names,
  * done. {@link SceneRouter} needs no changes to support it.
  */
-public enum Route {
-    MAIN_MENU ("/fxml/MainMenu.fxml",   "Home"),
-    SIMULATION("/fxml/Simulation.fxml", "Simulation"),
-    BOIDS     ("/fxml/Boids.fxml",      "Boids"),
-    MANUAL    ("/fxml/Manual.fxml",     "Manual"),
-    SETTINGS  ("/fxml/Settings.fxml",   "Settings"),
-    ABOUT     ("/fxml/About.fxml",      "About");
+public enum Route {                                                                                                                                                                                                                 
+    MAIN_MENU ("/fxml/MainMenu.fxml", "Home"),                                                                                                                                                                                    
+    SIMULATION("/fxml/Simulation.fxml", "Simulation"),                                                                                                                                                                              
+    NBODY     ("/fxml/NBody.fxml", "N-Body Gravity"),                                                                                                                                                                          
+    BOIDS     ("/fxml/Boids.fxml", "Boids"),                                                                                                                                                                                   
+    MANUAL    ("/fxml/Manual.fxml", "Manual"),                                                                                                                                                                                  
+    SETTINGS  ("/fxml/Settings.fxml", "Settings"),                                                                                                                                                                                
+    ABOUT     ("/fxml/About.fxml", "About");
 
     private final String fxmlPath;
     private final String title;
