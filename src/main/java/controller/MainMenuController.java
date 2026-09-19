@@ -1,117 +1,119 @@
-package controller;
+package controller;                                                                                                                                                                                                                 
+import component.NavCardController;                                                                                                                                                                                                 
+import component.UtilityIconButton;                                                                                                                                                                                                 
+import config.AppConfig;                                                                                                                                                                                                            
+import javafx.application.Platform;                                                                                                                                                                                                 
+import javafx.fxml.FXML;                                                                                                                                                                                                            
+import javafx.fxml.Initializable;                                                                                                                                                                                                   
+import javafx.scene.Parent;                                                                                                                                                                                                         
+import javafx.scene.control.Label;                                                                                                                                                                                                  
+import javafx.scene.layout.BorderPane;                                                                                                                                                                                              
+import javafx.scene.layout.HBox;                                                                                                                                                                                                    
+import navigation.Navigable;                                                                                                                                                                                                        
+import navigation.Route;                                                                                                                                                                                                            
+import navigation.SceneRouter;                                                                                                                                                                                                      
+import ui.icon.Icons;                                                                                                                                                                                                               
 
-import component.NavCardController;
-import component.UtilityIconButton;
-import config.AppConfig;
-import javafx.application.Platform;
-import javafx.fxml.FXML;
-import javafx.fxml.Initializable;
-import javafx.scene.Parent;
-import javafx.scene.control.Label;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import navigation.Navigable;
-import navigation.Route;
-import navigation.SceneRouter;
-import ui.icon.Icons;
+import java.net.URL;                                                                                                                                                                                                                
+import java.util.ResourceBundle;                                                                                                                                                                                                    
 
-import java.net.URL;
-import java.util.ResourceBundle;
+/**                                                                                                                                                                                                                                 
+ * Controller for the application's landing screen.                                                                                                                                                                                 
+ *                                                                                                                                                                                                                                  
+ * <p>                                                                                                                                                                                                                              
+ * Two tiers of destination, styled and wired differently on purpose:                                                                                                                                                               
+ * <ul>                                                                                                                                                                                                                             
+ * <li><b>Simulations</b> — the hero content, one {@code NavCard} each,                                                                                                                                                             
+ * numbered ("01", "02", "03") as an expanding suite of dynamic models:                                                                                                                                                             
+ * N-Pendulum Chain, N-Body Gravity, and Boids Flocking.</li>                                                                                                                                                                       
+ * <li><b>Settings/About</b> — utility, not simulations, so they're                                                                                                                                                                 
+ * icon-first {@link UtilityIconButton}s (built here in Java, not                                                                                                                                                                   
+ * FXML — see {@link #initialize}) rather than competing with the hero                                                                                                                                                              
+ * grid.</li>                                                                                                                                                                                                                       
+ * </ul>                                                                                                                                                                                                                            
+ */                                                                                                                                                                                                                                 
+public final class MainMenuController implements Initializable, Navigable {                                                                                                                                                         
 
-/**
- * Controller for the application's landing screen.
- *
- * <p>Two tiers of destination, styled and wired differently on purpose:
- * <ul>
- *   <li><b>Simulations</b> — the hero content, one {@code NavCard} each,
- *       numbered ("01", "02", ...) because they really are a growing,
- *       ordered suite. {@link #cardSlotTwoController} now points at the
- *       n-body gravity screen ({@link Route#NBODY}) — the first slot filled
- *       in exactly the way this class's own javadoc always described:
- *       swap {@link NavCardController#configureComingSoon} for a real
- *       {@link NavCardController#configure} with its own {@link Route},
- *       same as {@link #cardPendulumController} already was. {@link
- *       #cardSlotThreeController} remains a reserved-but-unbuilt slot
- *       today, waiting for the same treatment. No layout change was needed
- *       either way; the grid was built for three from the start.</li>
- *   <li><b>Settings/About</b> — utility, not simulations, so they're
- *       icon-first {@link UtilityIconButton}s (built here in Java, not
- *       FXML — see {@link #initialize}) rather than competing with the hero
- *       grid.</li>
- * </ul>
- */
-public final class MainMenuController implements Initializable, Navigable {
+    @FXML                                                                                                                                                                                                                           
+    private BorderPane root;                                                                                                                                                                                                        
+    @FXML                                                                                                                                                                                                                           
+    private Label versionLabel;                                                                                                                                                                                                     
+    @FXML                                                                                                                                                                                                                           
+    private HBox utilityLinksBox;                                                                                                                                                                                                   
 
-    @FXML private BorderPane root;
-    @FXML private Label versionLabel;
-    @FXML private HBox utilityLinksBox;
+    // fx:include fx:id="cardPendulum" auto-injects both the included root                                                                                                                                                          
+    // (as `cardPendulum`) and its controller (as `cardPendulumController`).                                                                                                                                                        
+    @FXML                                                                                                                                                                                                                           
+    private Parent cardPendulum;                                                                                                                                                                                                    
+    @FXML                                                                                                                                                                                                                           
+    private NavCardController cardPendulumController;                                                                                                                                                                               
+    @FXML                                                                                                                                                                                                                           
+    private NavCardController cardSlotTwoController;                                                                                                                                                                                
+    @FXML                                                                                                                                                                                                                           
+    private NavCardController cardSlotThreeController;                                                                                                                                                                              
 
-    // fx:include fx:id="cardPendulum" auto-injects both the included root
-    // (as `cardPendulum`) and its controller (as `cardPendulumController`).
-    @FXML private Parent cardPendulum;
-    @FXML private NavCardController cardPendulumController;
-    @FXML private NavCardController cardSlotTwoController;
-    @FXML private NavCardController cardSlotThreeController;
+    private SceneRouter router;                                                                                                                                                                                                     
 
-    private SceneRouter router;
+    @Override                                                                                                                                                                                                                       
+    public void initialize(URL location, ResourceBundle resources) {                                                                                                                                                                
+        versionLabel.setText("v" + AppConfig.APP_VERSION);                                                                                                                                                                          
 
-    @Override
-    public void initialize(URL location, ResourceBundle resources) {
-        versionLabel.setText("v" + AppConfig.APP_VERSION);
+        cardPendulumController.configure(                                                                                                                                                                                           
+                "01", Icons.Glyph.PENDULUM, "N-Pendulum Chain",                                                                                                                                                                     
+                "Configure any number of coupled links, watch chaos emerge, and drag it live.",                                                                                                                                     
+                "Demonstrates: RK4/Lagrangian mechanics, live angle & length editing, "                                                                                                                                             
+                        + "butterfly-effect ensembles, and bifurcation/Poincaré analysis.",                                                                                                                                         
+                () -> router.navigate(Route.SIMULATION));                                                                                                                                                                           
 
-        cardPendulumController.configure(
-                "01", Icons.Glyph.PENDULUM, "N-Pendulum Chain",
-                "Configure any number of coupled links, watch chaos emerge, and drag it live.",
-                "Demonstrates: RK4/Lagrangian mechanics, live angle & length editing, "
-                        + "butterfly-effect ensembles, and bifurcation/Poincaré analysis.",
-                () -> router.navigate(Route.SIMULATION));
+        cardSlotTwoController.configure(                                                                                                                                                                                            
+                "02", Icons.Glyph.NBODY, "N-Body Gravity",                                                                                                                                                                          
+                "Load the solar system, drag a planet, and watch real gravity do the rest.",                                                                                                                                        
+                "Demonstrates: softened Newtonian gravity, energy/momentum/angular-momentum "                                                                                                                                       
+                        + "conservation, and orbital mechanics across 34 real bodies.",                                                                                                                                             
+                () -> router.navigate(Route.NBODY));                                                                                                                                                                                
 
-        cardSlotTwoController.configure(
-                "02", Icons.Glyph.NBODY, "N-Body Gravity",
-                "Load the solar system, drag a planet, and watch real gravity do the rest.",
-                "Demonstrates: softened Newtonian gravity, energy/momentum/angular-momentum "
-                        + "conservation, and orbital mechanics across 34 real bodies.",
-                () -> router.navigate(Route.NBODY));
+        cardSlotThreeController.configure(                                                                                                                                                                                          
+                "03", Icons.Glyph.MOTION, "Boids Flocking",                                                                                                                                                                         
+                "Watch complex emergent flocking behavior arise from simple rules.",                                                                                                                                                
+                "Demonstrates: Craig Reynolds' boids algorithm, separation, alignment, and cohesion with interactive predators.",                                                                                                   
+                () -> router.navigate(Route.BOIDS));                                                                                                                                                                                
 
-        cardSlotThreeController.configureComingSoon(
-                "03", Icons.Glyph.RESERVED, "Coming Soon",
-                "A third slot, waiting for its simulation.");
+        UtilityIconButton manualButton = new UtilityIconButton(Icons.Glyph.MANUAL, "Manual");                                                                                                                                       
+        manualButton.setOnActivate(() -> router.navigate(Route.MANUAL));                                                                                                                                                            
 
-        UtilityIconButton manualButton = new UtilityIconButton(Icons.Glyph.MANUAL, "Manual");
-        manualButton.setOnActivate(() -> router.navigate(Route.MANUAL));
+        UtilityIconButton settingsButton = new UtilityIconButton(Icons.Glyph.SETTINGS, "Settings");                                                                                                                                 
+        settingsButton.setOnActivate(() -> router.navigate(Route.SETTINGS));                                                                                                                                                        
 
-        UtilityIconButton settingsButton = new UtilityIconButton(Icons.Glyph.SETTINGS, "Settings");
-        settingsButton.setOnActivate(() -> router.navigate(Route.SETTINGS));
+        UtilityIconButton aboutButton = new UtilityIconButton(Icons.Glyph.INFO, "About");                                                                                                                                           
+        aboutButton.setOnActivate(() -> router.navigate(Route.ABOUT));                                                                                                                                                              
 
-        UtilityIconButton aboutButton = new UtilityIconButton(Icons.Glyph.INFO, "About");
-        aboutButton.setOnActivate(() -> router.navigate(Route.ABOUT));
+        utilityLinksBox.getChildren().addAll(manualButton, settingsButton, aboutButton);                                                                                                                                            
+    }                                                                                                                                                                                                                               
 
-        utilityLinksBox.getChildren().addAll(manualButton, settingsButton, aboutButton);
-    }
+    @Override                                                                                                                                                                                                                       
+    public void setRouter(SceneRouter router) {                                                                                                                                                                                     
+        this.router = router;                                                                                                                                                                                                       
+    }                                                                                                                                                                                                                               
 
-    @Override
-    public void setRouter(SceneRouter router) {
-        this.router = router;
-    }
-
-    /**
-     * Without this, JavaFX's automatic initial-focus placement lands on the
-     * first focus-traversable, enabled node in the scene graph — here, the
-     * Settings utility button (built into the top region, ahead of the card
-     * grid) — which then keeps its :focused glow/label revealed permanently
-     * since nothing else ever takes focus away. Requesting focus on the
-     * primary card instead fixes which node gets it, without touching the
-     * focus-visibility system itself (still a real accessibility feature for
-     * Settings/About when the user actually reaches them).
-     *
-     * <p>Runs on every return to this screen (this method fires each time,
-     * per {@link Navigable}), not just first launch — one mechanism for
-     * both. {@link Platform#runLater} defers past JavaFX's own automatic
-     * initial-focus pass for this pulse so it reliably overrides it instead
-     * of racing it.
-     */
-    @Override
-    public void onShow() {
-        Platform.runLater(() -> cardPendulum.requestFocus());
-    }
+    /**                                                                                                                                                                                                                             
+     * Without this, JavaFX's automatic initial-focus placement lands on the                                                                                                                                                        
+     * first focus-traversable, enabled node in the scene graph — here, the                                                                                                                                                         
+     * Settings utility button (built into the top region, ahead of the card                                                                                                                                                        
+     * grid) — which then keeps its :focused glow/label revealed permanently                                                                                                                                                        
+     * since nothing else ever takes focus away. Requesting focus on the                                                                                                                                                            
+     * primary card instead fixes which node gets it, without touching the                                                                                                                                                          
+     * focus-visibility system itself (still a real accessibility feature for                                                                                                                                                       
+     * Settings/About when the user actually reaches them).                                                                                                                                                                         
+     *                                                                                                                                                                                                                              
+     * <p>                                                                                                                                                                                                                          
+     * Runs on every return to this screen (this method fires each time,                                                                                                                                                            
+     * per {@link Navigable}), not just first launch — one mechanism for                                                                                                                                                            
+     * both. {@link Platform#runLater} defers past JavaFX's own automatic                                                                                                                                                           
+     * initial-focus pass for this pulse so it reliably overrides it instead                                                                                                                                                        
+     * of racing it.                                                                                                                                                                                                                
+     */                                                                                                                                                                                                                             
+    @Override                                                                                                                                                                                                                       
+    public void onShow() {                                                                                                                                                                                                          
+        Platform.runLater(() -> cardPendulum.requestFocus());                                                                                                                                                                       
+    }                                                                                                                                                                                                                               
 }
