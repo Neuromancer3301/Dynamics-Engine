@@ -4,7 +4,7 @@ An N-pendulum chain simulator built in JavaFX for CSE4402 (Visual Programming) â
 
 Grab a bob and fling it. Add links live. Turn on the butterfly effect and watch fifty near-identical pendulums fan apart. Scrub back thirty seconds to see what you missed.
 
-## What this actually is
+## What this actually is?
 
 The physics is real: full Lagrangian mechanics for an arbitrary chain of N pendulums (not just the textbook double pendulum), integrated with RK4 by default, verified against closed-form small-angle solutions and energy conservation across N = 1â€“96. It's fast enough to run 50 extra copies of itself for a live chaos demonstration without dropping frames.
 
