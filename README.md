@@ -1,155 +1,149 @@
 # Dynamics Engine
 
-An N-pendulum chain simulator built in JavaFX for CSE4402 (Visual Programming) — RK4/Lagrangian physics, a lock-free physics thread decoupled from rendering, and a command-driven FXML shell designed to keep growing.
+An interactive dynamical systems and computational physics laboratory built in JavaFX for CSE4402 (Visual Programming) — featuring Lagrangian mechanics, Newtonian orbital gravity, magnetohydrodynamic solar wind, and emergent flocking, powered by decoupled lock-free physics threads and a modular FXML shell.
 
-Grab a bob and fling it. Add links live. Turn on the butterfly effect and watch fifty near-identical pendulums fan apart. Scrub back thirty seconds to see what you missed.
+Explore chaotic multi-pendulum chains, fly through a 34-body solar system with procedural planetary atmospheres and magnetic flux tubes, or guide flocking boids past predators in real time.
 
-## What this actually is?
+---
 
-The physics is real: full Lagrangian mechanics for an arbitrary chain of N pendulums (not just the textbook double pendulum), integrated with RK4 by default, verified against closed-form small-angle solutions and energy conservation across N = 1–96. It's fast enough to run 50 extra copies of itself for a live chaos demonstration without dropping frames.
+## The Simulations
 
-The interaction is real: drag any bob and the rest of the chain reacts through the actual mass-matrix coupling, not a canned animation. Release with a flick and it flings with real angular momentum. Edit any link's length, mass, or initial angle and the simulation rebuilds around it.
+The suite currently features three full-fidelity dynamical systems:
 
-## Features
+### 01 — N-Pendulum Chain
+* **The Physics:** Full Lagrangian mechanics for an arbitrary chain of $N$ coupled pendulums ($N = 1 \dots 60+$), integrated with RK4 by default, verified against closed-form small-angle solutions and energy conservation across $N = 1\text{–}96$.
+* **Interaction:** Grab, drag, and fling any bob with real angular momentum transfer through the mass-matrix coupling. Edit link lengths, masses, or initial angles on the fly.
+* **Chaotic Ensembles:** Run 50 ghost copies simultaneously to demonstrate the butterfly effect with live Lyapunov exponent estimation.
+* **Analysis & Visualization:** Six live graph modes (angle vs. time, energy components, phase portrait, small-multiples, Poincaré section, and integrator drift), plus bifurcation/Poincaré analysis.
+* **Time-Travel Scrubbing:** Inspect the last ~30 seconds of history without halting live physics.
+* **Audio Sonification:** Real-time synthesizer (`audio.Sonifier`) mapping kinetic and potential energy fluctuations into dynamic soundscapes.
+* **Natural Language Scene Generation:** Built-in parser (`NaturalLanguageSceneParser`) that constructs complete pendulum scenarios from plain English prompts (e.g., *"a 4-link pendulum with heavy bottom bobs"*).
 
-**Simulation**
-- Arbitrary N-pendulum chains (runtime-editable, capped at 60 for real-time performance)
-- Three swappable integrators — RK4, Symplectic Euler, Velocity Verlet — for direct energy-drift comparison
-- Zero heap allocation in the physics hot path; Cholesky decomposition for the (symmetric, positive-definite) mass matrix, with a pivoted Gaussian fallback for near-singular cases
-- Direct manipulation: grab, drag, and fling any bob; the rest of the chain responds through real physics
-- Frame-stepping, perturbation injection, and a live parameter inspector on hover
+### 02 — N-Body Gravitational Dynamics
+* **The Physics:** Softened Newtonian gravitational $N$-body engine tracking position, velocity, and mass across arbitrary celestial systems with symplectic leapfrog and adaptive integration.
+* **Solar System Preset:** Authentic 34-body configuration including the Sun, all 8 major planets, dwarf planets, and major moons with scaled orbital parameters.
+* **Photorealistic 3D Celestial Rendering:** Hardware-accelerated 3D sphere meshes with authentic procedural astronomy shaders and texture management for planetary surfaces (Sun, Earth, Jupiter, Saturn with procedural particle rings, Mars, etc.).
+* **Planetary Magnetospheres & Dipole Fields:** Rigorous dipole magnetic field mathematics (`DipoleFieldMath`) with real-time vector field evaluation, field presence determination, and magnetopause standoff distance calculation (`MagnetopauseCalculator`).
+* **Solar Wind & Coronal Mass Ejections (CME):** Interactive Parker spiral magnetic flux tubes and solar wind particle dynamics with interactive CME triggers and bow shock deflections around magnetized planets.
+* **Conservation & Time Symmetry:** Rigorously verified conservation of total energy, linear momentum, and angular momentum, along with reversible integration.
 
-**Analysis**
-- Six graph modes: angle-vs-time, energy components, phase portrait, small-multiples, Poincaré section, and integrator-drift comparison
-- A live, estimated largest Lyapunov exponent while the butterfly-effect ensemble is running
-- Time-travel scrubbing through the last ~30 seconds without pausing the live simulation
+### 03 — Boids Flocking
+* **Emergent Behavior:** Craig Reynolds' classic flocking model implementing separation, alignment, and cohesion.
+* **Predator-Prey Interactions:** Interactive predators that dynamically scatter flocks and alter emergent cluster topology.
+* **Spatial Optimization:** Efficient spatial partitioning for smooth real-time simulation of large boid populations.
 
-**Persistence & presets**
-- Save/load scenarios as hand-rolled JSON (deliberately not Java object serialization — see [Security notes](#security-notes))
-- Six curated presets spanning the classic double pendulum, a near-inverted knife edge, and a 30-link rope
+---
 
-**Accessibility**
-- Light/dark theme (the sidebar follows it; see [Architecture](#architecture) for why the canvas doesn't)
-- Colour-blind-safe bob palette (Okabe-Ito)
-- Reduced-motion mode
+## Features & Highlights
 
-## Quick start
+* **Architecture:** Lock-free physics threads decoupled from JavaFX rendering loops via atomic handoff buffers (`StateBuffer`), ensuring consistent physics timesteps regardless of display refresh rate.
+* **Navigation & UI:** Modern card-based landing hub (`MainMenu`) with animated hover expansion revealing detailed feature blurbs and live simulation preview screenshots.
+* **Customization & Accessibility:**
+  - Full Dark/Light theme support via centralized CSS tokens (`theme.css`).
+  - Color-blind-safe palettes (Okabe-Ito).
+  - Reduced-motion mode for accessibility.
+* **Presets & Persistence:** Hand-rolled JSON scenario persistence with strict bounds checking (no vulnerable Java native object serialization).
 
-Requires JDK 17+ and Maven.
+---
+
+## Quick Start
+
+### Prerequisites
+- **JDK 17+**
+- **Maven 3.8+**
+
+### Launching the Application
 
 ```bash
 mvn javafx:run
 ```
 
-Run the test suite:
+### Running the Test Suite
 
 ```bash
 mvn test
 ```
 
-## Building a native app
+The automated test suite runs **116 tests across 27 classes**, covering:
+- Energy, linear momentum, and angular momentum conservation
+- Small-angle analytic comparison and period scaling
+- Time-reversal symmetry
+- Numerical integrator stability (RK4, Symplectic Euler, Velocity Verlet)
+- Celestial dipole magnetism and magnetopause standoff calculations
+- Natural language scene parsing
+- Audio sonification and UI component lifecycle
+
+---
+
+## Building a Native App
 
 ```bash
 mvn package jpackage:jpackage -Djavafx.jmods.path=/path/to/javafx-jmods-21.0.2
 ```
 
-Produces a double-clickable `Dynamics Engine.app` (macOS) under `target/installer/` — no Maven or JDK needed on the machine you run it on.
+Produces a standalone, double-clickable `Dynamics Engine.app` (macOS) under `target/installer/` — no Maven or JDK required on target machines.
 
-The `javafx.jmods.path` property matters and isn't optional: it must point at an **extracted `javafx-jmods-<version>` directory** — the JMODS SDK distribution, not the Maven `javafx-*.jar` artifacts used everywhere else in this build. Download the one matching your platform from the [OpenJFX downloads page](https://gluonhq.com/products/javafx/) (this project was built and verified against `21.0.2`). Without it, the packaged app fails immediately with `Error: JavaFX runtime components are missing` — confirmed by an actual failed launch during this feature's development, not assumed; see the comments in `pom.xml` for the full explanation of why a classpath-only JavaFX launch needs this.
+> [!IMPORTANT]
+> The `javafx.jmods.path` parameter must point to an extracted **JavaFX JMODs SDK distribution** (e.g., `javafx-jmods-21.0.2`), available from [Gluon OpenJFX](https://gluonhq.com/products/javafx/). Standard Maven JARs are not sufficient for `jpackage` bundling.
 
-This only produces an `APP_IMAGE` (a runnable folder), not a signed `.dmg`/`.msi`/`.deb` — those need per-OS signing credentials this project has no reason to hold.
+---
 
 ## Architecture
 
 ```mermaid
 flowchart TB
     subgraph JavaFX Application Thread
-        Menu[Main Menu] -->|navigate| Sim[Simulation Screen]
-        Sim --> Canvas[PendulumCanvas]
-        Sim --> Graph[GraphPanel]
-        Sim --> Sidebar[ControlPanel + LinkEditorPanel]
-        Timer[AnimationTimer, ~60fps] --> Canvas
-        Timer --> Graph
-        Timer --> Sidebar
+        Menu[Main Menu & NavCards] -->|SceneRouter| SimScreens[Simulation Screens]
+        SimScreens --> PView[PendulumCanvas + GraphPanel]
+        SimScreens --> NView[NBodyCanvas + 3D Shaders + SolarWind]
+        SimScreens --> BView[BoidsCanvas]
+        Timer[AnimationTimer ~60fps] --> SimScreens
     end
 
-    subgraph Physics Thread
-        Loop[SimulationLoop.run] --> Engine[PhysicsEngine.step]
-        Engine --> Integrator[Integrator: RK4 / Symplectic Euler / Velocity Verlet]
-        Loop --> Ensemble[Ensemble: 50 ghost copies]
+    subgraph Physics Engine Thread
+        Loop[SimulationLoop.run] --> Integrator[RK4 / Symplectic / Verlet / Leapfrog]
+        Integrator --> StateUpdate[SimState / NBodyState]
+        Loop --> Ensemble[50 Ghost Ensemble Copies]
     end
 
-    Sidebar -.SimCommand / EngineRebuilder.-> Loop
-    Canvas -.drag SimCommand.-> Loop
-    Loop -.SimState, lock-free.-> Buffer[(StateBuffer)]
-    Buffer -.read each frame.-> Timer
-    Loop -.sampled ~20Hz.-> History[(HistoryBuffer, ~30s)]
-    History -.scrub.-> Canvas
+    SimScreens -.SimCommand / Config.-> Loop
+    Loop -.Immutable State via AtomicReference.-> StateUpdate
+    StateUpdate -.Read Each Frame.-> Timer
 ```
 
-Two threads, one lock-free handoff: the physics thread integrates at a fixed 2ms timestep regardless of render rate, publishing immutable `SimState` snapshots through an `AtomicReference`. The JavaFX thread never blocks waiting on physics, and physics never waits on rendering.
+Two threads, one lock-free handoff: the physics thread integrates at a fixed timestep regardless of render rate, publishing immutable snapshots through an `AtomicReference`. The JavaFX thread never blocks waiting on physics, and physics never stalls waiting on rendering.
 
-Every mutation from the UI thread goes through one of three explicit channels — never a direct field write across threads:
-- **`SimCommand`** — mutates the current engine in place (gravity, a dragged link's angle, perturbation). Applied atomically between RK4 steps.
-- **`EngineRebuilder`** — replaces the engine outright (edited link count, length, or mass). A structural edit needs new array sizes, not a field mutation.
-- **Frame-stepping** — a fourth, narrower mechanism (an `AtomicInteger` counter) specifically for advancing exactly one step while paused.
-
-**Why the sidebar follows the theme toggle but the canvas doesn't:** `ControlPanel` and `LinkEditorPanel` are ordinary JavaFX controls styled through `theme.css`'s token system, so the same light/dark toggle that themes the menu reaches them for free. `PendulumCanvas` and `GraphPanel` draw raw pixels via `GraphicsContext` — there's no CSS cascade to plug into, so their color choices are direct Java calls. That split is a deliberate architectural boundary (UI chrome themed, rendered physics not), not an oversight.
-
-### Package layout
+### Package Layout
 
 ```
-app/            Entry point (thin — just boots the router)
-navigation/     SceneRouter, Route enum, Navigable interface
-controller/     One controller per FXML screen
-component/      Reusable FXML components (NavCard)
-ui/             Canvas-drawn views: PendulumCanvas, GraphPanel, ControlPanel, LinkEditorPanel
-physics/        PhysicsEngine, PendulumConfig, SimState, persistence, presets
-physics/integrator/  Swappable integration strategies
-simulation/     SimulationLoop (the physics thread), StateBuffer, HistoryBuffer, Ensemble
-simulation/command/  SimCommand, EngineRebuilder, and their implementations
-theme/          Theme, ThemeManager (also home to the two accessibility preferences)
-config/         Central app constants
+app/                 Application entry point and lifecycle bootstrap
+audio/               Real-time physical audio sonification (Sonifier)
+component/           Reusable UI components (NavCardController with preview screenshots, UtilityIconButton)
+config/              Central application constants and configuration
+controller/          FXML controllers (MainMenu, Simulation, NBodySimulation, Boids, Manual, Settings, About)
+navigation/          Scene routing architecture (SceneRouter, Route, Navigable)
+physics/             Core physics engines (Lagrangian PhysicsEngine, Bifurcation, NaturalLanguageSceneParser, etc.)
+physics/integrator/  Numerical integration strategies (RK4, Symplectic Euler, Velocity Verlet)
+physics/io/          JSON scenario persistence and validation
+physics/nbody/       N-body gravitational solver, DipoleFieldMath, MagnetopauseCalculator, Presets
+simulation/          SimulationLoop, StateBuffer, HistoryBuffer, Ensemble
+simulation/command/  Thread-safe UI-to-physics commands and engine rebuilders
+theme/               Theme tokens, ThemeManager, accessibility toggles
+ui/boids/            Boids canvas renderer
+ui/icon/             Hand-rolled Canvas vector icon glyphs
+ui/nbody/            3D celestial models, shaders, planetary textures, solar wind & flux tube renderers
+ui/pendulum/         Pendulum canvas renderer, multi-mode graph panel, link editors
+ui/simcore/          Shared simulation controls, action rails, logarithmic sliders
 ```
 
-## Performance
+---
 
-Benchmarked on the project's own hardware (uniform links, `dt = 0.002`):
+## Security Notes
 
-| N | steps/sec | real-time headroom |
-|---|---|---|
-| 2 | ~1.9M | ~3900× |
-| 8 | ~377,000 | ~750× |
-| 32 | ~24,000 | ~48× |
-| 64 | ~5,100 | ~10× |
-| 96 | ~800 | ~1.6× |
+Scenario files use custom minimal JSON parsing (`PendulumConfigIO`, `MiniJson`), completely avoiding Java's native `ObjectOutputStream` / `ObjectInputStream` deserialization vulnerabilities. Input files are bound by strict size limits (1 MB) and element bounds ($N \le 500$) before memory is allocated.
 
-Energy drift stays below 0.5% over 10 simulated seconds across N = 1–20 (see `EnergyConservationTest`). The Cholesky-based solver and allocation-free hot path roughly doubled throughput over an earlier Gaussian-elimination version in the mid-N range — this is what makes running a 50-member butterfly-effect ensemble alongside the primary simulation affordable at N=2–3: even fully loaded, it costs a low single-digit percentage of one core.
+---
 
-## Testing
+## Academic & Course Context
 
-28 tests across 6 classes, all in `physics/` — the engine's correctness is what's tested, not the Canvas rendering (which, like most JavaFX UI code, isn't practically unit-testable without a running toolkit):
-
-- **`AnalyticComparisonTest`** — small-angle motion against closed-form simple harmonic motion; period scaling with `√L`
-- **`EnergyConservationTest`** — drift bounds across N = 1, 2, 3, 5, 8, 12, 16, 20
-- **`RobustnessTest`** — near-zero mass, near-inverted start, N=60 (the UI's own ceiling)
-- **`IntegratorSwitchingTest`** — all three integrators stay finite and bounded; switching mid-run doesn't corrupt state
-- **`PendulumConfigIOTest`** — round-trip fidelity, and explicit rejection of truncated JSON, mismatched arrays, oversized N, oversized files, and non-finite values
-- **`PhysicsEngineSmokeTest`** — the original scaffolding: rest-at-equilibrium, basic conservation, `setLinkState`, NaN rejection
-
-## Security notes
-
-Scenario files are hand-rolled JSON (`PendulumConfigIO`, `MiniJson`), not Java's `ObjectOutputStream` — deserializing an untrusted file through native Java serialization is a well-known remote-code-execution vector. A flat JSON object with five known fields has no such surface: the worst a malicious file can do is fail to parse or fail `PendulumConfig`'s own validation.
-
-Two independent bounds apply before any file content is trusted: raw file size is capped (1MB) before parsing even begins, and N is capped (500) before any array sized by it is allocated.
-
-## Known limitations
-
-- The simulation canvas doesn't follow the light/dark theme toggle (see [Architecture](#architecture) for why, and what would be needed to change it)
-- Time-travel scrubbing is a *view* into recent history, not a rewind of the live engine — releasing the scrub slider returns to the live simulation exactly where it already was, rather than resuming from the scrubbed point
-- Velocity Verlet's implementation is a documented approximation for this system's velocity-dependent acceleration; it doesn't carry the accuracy guarantee classic Verlet has for velocity-independent forces (see `VelocityVerletIntegrator`'s javadoc)
-- The Lyapunov estimate is a simplified two-trajectory divergence measurement, valid for the short initial-divergence window before ensemble members saturate — not a rigorous Benettin-method estimate with periodic renormalization
-
-## Course context
-
-Built for CSE4402 (Visual Programming). See `git log` for the incremental build history — the project moved from a single-file JavaFX prototype through an FXML/MVC shell, direct-manipulation physics, a verified test suite, and the analysis/persistence features above.
+Developed for **CSE4402 (Visual Programming)**. See `git log` for the complete incremental implementation trajectory — from an initial prototype through advanced multi-body physics, astronomical field dynamics, and reactive UI architecture.
