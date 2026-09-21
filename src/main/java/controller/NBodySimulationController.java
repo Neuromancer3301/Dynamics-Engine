@@ -135,6 +135,7 @@ public final class NBodySimulationController implements Initializable, Navigable
         nbodyCanvas.setManaged(false);
         nbodyCanvas.widthProperty().bind(canvasHost.widthProperty());
         nbodyCanvas.heightProperty().bind(canvasHost.heightProperty());
+        nbodyCanvas.setSpeedMultiplier(config.getSpeedMultiplier());
         canvasHost.getChildren().add(nbodyCanvas);
 
         dialogFactory = new NBodyDialogFactory(this);
@@ -282,6 +283,7 @@ public final class NBodySimulationController implements Initializable, Navigable
     private void setPaused(boolean paused) {
         simLoop.setPaused(paused);
         controlPanel.setPausedVisual(paused);
+        nbodyCanvas.setPaused(paused);
         if (!paused && nbodyCanvas.getFollowMode() != NBodyCanvas.FollowMode.SELECTED_BODY) {
             nbodyCanvas.setSelectedBody(-1);
         }
@@ -407,6 +409,8 @@ public final class NBodySimulationController implements Initializable, Navigable
                     initialAngularMomentum = liveState.totalAngularMomentum;
                 }
 
+                nbodyCanvas.setPaused(simLoop.isPaused());
+                nbodyCanvas.setSpeedMultiplier(simLoop.getSpeedMultiplier());
                 nbodyCanvas.render(liveState);
 
                 if (frameCount % 4 == 0) {

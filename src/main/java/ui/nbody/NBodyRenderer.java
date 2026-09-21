@@ -190,6 +190,27 @@ final class NBodyRenderer {
     public SolarWindRenderer getSolarWindRenderer() { return solarWindRenderer; }
     public void resetSolarWind() { solarWindRenderer.reset(); }
 
+    private boolean isPaused = false;
+    private double speedMultiplier = 100_000.0;
+
+    public void setPaused(boolean paused) {
+        this.isPaused = paused;
+        this.solarWindRenderer.setPaused(paused);
+    }
+
+    public boolean isPaused() {
+        return isPaused;
+    }
+
+    public void setSpeedMultiplier(double mult) {
+        this.speedMultiplier = mult;
+        this.solarWindRenderer.setSpeedMultiplier(mult);
+    }
+
+    public double getSpeedMultiplier() {
+        return speedMultiplier;
+    }
+
     void setColorBlindSafe(boolean colorBlindSafe) {
         this.bodyColors = colorBlindSafe ? BODY_COLORS_COLORBLIND_SAFE : BODY_COLORS_DEFAULT;
     }
@@ -313,7 +334,8 @@ final class NBodyRenderer {
 
         // 1. Solar Wind Plasma Advection
         if (showSolarWind) {
-            solarWindRenderer.updateAndRender(gc, state, camera, w, h, state.time, 3600.0, showSolarWind, showBowShock, auroralLuminescence);
+            solarWindRenderer.updateAndRender(gc, state, camera, w, h, state.time, 3600.0,
+                    showSolarWind, showBowShock, auroralLuminescence, isPaused, speedMultiplier);
         }
 
         // 2. Magnetic Field Tracing & Bow Shocks
@@ -349,7 +371,9 @@ final class NBodyRenderer {
 
                 if (tracingMode == TracingMode.PARAMETRIC) {
                     List<double[]> loops = DipoleFieldMath.generateParametricLoops(
-                            i, state, standoff, starPos, fieldLineDensity, 32);
+                            i, state, standoff, starPos, fieldLineDensity, 36);
+                    int loopIdx = 0;
+                    int numShells = Math.max(1, loops.size() / 2);
                     for (double[] poly : loops) {
                         int pts = poly.length / 2;
                         if (pts < 2) continue;
@@ -359,41 +383,82 @@ final class NBodyRenderer {
                             xs[p] = originX + poly[p * 2] * scale;
                             ys[p] = originY - poly[p * 2 + 1] * scale;
                         }
+                        boolean isNightside = (loopIdx % 2 != 0);
+                        double shellFrac = (double) (loopIdx / 2) / numShells;
+                        double tailFrac = isNightside ? (0.35 + 0.65 * shellFrac) : (shellFrac * 0.20);
+                        // Smooth transition from radiant cyan (#3DDCC7) to deep indigo/violet (#7C4DFF) in magnetotail
+                        Color c = fieldColor.interpolate(Color.web("#7C4DFF", alpha * 0.92), tailFrac);
+                        gc.setStroke(c);
+                        gc.setLineWidth(1.3);
                         gc.strokePolyline(xs, ys, pts);
+                        loopIdx++;
                     }
                 } else {
-                    // Numerical RK4 streamlines
+                    // Numerical RK4 streamlines seeded bidirectionally along magnetic equator
                     double rBody = state.radius[i];
-                    int seeds = Math.max(6, fieldLineDensity * 2);
-                    double stepSize = Math.max(rBody * 0.2, standoff / 40.0);
-                    int maxSteps = 120;
-                    for (int s = 0; s < seeds; s++) {
-                        double angle = (2.0 * Math.PI * s) / seeds;
-                        double sx0 = state.positionX[i] + 1.2 * rBody * Math.cos(angle);
-                        double sy0 = state.positionY[i] + 1.2 * rBody * Math.sin(angle);
-                        double[] line = DipoleFieldMath.integrateRK4Streamlines(state, sx0, sy0, stepSize, maxSteps);
-                        int pts = line.length / 2;
-                        if (pts < 2) continue;
-                        double[] xs = new double[pts];
-                        double[] ys = new double[pts];
-                        for (int p = 0; p < pts; p++) {
-                            xs[p] = originX + line[p * 2] * scale;
-                            ys[p] = originY - line[p * 2 + 1] * scale;
+                    double tiltRad = Math.toRadians(state.magneticTiltDegrees[i]);
+                    double uStarX = 1.0, uStarY = 0.0;
+                    if (starPos != null) {
+                        double sdx = starPos[0] - state.positionX[i];
+                        double sdy = starPos[1] - state.positionY[i];
+                        double sdist = Math.hypot(sdx, sdy);
+                        if (sdist > 1.0e-3) {
+                            uStarX = sdx / sdist;
+                            uStarY = sdy / sdist;
                         }
-                        gc.strokePolyline(xs, ys, pts);
+                    }
+                    double uPerpX = -uStarY;
+                    double uPerpY = uStarX;
+                    double mEqX, mEqY;
+                    if (starPos != null) {
+                        mEqX = -Math.sin(tiltRad) * uPerpX + Math.cos(tiltRad) * uStarX;
+                        mEqY = -Math.sin(tiltRad) * uPerpY + Math.cos(tiltRad) * uStarY;
+                    } else {
+                        mEqX = -Math.sin(tiltRad);
+                        mEqY = Math.cos(tiltRad);
+                    }
+
+                    int seeds = Math.max(8, fieldLineDensity);
+                    double stepSize = Math.max(rBody * 0.05, standoff / 60.0);
+                    int maxSteps = 200;
+
+                    for (int s = 0; s < seeds; s++) {
+                        double frac = (s + 0.5) / seeds;
+
+                        for (int side : new int[]{1, -1}) {
+                            double maxL = (side == 1) ? (0.85 * standoff) : (1.65 * standoff);
+                            double lShell = rBody * (1.25 + (maxL / rBody - 1.25) * frac);
+
+                            double sx0 = state.positionX[i] + side * lShell * mEqX;
+                            double sy0 = state.positionY[i] + side * lShell * mEqY;
+                            double[] line = DipoleFieldMath.integrateRK4Streamlines(state, sx0, sy0, stepSize, maxSteps);
+                            int pts = line.length / 2;
+                            if (pts < 2) continue;
+                            double[] xs = new double[pts];
+                            double[] ys = new double[pts];
+                            for (int p = 0; p < pts; p++) {
+                                xs[p] = originX + line[p * 2] * scale;
+                                ys[p] = originY - line[p * 2 + 1] * scale;
+                            }
+                            double tailFrac = (side == -1) ? (0.35 + 0.65 * frac) : (frac * 0.20);
+                            Color c = fieldColor.interpolate(Color.web("#7C4DFF", alpha * 0.92), tailFrac);
+                            gc.setStroke(c);
+                            gc.setLineWidth(1.3);
+                            gc.strokePolyline(xs, ys, pts);
+                        }
                     }
                 }
 
                 // Bow shock
                 if (showBowShock && starPos != null) {
-                    drawBowShock(gc, i, state, standoff, starPos, scale, originX, originY, fieldColor);
+                    drawBowShock(gc, i, state, standoff, starPos, scale, originX, originY, auroralLuminescence);
                 }
             }
         }
     }
 
     private void drawBowShock(GraphicsContext gc, int body, NBodyState state, double rMp,
-                              double[] starPos, double scale, double originX, double originY, Color color) {
+                              double[] starPos, double scale, double originX, double originY, double luminescence) {
         double bx = state.positionX[body];
         double by = state.positionY[body];
         double sdx = starPos[0] - bx;
@@ -406,25 +471,77 @@ final class NBodyRenderer {
         double perpX = -uy;
         double perpY = ux;
 
-        int pts = 41;
+        double rBs = 1.28 * rMp;
+
+        int pts = 51;
         double[] xs = new double[pts];
         double[] ys = new double[pts];
+        double[] xMp = new double[pts];
+        double[] yMp = new double[pts];
+
         for (int p = 0; p < pts; p++) {
-            double alpha = Math.toRadians(-100.0 + (200.0 * p) / (pts - 1));
+            double alpha = Math.toRadians(-115.0 + (230.0 * p) / (pts - 1));
             double cosA = Math.cos(alpha);
             double sinA = Math.sin(alpha);
             double denom = Math.max(1.0e-4, 1.0 + cosA);
-            double r = rMp * Math.pow(2.0 / denom, 0.60);
+            double flaring = Math.pow(2.0 / denom, 0.60);
 
-            double wx = bx + r * (cosA * ux + sinA * perpX);
-            double wy = by + r * (cosA * uy + sinA * perpY);
-            xs[p] = originX + wx * scale;
-            ys[p] = originY - wy * scale;
+            double rBsAlpha = rBs * flaring;
+            double rMpAlpha = rMp * flaring;
+
+            double dirX = cosA * ux + sinA * perpX;
+            double dirY = cosA * uy + sinA * perpY;
+
+            xs[p] = originX + (bx + rBsAlpha * dirX) * scale;
+            ys[p] = originY - (by + rBsAlpha * dirY) * scale;
+            xMp[p] = originX + (bx + rMpAlpha * dirX) * scale;
+            yMp[p] = originY - (by + rMpAlpha * dirY) * scale;
         }
 
+        double lum = Math.max(0.1, Math.min(1.0, luminescence));
+
         gc.save();
-        gc.setStroke(color.deriveColor(0, 0.8, 1.2, 0.85));
-        gc.setLineWidth(2.0);
+        // 1. Magnetosheath cushion fill between bow shock and magnetopause (Item 5.3: Volumetric glowing cushion)
+        double[] polyX = new double[pts * 2];
+        double[] polyY = new double[pts * 2];
+        for (int p = 0; p < pts; p++) {
+            polyX[p] = xs[p];
+            polyY[p] = ys[p];
+            polyX[pts + p] = xMp[pts - 1 - p];
+            polyY[pts + p] = yMp[pts - 1 - p];
+        }
+        // Base decelerating amber cushion fill (#FFA000, alpha ~ 0.35)
+        gc.setFill(Color.color(1.0, 0.64, 0.0, 0.28 * lum));
+        gc.fillPolygon(polyX, polyY, pts * 2);
+
+        // Core compression subsolar layer fill (#FFD54F)
+        gc.setFill(Color.color(1.0, 0.82, 0.20, 0.14 * lum));
+        gc.fillPolygon(polyX, polyY, pts * 2);
+
+        // 2. Magnetopause inner boundary line
+        gc.setStroke(Color.color(0.88, 0.76, 0.38, 0.40 * lum));
+        gc.setLineWidth(1.2);
+        gc.strokePolyline(xMp, yMp, pts);
+
+        // 3. Volumetric glowing bow shock cushion & radiant shock front
+        // Outer soft amber/orange halo (#FF8F00, alpha ~ 0.15)
+        gc.setStroke(Color.color(1.0, 0.56, 0.0, 0.16 * lum));
+        gc.setLineWidth(16.0);
+        gc.strokePolyline(xs, ys, pts);
+
+        // Mid-tier compression glow
+        gc.setStroke(Color.color(1.0, 0.72, 0.18, 0.36 * lum));
+        gc.setLineWidth(8.0);
+        gc.strokePolyline(xs, ys, pts);
+
+        // Bright luminous gold shock front (#FFD54F, alpha ~ 0.70)
+        gc.setStroke(Color.color(1.0, 0.84, 0.31, 0.70 * lum));
+        gc.setLineWidth(3.6);
+        gc.strokePolyline(xs, ys, pts);
+
+        // Incandescent shock core
+        gc.setStroke(Color.color(1.0, 0.98, 0.82, 0.92 * lum));
+        gc.setLineWidth(1.4);
         gc.strokePolyline(xs, ys, pts);
         gc.restore();
     }

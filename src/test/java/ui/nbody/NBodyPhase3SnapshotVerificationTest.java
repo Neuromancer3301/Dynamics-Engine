@@ -101,17 +101,20 @@ class NBodyPhase3SnapshotVerificationTest {
                 assertTrue(standoffEarthRadii >= 10.0 && standoffEarthRadii <= 11.5,
                         "Earth standoff must be 10-11 R_E (was: " + standoffEarthRadii + ")");
 
-                // Zoom in on Earth
-                canvas.setSelectedBody(earthIdx);
-                canvas.setFollowMode(NBodyCanvas.FollowMode.SELECTED_BODY);
+                // Zoom in on Earth using instant follow framing
+                canvas.render(state);
+                canvas.snapFollowTo(earthIdx);
                 canvas.setTracingMode(NBodyRenderer.TracingMode.PARAMETRIC);
                 canvas.setShowMagneticFields(true);
                 canvas.setShowBowShock(true);
                 canvas.setShowSolarWind(true);
-                canvas.setFieldLineDensity(16);
+                canvas.setFieldLineDensity(14);
                 canvas.setAuroralLuminescence(0.9);
 
-                canvas.render(state);
+                // Render a few frames to stream the local solar wind across Earth's magnetosphere
+                for (int f = 0; f < 10; f++) {
+                    canvas.render(state);
+                }
                 WritableImage imgEarthParametric = canvas.snapshot(null, null);
                 saveSnapshot(imgEarthParametric, "13_earth_parametric_dipole.png");
 
@@ -129,9 +132,11 @@ class NBodyPhase3SnapshotVerificationTest {
                 assertTrue(jupiterIdx >= 0 && state.hasMagneticField(jupiterIdx), "Jupiter must have magnetic field");
                 assertEquals(428.0, state.equatorialFieldMicroTesla(jupiterIdx), 1.0, "Jupiter B0 should be ~428 µT");
 
-                canvas.setSelectedBody(jupiterIdx);
+                canvas.snapFollowTo(jupiterIdx);
                 canvas.setTracingMode(NBodyRenderer.TracingMode.PARAMETRIC);
-                canvas.render(state);
+                for (int f = 0; f < 10; f++) {
+                    canvas.render(state);
+                }
                 WritableImage imgJupiter = canvas.snapshot(null, null);
                 saveSnapshot(imgJupiter, "15_jupiter_bow_shock.png");
 
@@ -143,7 +148,7 @@ class NBodyPhase3SnapshotVerificationTest {
                 canvas.fitToContent();
 
                 // Step simulation forward to generate expansive Parker spiral plasma tracks
-                for (int step = 0; step < 60; step++) {
+                for (int step = 0; step < 20; step++) {
                     solarEngine.step(3600.0 * 24.0); // 1 day per step
                     canvas.render(solarEngine.getState());
                 }
@@ -159,7 +164,7 @@ class NBodyPhase3SnapshotVerificationTest {
                 canvas.render(alphaEngine.getState());
                 canvas.fitToContent();
 
-                for (int step = 0; step < 40; step++) {
+                for (int step = 0; step < 30; step++) {
                     alphaEngine.step(3600.0 * 12.0);
                     canvas.render(alphaEngine.getState());
                 }
@@ -173,6 +178,108 @@ class NBodyPhase3SnapshotVerificationTest {
                 assertEquals(2, canvas.getRenderer().getBodyHierarchyTier(state, 0), "Sun should be Tier 2");
                 assertEquals(1, canvas.getRenderer().getBodyHierarchyTier(state, earthIdx), "Earth should be Tier 1");
                 assertEquals(0, canvas.getRenderer().getBodyHierarchyTier(state, moonIdx), "Moon should be Tier 0");
+
+                // =========================================================================
+                // 7. Item 1 Verification: Solar Wind Complete Pause Freeze
+                // =========================================================================
+                canvas.setPaused(true);
+                assertTrue(canvas.isPaused(), "Canvas must report paused");
+                assertTrue(canvas.getRenderer().isPaused(), "Renderer must report paused");
+                assertTrue(canvas.getRenderer().getSolarWindRenderer().isPaused(), "SolarWindRenderer must report paused");
+
+                canvas.render(state);
+                SolarWindParticlePool pool = canvas.getRenderer().getSolarWindRenderer().getPool();
+                double p0Rad = pool.radius[0];
+                double p10Rad = pool.radius[10];
+
+                // Render 5 more frames while paused: positions MUST remain identical
+                for (int f = 0; f < 5; f++) {
+                    canvas.render(state);
+                }
+                assertEquals(p0Rad, pool.radius[0], 1e-9, "Particle 0 must freeze completely while paused");
+                assertEquals(p10Rad, pool.radius[10], 1e-9, "Particle 10 must freeze completely while paused");
+
+                // Unpause and verify that particles advance
+                canvas.setPaused(false);
+                canvas.setSpeedMultiplier(100_000.0);
+                canvas.render(state);
+                assertTrue(pool.radius[0] > p0Rad, "Particle 0 must advance when unpaused");
+
+                // =========================================================================
+                // 8. Item 4 Verification: Canvas Viewport Auto-Refit on Sidebar Toggle
+                // =========================================================================
+                canvas.setFollowMode(NBodyCanvas.FollowMode.OFF);
+                canvas.setWidth(1200);
+                canvas.setHeight(800);
+                canvas.fitToContent();
+                double baseScaleBefore = canvas.getCamera().getBaseScale();
+
+                // Simulate sidebar opening: canvas width reduces from 1200 to 500
+                canvas.setWidth(500);
+                canvas.onViewportResized(1200, 800, 500, 800);
+                double baseScaleAfter = canvas.getCamera().getBaseScale();
+
+                assertTrue(baseScaleAfter < baseScaleBefore,
+                        "baseScale must shrink when sidebar opens to refit into smaller width (was: "
+                                + baseScaleBefore + " -> " + baseScaleAfter + ")");
+
+                // Simulate sidebar closing: canvas width expands back to 1200
+                canvas.setWidth(1200);
+                canvas.onViewportResized(500, 800, 1200, 800);
+                double baseScaleRestored = canvas.getCamera().getBaseScale();
+                assertEquals(baseScaleBefore, baseScaleRestored, 1e-9,
+                        "baseScale must be restored exactly to previous size when sidebar closes");
+
+                // Verify repeated opening and closing has zero scale drift (Item 3)
+                for (int cycle = 0; cycle < 5; cycle++) {
+                    canvas.setWidth(500);
+                    canvas.onViewportResized(1200, 800, 500, 800);
+                    canvas.setWidth(1200);
+                    canvas.onViewportResized(500, 800, 1200, 800);
+                }
+                assertEquals(baseScaleBefore, canvas.getCamera().getBaseScale(), 1e-9,
+                        "Repeated sidebar toggles must have zero scale drift");
+
+                // =========================================================================
+                // 9. Item 2 Verification: CME Plasma Wave & Shock Front
+                // =========================================================================
+                SolarWindRenderer swRenderer = canvas.getRenderer().getSolarWindRenderer();
+                assertNotNull(swRenderer.getPool(), "Particle pool must exist");
+                for (int i = 0; i < SolarWindParticlePool.GLOBAL_PARTICLES; i++) {
+                    assertTrue(swRenderer.getPool().cmeIntensity[i] >= 0.0 && swRenderer.getPool().cmeIntensity[i] <= 1.0,
+                            "CME intensity must be in [0, 1]");
+                }
+
+                // =========================================================================
+                // 10. Single-Domain World-Space Planetary Interaction Verification
+                // =========================================================================
+                canvas.render(state);
+                SolarWindParticlePool p = swRenderer.getPool();
+                int earthParticles = 0;
+                int jupiterParticles = 0;
+                for (int i = 0; i < SolarWindParticlePool.PARTICLES_PER_STAR; i++) {
+                    if (p.targetPlanet[i] == earthIdx) earthParticles++;
+                    if (p.targetPlanet[i] == jupiterIdx) jupiterParticles++;
+                }
+                assertTrue(earthParticles > 0, "Pool must allocate physical world-space stream particles for Earth");
+                assertTrue(jupiterParticles > 0, "Pool must allocate physical world-space stream particles for Jupiter");
+
+                // Verify interaction at wide scale (10^10 m)
+                canvas.setFollowMode(NBodyCanvas.FollowMode.OFF);
+                canvas.getCamera().setScale(1.0e-10); // Wide 10^10 m scale
+                canvas.getCamera().setFollowPoint(state.positionX[earthIdx], state.positionY[earthIdx]);
+                for (int f = 0; f < 5; f++) {
+                    canvas.render(state);
+                }
+
+                boolean anyEarthDeflection = false;
+                for (int i = 0; i < SolarWindParticlePool.PARTICLES_PER_STAR; i++) {
+                    if (p.targetPlanet[i] == earthIdx && p.inSheath[i]) {
+                        anyEarthDeflection = true;
+                        break;
+                    }
+                }
+                assertTrue(anyEarthDeflection, "Earth's magnetosphere must actively deflect solar wind particles at wide scale (10^10 m)");
 
             } catch (Throwable t) {
                 failure[0] = t;

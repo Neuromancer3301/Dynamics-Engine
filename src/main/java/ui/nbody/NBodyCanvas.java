@@ -339,6 +339,15 @@ public final class NBodyCanvas extends SimCanvas {
 
         double radius = Math.max(lastState.radius[bodyIndex], 1.0e-6);
         transitionTargetScale = FOLLOWED_BODY_TARGET_PIXEL_DIAMETER / (2.0 * radius);
+        if (lastState.hasMagneticField(bodyIndex)) {
+            double standoff = physics.nbody.MagnetopauseCalculator.computeStandoff(bodyIndex, lastState);
+            if (standoff > 0.0) {
+                double maxMagnetospherePx = Math.min(w, h) * 0.28;
+                if (standoff * transitionTargetScale > maxMagnetospherePx) {
+                    transitionTargetScale = maxMagnetospherePx / standoff;
+                }
+            }
+        }
         double minScale = camera.getBaseScale() * MIN_ZOOM;
         double maxScale = camera.getBaseScale() * MAX_ZOOM;
         transitionTargetScale = Math.max(minScale, Math.min(maxScale, transitionTargetScale));
@@ -363,6 +372,38 @@ public final class NBodyCanvas extends SimCanvas {
         }
     }
 
+    /**
+     * Immediately centers and dynamically zooms the camera onto bodyIndex without animation.
+     */
+    public void snapFollowTo(int bodyIndex) {
+        if (lastState == null || bodyIndex < 0 || bodyIndex >= lastState.getN()) return;
+        double w = getWidth() > 0 ? getWidth() : 700;
+        double h = getHeight() > 0 ? getHeight() : 700;
+
+        double radius = Math.max(lastState.radius[bodyIndex], 1.0e-6);
+        double targetScale = FOLLOWED_BODY_TARGET_PIXEL_DIAMETER / (2.0 * radius);
+        if (lastState.hasMagneticField(bodyIndex)) {
+            double standoff = physics.nbody.MagnetopauseCalculator.computeStandoff(bodyIndex, lastState);
+            if (standoff > 0.0) {
+                double maxMagnetospherePx = Math.min(w, h) * 0.28;
+                if (standoff * targetScale > maxMagnetospherePx) {
+                    targetScale = maxMagnetospherePx / standoff;
+                }
+            }
+        }
+        double minScale = camera.getBaseScale() * MIN_ZOOM;
+        double maxScale = camera.getBaseScale() * MAX_ZOOM;
+        targetScale = Math.max(minScale, Math.min(maxScale, targetScale));
+
+        camera.setPan(0.0, 0.0);
+        camera.setFollowPoint(lastState.positionX[bodyIndex], lastState.positionY[bodyIndex]);
+        camera.setScale(targetScale);
+        followTransitionActive = false;
+        lastZoomedFollowBody = bodyIndex;
+        selectedBody = bodyIndex;
+        followMode = FollowMode.SELECTED_BODY;
+    }
+
     /** Cancels the follow transition (e.g. if the user manually pans or scrolls). */
     public void cancelFollowTransition() {
         followTransitionActive = false;
@@ -374,15 +415,8 @@ public final class NBodyCanvas extends SimCanvas {
 
     @Override
     protected void onViewportResized(double oldWidth, double oldHeight, double newWidth, double newHeight) {
-        if (followMode == FollowMode.SELECTED_BODY) {
-            // Keep followed body centered in viewport
-            camera.rescaleForViewport(oldWidth, oldHeight, newWidth, newHeight);
-        } else if (camera.getZoom() == 1.0 && camera.getPanX() == 0.0 && camera.getPanY() == 0.0) {
-            // In overview mode: re-fit so content stays framed in the smaller area (no offscreen shifting)
-            fitToContent();
-        } else {
-            camera.rescaleForViewport(oldWidth, oldHeight, newWidth, newHeight);
-        }
+        if (oldWidth <= 0 || oldHeight <= 0 || newWidth <= 0 || newHeight <= 0) return;
+        camera.rescaleForViewport(oldWidth, oldHeight, newWidth, newHeight);
     }
 
     /**
@@ -528,6 +562,27 @@ public final class NBodyCanvas extends SimCanvas {
 
     public double getAuroralLuminescence() { return renderer.getAuroralLuminescence(); }
     public void setAuroralLuminescence(double lum) { renderer.setAuroralLuminescence(lum); }
+
+    private boolean paused = false;
+    private double speedMultiplier = 100_000.0;
+
+    public void setPaused(boolean paused) {
+        this.paused = paused;
+        renderer.setPaused(paused);
+    }
+
+    public boolean isPaused() {
+        return paused;
+    }
+
+    public void setSpeedMultiplier(double mult) {
+        this.speedMultiplier = mult;
+        renderer.setSpeedMultiplier(mult);
+    }
+
+    public double getSpeedMultiplier() {
+        return speedMultiplier;
+    }
 
     /**
      * Mass-weighted average position — the scene's center of mass. Computed
