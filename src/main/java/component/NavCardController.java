@@ -7,14 +7,21 @@ import javafx.animation.ScaleTransition;
 import javafx.animation.Timeline;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
 import javafx.util.Duration;
 import theme.Theme;
 import theme.ThemeManager;
 import ui.icon.Icons;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 
 /**
  * Controller behind {@code fxml/component/NavCard.fxml} — a reusable,
@@ -58,6 +65,8 @@ public final class NavCardController {
     @FXML private Label descriptionLabel;
     @FXML private Label detailLabel;
     @FXML private StackPane videoBox;
+    @FXML private ImageView previewImageView;
+    @FXML private Label videoPlaceholderLabel;
 
     private Runnable onActivate;
     private boolean expandable = false;
@@ -70,6 +79,21 @@ public final class NavCardController {
     private void initialize() {
         root.setFocusTraversable(true);
         root.setPrefHeight(BASE_HEIGHT);
+
+        if (previewImageView != null) {
+            previewImageView.setFitWidth(250);
+            previewImageView.setFitHeight(136);
+            Rectangle clip = new Rectangle();
+            clip.setArcWidth(8);
+            clip.setArcHeight(8);
+            previewImageView.layoutBoundsProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal != null && newVal.getWidth() > 0 && newVal.getHeight() > 0) {
+                    clip.setWidth(newVal.getWidth());
+                    clip.setHeight(newVal.getHeight());
+                }
+            });
+            previewImageView.setClip(clip);
+        }
 
         ScaleTransition grow = scaleTransition(1.03);
         ScaleTransition shrink = scaleTransition(1.00);
@@ -95,7 +119,7 @@ public final class NavCardController {
 
     /** Configures a live, clickable card with no extra hover-reveal detail. */
     public void configure(String index, Icons.Glyph icon, String title, String description, Runnable onActivate) {
-        configure(index, icon, title, description, null, onActivate);
+        configure(index, icon, title, description, null, (String) null, onActivate);
     }
 
     /**
@@ -112,14 +136,51 @@ public final class NavCardController {
      */
     public void configure(String index, Icons.Glyph icon, String title, String description,
                            String detail, Runnable onActivate) {
+        configure(index, icon, title, description, detail, (String) null, onActivate);
+    }
+
+    /**
+     * Configures a live, clickable card with hover-reveal detail and preview screenshot.
+     *
+     * @param index card slot identifier ("01", "02", etc.)
+     * @param icon glyph representation
+     * @param title card title
+     * @param description short summary for resting state
+     * @param detail extended blurb revealed on hover
+     * @param imagePath classpath or file resource path to simulation preview screenshot
+     * @param onActivate action to invoke when the card is clicked or activated
+     */
+    public void configure(String index, Icons.Glyph icon, String title, String description,
+                           String detail, String imagePath, Runnable onActivate) {
         indexLabel.setText(index);
         titleLabel.setText(title);
         descriptionLabel.setText(description);
         this.onActivate = onActivate;
-        this.expandable = detail != null && !detail.isBlank();
-        if (expandable) detailLabel.setText(detail);
+        this.expandable = (detail != null && !detail.isBlank()) || (imagePath != null && !imagePath.isBlank());
+        if (detail != null && !detail.isBlank()) {
+            detailLabel.setText(detail);
+        }
         this.comingSoon = false;
         setIcon(icon);
+        setPreviewImage(imagePath);
+    }
+
+    /**
+     * Configures a live, clickable card with hover-reveal detail and an explicit preview {@link Image}.
+     */
+    public void configure(String index, Icons.Glyph icon, String title, String description,
+                           String detail, Image image, Runnable onActivate) {
+        indexLabel.setText(index);
+        titleLabel.setText(title);
+        descriptionLabel.setText(description);
+        this.onActivate = onActivate;
+        this.expandable = (detail != null && !detail.isBlank()) || (image != null);
+        if (detail != null && !detail.isBlank()) {
+            detailLabel.setText(detail);
+        }
+        this.comingSoon = false;
+        setIcon(icon);
+        setPreviewImage(image);
     }
 
     /**
@@ -140,8 +201,102 @@ public final class NavCardController {
         this.expandable = false;
         this.comingSoon = true;
         setIcon(icon);
+        clearPreviewImage();
         root.getStyleClass().add("nav-card-coming-soon");
         root.setDisable(true);
+    }
+
+    /**
+     * Sets the screenshot image to display in the card's preview section.
+     *
+     * @param imagePath classpath or file path to the image, or {@code null} to reset to placeholder
+     */
+    public void setPreviewImage(String imagePath) {
+        if (imagePath == null || imagePath.isBlank()) {
+            clearPreviewImage();
+            return;
+        }
+        Image img = loadPreviewImage(imagePath);
+        setPreviewImage(img);
+    }
+
+    /**
+     * Sets the preview image directly from an {@link Image} instance.
+     *
+     * @param image the image to display, or {@code null} to reset to placeholder
+     */
+    public void setPreviewImage(Image image) {
+        if (image != null && !image.isError()) {
+            if (previewImageView != null) {
+                previewImageView.setImage(image);
+                previewImageView.setVisible(true);
+                previewImageView.setManaged(true);
+            }
+            if (videoPlaceholderLabel != null) {
+                videoPlaceholderLabel.setVisible(false);
+                videoPlaceholderLabel.setManaged(false);
+            }
+        } else {
+            clearPreviewImage();
+        }
+    }
+
+    /** Resets the preview section to the default placeholder label. */
+    public void clearPreviewImage() {
+        if (previewImageView != null) {
+            previewImageView.setImage(null);
+            previewImageView.setVisible(false);
+            previewImageView.setManaged(false);
+        }
+        if (videoPlaceholderLabel != null) {
+            videoPlaceholderLabel.setVisible(true);
+            videoPlaceholderLabel.setManaged(true);
+        }
+    }
+
+    public ImageView getPreviewImageView() {
+        return previewImageView;
+    }
+
+    public Label getVideoPlaceholderLabel() {
+        return videoPlaceholderLabel;
+    }
+
+    public StackPane getVideoBox() {
+        return videoBox;
+    }
+
+    private static Image loadPreviewImage(String path) {
+        String cleanPath = path.trim().replace("\"", "");
+        String normalizedResource = cleanPath.startsWith("/") ? cleanPath : "/" + cleanPath;
+        try (InputStream is = NavCardController.class.getResourceAsStream(normalizedResource)) {
+            if (is != null) {
+                return new Image(is);
+            }
+        } catch (Exception ignored) {}
+
+        try (InputStream is = NavCardController.class.getClassLoader().getResourceAsStream(
+                normalizedResource.substring(1))) {
+            if (is != null) {
+                return new Image(is);
+            }
+        } catch (Exception ignored) {}
+
+        File file = new File(cleanPath);
+        if (file.exists() && file.isFile()) {
+            try (InputStream is = new FileInputStream(file)) {
+                return new Image(is);
+            } catch (Exception ignored) {}
+        }
+
+        File srcFile = new File("src/main/resources" + normalizedResource);
+        if (srcFile.exists() && srcFile.isFile()) {
+            try (InputStream is = new FileInputStream(srcFile)) {
+                return new Image(is);
+            } catch (Exception ignored) {}
+        }
+
+        return null;
     }
 
     /**
