@@ -4,6 +4,8 @@ An interactive dynamical systems and computational physics laboratory built in J
 
 Explore chaotic multi-pendulum chains, fly through a 34-body solar system with procedural planetary atmospheres and magnetic flux tubes, or guide flocking boids past predators in real time.
 
+> 📺 **Final Project Presentation Video:** [Watch on YouTube](https://youtu.be/klC9Tw_ncVw) (`https://youtu.be/klC9Tw_ncVw`)
+
 ---
 
 ## The Simulations
