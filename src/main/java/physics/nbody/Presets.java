@@ -118,8 +118,14 @@ public final class Presets {
         avgVy /= totalMass;
         for (int i = 0; i < n; i++) { velocityX[i] -= avgVx; velocityY[i] -= avgVy; }
 
+        double[] magneticMoment = new double[n];
+        double[] magneticTiltDegrees = new double[n];
+        double[] magneticOffsetRatio = new double[n];
+        populateMagneticArrays(n, name, mass, radius, rotationPeriod, magneticMoment, magneticTiltDegrees, magneticOffsetRatio);
+
         return new NBodyConfig(n, mass, radius, positionX, positionY, velocityX, velocityY, name,
-                rotationPeriod, NBodyConfig.DEFAULT_SOFTENING_LENGTH, g, DEFAULT_SPEED_MULTIPLIER);
+                rotationPeriod, magneticMoment, magneticTiltDegrees, magneticOffsetRatio,
+                NBodyConfig.DEFAULT_SOFTENING_LENGTH, g, DEFAULT_SPEED_MULTIPLIER);
     }
 
     /**
@@ -205,8 +211,14 @@ public final class Presets {
         avgVy /= totalMass;
         for (int i = 0; i < n; i++) { velocityX[i] -= avgVx; velocityY[i] -= avgVy; }
 
+        double[] magneticMoment = new double[n];
+        double[] magneticTiltDegrees = new double[n];
+        double[] magneticOffsetRatio = new double[n];
+        populateMagneticArrays(n, names, mass, radius, rotationPeriod, magneticMoment, magneticTiltDegrees, magneticOffsetRatio);
+
         return new NBodyConfig(n, mass, radius, positionX, positionY, velocityX, velocityY, names,
-                rotationPeriod, NBodyConfig.DEFAULT_SOFTENING_LENGTH, g, DEFAULT_SPEED_MULTIPLIER);
+                rotationPeriod, magneticMoment, magneticTiltDegrees, magneticOffsetRatio,
+                NBodyConfig.DEFAULT_SOFTENING_LENGTH, g, DEFAULT_SPEED_MULTIPLIER);
     }
 
     /**
@@ -283,8 +295,14 @@ public final class Presets {
         avgVy /= totalMass;
         for (int i = 0; i < n; i++) { velocityX[i] -= avgVx; velocityY[i] -= avgVy; }
 
+        double[] magneticMoment = new double[n];
+        double[] magneticTiltDegrees = new double[n];
+        double[] magneticOffsetRatio = new double[n];
+        populateMagneticArrays(n, names, mass, radius, rotationPeriod, magneticMoment, magneticTiltDegrees, magneticOffsetRatio);
+
         return new NBodyConfig(n, mass, radius, positionX, positionY, velocityX, velocityY, names,
-                rotationPeriod, NBodyConfig.DEFAULT_SOFTENING_LENGTH, g, DEFAULT_SPEED_MULTIPLIER);
+                rotationPeriod, magneticMoment, magneticTiltDegrees, magneticOffsetRatio,
+                NBodyConfig.DEFAULT_SOFTENING_LENGTH, g, DEFAULT_SPEED_MULTIPLIER);
     }
 
     /**
@@ -296,8 +314,22 @@ public final class Presets {
                 new double[0], new double[0],
                 new double[0], new double[0],
                 new String[0], new double[0],
+                new double[0], new double[0], new double[0],
                 NBodyConfig.DEFAULT_SOFTENING_LENGTH,
                 NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT,
                 DEFAULT_SPEED_MULTIPLIER);
+    }
+
+    private static void populateMagneticArrays(
+            int n, String[] names, double[] mass, double[] radius, double[] rotationPeriod,
+            double[] magneticMoment, double[] magneticTiltDegrees, double[] magneticOffsetRatio) {
+        for (int i = 0; i < n; i++) {
+            CelestialMagnetismRegistry.MagneticProperties props =
+                    FieldPresenceEvaluator.evaluateField(names[i], mass[i], radius[i], rotationPeriod[i]);
+            double b0 = props.surfaceFieldMicroTesla();
+            magneticMoment[i] = CelestialMagnetismRegistry.momentFromField(b0, radius[i]);
+            magneticTiltDegrees[i] = props.tiltDegrees();
+            magneticOffsetRatio[i] = props.offsetRadiusFraction();
+        }
     }
 }

@@ -54,6 +54,7 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
     private final double[] mass, radius;
     private final String[] name;
     private final double[] rotationPeriod;
+    private final double[] magneticMoment, magneticTiltDegrees, magneticOffsetRatio;
     private final double softeningLength;
     private volatile double gravitationalConstant;
 
@@ -83,6 +84,9 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
         this.radius          = cfg.getRadii();
         this.name            = cfg.getNames();
         this.rotationPeriod  = cfg.getRotationPeriods();
+        this.magneticMoment  = cfg.getMagneticMoments();
+        this.magneticTiltDegrees = cfg.getMagneticTiltDegrees();
+        this.magneticOffsetRatio = cfg.getMagneticOffsetRatios();
         this.softeningLength = cfg.getSofteningLength();
         this.gravitationalConstant = cfg.getGravitationalConstant();
 
@@ -180,7 +184,8 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
     public NBodyState getState() {
         if (n == 0) {
             return new NBodyState(time, new double[0], new double[0], new double[0], new double[0],
-                    new double[0], new double[0], new String[0], new double[0], 0.0, 0.0);
+                    new double[0], new double[0], new String[0], new double[0],
+                    new double[0], new double[0], new double[0], 0.0, 0.0);
         }
 
         double[] posX = new double[n], posY = new double[n];
@@ -210,7 +215,8 @@ public final class NBodyEngine implements SimulationEngine<NBodyState> {
             }
         }
 
-        return new NBodyState(time, posX, posY, velX, velY, mass, radius, name, rotationPeriod, Math.max(0, ke), pe);
+        return new NBodyState(time, posX, posY, velX, velY, mass, radius, name, rotationPeriod,
+                magneticMoment, magneticTiltDegrees, magneticOffsetRatio, Math.max(0, ke), pe);
     }
 
     /** Simulation time in seconds since the last reset. */

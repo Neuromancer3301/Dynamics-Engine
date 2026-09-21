@@ -37,7 +37,7 @@ public final class Icons {
     public enum Glyph {
         SETTINGS, INFO, MANUAL, CHEVRON, SELECT, ADD, SNAP,
         MOTION, CHAOS, GRAPHS, HISTORY, LINKS, DISPLAY, PENDULUM, RESERVED,
-        NBODY, FOLLOW, BODIES
+        NBODY, FOLLOW, BODIES, MAGNETISM
     }
 
     /** Creates a fixed-size, recolorable icon node. {@code size} is the glyph's logical (square) pixel size. */
@@ -116,6 +116,7 @@ public final class Icons {
                 case NBODY    -> drawNBody(gc, w, h);
                 case FOLLOW   -> drawFollow(gc, w, h);
                 case BODIES   -> drawBodies(gc, w, h);
+                case MAGNETISM -> drawMagnetism(gc, w, h);
             }
         }
 
@@ -343,6 +344,29 @@ public final class Icons {
 
         private static void drawDot(GraphicsContext gc, double cx, double cy, double r) {
             gc.fillOval(cx - r, cy - r, r * 2, r * 2);
+        }
+
+        /**
+         * A dipole magnet and surrounding magnetic field lines — the Magnetism tab icon.
+         */
+        private static void drawMagnetism(GraphicsContext gc, double w, double h) {
+            double cx = w * 0.5;
+            // Central dipole bar / axis
+            gc.strokeLine(cx, h * 0.20, cx, h * 0.80);
+
+            // Left & right outer field line loops
+            gc.strokeOval(w * 0.14, h * 0.26, w * 0.38, h * 0.48);
+            gc.strokeOval(w * 0.48, h * 0.26, w * 0.38, h * 0.48);
+
+            // North and South pole caps/ticks
+            double tickW = w * 0.08;
+            gc.strokeLine(cx - tickW, h * 0.20, cx + tickW, h * 0.20);
+            gc.strokeLine(cx - tickW, h * 0.80, cx + tickW, h * 0.80);
+
+            // Pole indicator dots
+            double dotR = w * 0.035;
+            gc.fillOval(cx - dotR, h * 0.16 - dotR, dotR * 2, dotR * 2);
+            gc.fillOval(cx - dotR, h * 0.84 - dotR, dotR * 2, dotR * 2);
         }
     }
 }

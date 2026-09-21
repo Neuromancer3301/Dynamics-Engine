@@ -1,5 +1,8 @@
 package ui.nbody;
 
+import physics.nbody.CelestialMagnetismRegistry;
+import physics.nbody.DipoleFieldMath;
+import physics.nbody.MagnetopauseCalculator;
 import physics.nbody.NBodyConfig;
 import physics.nbody.NBodyState;
 import ui.simcore.Camera;
@@ -132,6 +135,23 @@ final class NBodyRenderer {
     private Color[] bodyColors = BODY_COLORS_DEFAULT;
     private boolean reducedMotion = false;
 
+    public enum TracingMode {
+        PARAMETRIC("Closed-Form Parametric"),
+        NUMERICAL_RK4("Numerical RK4 Streamlines");
+
+        private final String label;
+        TracingMode(String label) { this.label = label; }
+        @Override public String toString() { return label; }
+    }
+
+    private TracingMode tracingMode = TracingMode.PARAMETRIC;
+    private boolean showMagneticFields = true;
+    private boolean showSolarWind = true;
+    private boolean showBowShock = true;
+    private int fieldLineDensity = 12;
+    private double auroralLuminescence = 0.8;
+    private final SolarWindRenderer solarWindRenderer = new SolarWindRenderer();
+
     // Trail state — self-healing against N changing (see ensureTrailCapacity):
     // both arrays/lists are rebuilt from scratch (defaulting to OFF) the
     // moment their length stops matching the live state's body count, since
@@ -147,6 +167,48 @@ final class NBodyRenderer {
 
     NBodyRenderer(Camera camera) {
         this.camera = camera;
+    }
+
+    public TracingMode getTracingMode() { return tracingMode; }
+    public void setTracingMode(TracingMode tracingMode) { this.tracingMode = (tracingMode != null) ? tracingMode : TracingMode.PARAMETRIC; }
+
+    public boolean isShowMagneticFields() { return showMagneticFields; }
+    public void setShowMagneticFields(boolean show) { this.showMagneticFields = show; }
+
+    public boolean isShowSolarWind() { return showSolarWind; }
+    public void setShowSolarWind(boolean show) { this.showSolarWind = show; }
+
+    public boolean isShowBowShock() { return showBowShock; }
+    public void setShowBowShock(boolean show) { this.showBowShock = show; }
+
+    public int getFieldLineDensity() { return fieldLineDensity; }
+    public void setFieldLineDensity(int density) { this.fieldLineDensity = Math.max(4, Math.min(24, density)); }
+
+    public double getAuroralLuminescence() { return auroralLuminescence; }
+    public void setAuroralLuminescence(double lum) { this.auroralLuminescence = Math.max(0.1, Math.min(1.0, lum)); }
+
+    public SolarWindRenderer getSolarWindRenderer() { return solarWindRenderer; }
+    public void resetSolarWind() { solarWindRenderer.reset(); }
+
+    private boolean isPaused = false;
+    private double speedMultiplier = 100_000.0;
+
+    public void setPaused(boolean paused) {
+        this.isPaused = paused;
+        this.solarWindRenderer.setPaused(paused);
+    }
+
+    public boolean isPaused() {
+        return isPaused;
+    }
+
+    public void setSpeedMultiplier(double mult) {
+        this.speedMultiplier = mult;
+        this.solarWindRenderer.setSpeedMultiplier(mult);
+    }
+
+    public double getSpeedMultiplier() {
+        return speedMultiplier;
     }
 
     void setColorBlindSafe(boolean colorBlindSafe) {
@@ -204,14 +266,23 @@ final class NBodyRenderer {
         double originX = camera.originX(w);
         double originY = camera.originY(h);
 
+        // Layer 1: Spacetime fabric mesh & background stars
         drawSpacetimeMesh(gc, state, w, h, scale, originX, originY);
 
         if (state.getN() > 0) {
             ensureTrailCapacity(state.getN());
             recordTrailPoints(state);
+
+            // Layer 2: Motion trails
             drawTrails(gc, state, scale, originX, originY);
 
+            // Layer 3: Fields & Wind (solar wind plasma sparks, parametric / RK4 dipole lines #3DDCC7, bow shocks)
+            drawMagneticFieldsAndWind(gc, state, w, h, scale, originX, originY);
+
+            // Layer 4: Celestial bodies sorted hierarchically: satellites/moons first -> parent planets -> central stars/black holes
             drawBodies(gc, state, scale, originX, originY);
+
+            // Layer 5: Overlays (interaction halo, velocity vectors, hover HUD)
             drawSelectionHalo(gc, state, scale, originX, originY, selectedBody);
             drawBodyHud(gc, state, hoveredBody, scale, originX, originY, w, "", false);
             if (selectedBody != hoveredBody) drawBodyHud(gc, state, selectedBody, scale, originX, originY, w, "Selected: ", true);
@@ -219,6 +290,355 @@ final class NBodyRenderer {
         }
 
         drawStatusOverlay(gc, state);
+    }
+
+    /**
+     * Categorizes a celestial body into a strict rendering & hit-test hierarchy tier:
+     * Tier 0: Orbiting Satellites / Moons (drawn first, hit-tested last)
+     * Tier 1: Parent Planets
+     * Tier 2: Central Stars / Black Holes (drawn last on top, highest precedence)
+     */
+    public int getBodyHierarchyTier(NBodyState state, int i) {
+        if (state == null || i < 0 || i >= state.getN()) return 0;
+        double G = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT;
+        if (state.isStar(i) || state.isCompactObject(i, G) || state.mass[i] >= 1.0e29) {
+            return 2; // Star / Compact Object
+        }
+        String name = (state.name != null && i < state.name.length && state.name[i] != null) ? state.name[i].toLowerCase() : "";
+        if (name.contains("moon") || name.contains("io") || name.contains("europa") || name.contains("ganymede")
+                || name.contains("callisto") || name.contains("titan") || name.contains("enceladus")
+                || name.contains("mimas") || name.contains("iapetus") || name.contains("rhea")
+                || name.contains("dione") || name.contains("tethys") || name.contains("titania")
+                || name.contains("oberon") || name.contains("ariel") || name.contains("umbriel")
+                || name.contains("miranda") || name.contains("triton") || name.contains("charon")
+                || name.contains("phobos") || name.contains("deimos") || name.contains("satellite")) {
+            return 0; // Satellite / Moon
+        }
+        if (state.mass[i] < 2.5e23) {
+            for (int j = 0; j < state.getN(); j++) {
+                if (j == i) continue;
+                if (state.mass[j] > 1.0e24 && !state.isStar(j)) {
+                    double dx = state.positionX[i] - state.positionX[j];
+                    double dy = state.positionY[i] - state.positionY[j];
+                    if (dx * dx + dy * dy < 5.0e9 * 5.0e9) {
+                        return 0; // Orbiting satellite
+                    }
+                }
+            }
+        }
+        return 1; // Parent planet
+    }
+
+    private void drawMagneticFieldsAndWind(GraphicsContext gc, NBodyState state, double w, double h, double scale, double originX, double originY) {
+        if (state == null || state.getN() == 0) return;
+
+        // 1. Solar Wind Plasma Advection
+        if (showSolarWind) {
+            solarWindRenderer.updateAndRender(gc, state, camera, w, h, state.time, 3600.0,
+                    showSolarWind, showBowShock, auroralLuminescence, isPaused, speedMultiplier);
+        }
+
+        // 2. Magnetic Field Tracing & Bow Shocks
+        if (showMagneticFields) {
+            double alpha = Math.max(0.1, Math.min(1.0, 0.75 * auroralLuminescence));
+            Color fieldColor = Color.web("#3DDCC7", alpha);
+
+            int n = state.getN();
+            for (int i = 0; i < n; i++) {
+                if (!state.hasMagneticField(i)) continue;
+
+                double bx = originX + state.positionX[i] * scale;
+                double by = originY - state.positionY[i] * scale;
+                double standoff = MagnetopauseCalculator.computeStandoff(i, state);
+                double standoffScreen = standoff * scale;
+
+                // Adaptive minimum magnetosphere indicator circle when zoomed out
+                if (standoffScreen < 10.0) {
+                    double indR = 10.0;
+                    gc.setStroke(fieldColor.deriveColor(0, 1, 1, 0.45));
+                    gc.setLineWidth(1.2);
+                    gc.strokeOval(bx - indR, by - indR, 2 * indR, 2 * indR);
+                }
+
+                int starIdx = MagnetopauseCalculator.findNearestStar(i, state);
+                double[] starPos = null;
+                if (starIdx >= 0) {
+                    starPos = new double[]{state.positionX[starIdx], state.positionY[starIdx]};
+                }
+
+                gc.setStroke(fieldColor);
+                gc.setLineWidth(1.2);
+
+                if (tracingMode == TracingMode.PARAMETRIC) {
+                    List<double[]> loops = DipoleFieldMath.generateParametricLoops(
+                            i, state, standoff, starPos, fieldLineDensity, 36);
+                    int loopIdx = 0;
+                    int numShells = Math.max(1, loops.size() / 2);
+                    for (double[] poly : loops) {
+                        int pts = poly.length / 2;
+                        if (pts < 2) continue;
+                        double[] xs = new double[pts];
+                        double[] ys = new double[pts];
+                        for (int p = 0; p < pts; p++) {
+                            xs[p] = originX + poly[p * 2] * scale;
+                            ys[p] = originY - poly[p * 2 + 1] * scale;
+                        }
+                        boolean isNightside = (loopIdx % 2 != 0);
+                        double shellFrac = (double) (loopIdx / 2) / numShells;
+                        double tailFrac = isNightside ? (0.35 + 0.65 * shellFrac) : (shellFrac * 0.20);
+                        // Smooth transition from radiant cyan (#3DDCC7) to deep indigo/violet (#7C4DFF) in magnetotail
+                        Color c = fieldColor.interpolate(Color.web("#7C4DFF", alpha * 0.92), tailFrac);
+                        gc.setStroke(c);
+                        gc.setLineWidth(1.3);
+                        gc.strokePolyline(xs, ys, pts);
+                        loopIdx++;
+                    }
+                } else {
+                    // Numerical RK4 streamlines seeded bidirectionally along magnetic equator
+                    double rBody = state.radius[i];
+                    double tiltRad = Math.toRadians(state.magneticTiltDegrees[i]);
+                    double uStarX = 1.0, uStarY = 0.0;
+                    if (starPos != null) {
+                        double sdx = starPos[0] - state.positionX[i];
+                        double sdy = starPos[1] - state.positionY[i];
+                        double sdist = Math.hypot(sdx, sdy);
+                        if (sdist > 1.0e-3) {
+                            uStarX = sdx / sdist;
+                            uStarY = sdy / sdist;
+                        }
+                    }
+                    double uPerpX = -uStarY;
+                    double uPerpY = uStarX;
+                    double mEqX, mEqY;
+                    if (starPos != null) {
+                        mEqX = -Math.sin(tiltRad) * uPerpX + Math.cos(tiltRad) * uStarX;
+                        mEqY = -Math.sin(tiltRad) * uPerpY + Math.cos(tiltRad) * uStarY;
+                    } else {
+                        mEqX = -Math.sin(tiltRad);
+                        mEqY = Math.cos(tiltRad);
+                    }
+
+                    int seeds = Math.max(8, fieldLineDensity);
+                    double stepSize = Math.max(rBody * 0.05, standoff / 60.0);
+                    int maxSteps = 200;
+
+                    for (int s = 0; s < seeds; s++) {
+                        double frac = (s + 0.5) / seeds;
+
+                        for (int side : new int[]{1, -1}) {
+                            double maxL = (side == 1) ? (0.85 * standoff) : (1.65 * standoff);
+                            double lShell = rBody * (1.25 + (maxL / rBody - 1.25) * frac);
+
+                            double sx0 = state.positionX[i] + side * lShell * mEqX;
+                            double sy0 = state.positionY[i] + side * lShell * mEqY;
+                            double[] line = DipoleFieldMath.integrateRK4Streamlines(state, sx0, sy0, stepSize, maxSteps);
+                            int pts = line.length / 2;
+                            if (pts < 2) continue;
+                            double[] xs = new double[pts];
+                            double[] ys = new double[pts];
+                            for (int p = 0; p < pts; p++) {
+                                xs[p] = originX + line[p * 2] * scale;
+                                ys[p] = originY - line[p * 2 + 1] * scale;
+                            }
+                            double tailFrac = (side == -1) ? (0.35 + 0.65 * frac) : (frac * 0.20);
+                            Color c = fieldColor.interpolate(Color.web("#7C4DFF", alpha * 0.92), tailFrac);
+                            gc.setStroke(c);
+                            gc.setLineWidth(1.3);
+                            gc.strokePolyline(xs, ys, pts);
+                        }
+                    }
+                }
+
+                // Bow shock
+                if (showBowShock && starPos != null) {
+                    drawBowShock(gc, i, state, standoff, starPos, scale, originX, originY, auroralLuminescence);
+                }
+            }
+        }
+    }
+
+    private void drawBowShock(GraphicsContext gc, int body, NBodyState state, double rMp,
+                              double[] starPos, double scale, double originX, double originY, double luminescence) {
+        double bx = state.positionX[body];
+        double by = state.positionY[body];
+        double sdx = starPos[0] - bx;
+        double sdy = starPos[1] - by;
+        double sdist = Math.hypot(sdx, sdy);
+        if (sdist <= 1.0e-3) return;
+
+        double ux = sdx / sdist;
+        double uy = sdy / sdist;
+        double perpX = -uy;
+        double perpY = ux;
+
+        double rBs = 1.28 * rMp;
+
+        int pts = 51;
+        double[] xs = new double[pts];
+        double[] ys = new double[pts];
+        double[] xMp = new double[pts];
+        double[] yMp = new double[pts];
+
+        for (int p = 0; p < pts; p++) {
+            double alpha = Math.toRadians(-115.0 + (230.0 * p) / (pts - 1));
+            double cosA = Math.cos(alpha);
+            double sinA = Math.sin(alpha);
+            double denom = Math.max(1.0e-4, 1.0 + cosA);
+            double flaring = Math.pow(2.0 / denom, 0.60);
+
+            double rBsAlpha = rBs * flaring;
+            double rMpAlpha = rMp * flaring;
+
+            double dirX = cosA * ux + sinA * perpX;
+            double dirY = cosA * uy + sinA * perpY;
+
+            xs[p] = originX + (bx + rBsAlpha * dirX) * scale;
+            ys[p] = originY - (by + rBsAlpha * dirY) * scale;
+            xMp[p] = originX + (bx + rMpAlpha * dirX) * scale;
+            yMp[p] = originY - (by + rMpAlpha * dirY) * scale;
+        }
+
+        double lum = Math.max(0.1, Math.min(1.0, luminescence));
+
+        gc.save();
+        // 1. Magnetosheath cushion fill between bow shock and magnetopause (Item 5.3: Volumetric glowing cushion)
+        double[] polyX = new double[pts * 2];
+        double[] polyY = new double[pts * 2];
+        for (int p = 0; p < pts; p++) {
+            polyX[p] = xs[p];
+            polyY[p] = ys[p];
+            polyX[pts + p] = xMp[pts - 1 - p];
+            polyY[pts + p] = yMp[pts - 1 - p];
+        }
+        // Base decelerating amber cushion fill (#FFA000, alpha ~ 0.35)
+        gc.setFill(Color.color(1.0, 0.64, 0.0, 0.28 * lum));
+        gc.fillPolygon(polyX, polyY, pts * 2);
+
+        // Core compression subsolar layer fill (#FFD54F)
+        gc.setFill(Color.color(1.0, 0.82, 0.20, 0.14 * lum));
+        gc.fillPolygon(polyX, polyY, pts * 2);
+
+        // 2. Magnetopause inner boundary line
+        gc.setStroke(Color.color(0.88, 0.76, 0.38, 0.40 * lum));
+        gc.setLineWidth(1.2);
+        gc.strokePolyline(xMp, yMp, pts);
+
+        // 3. Volumetric glowing bow shock cushion & radiant shock front
+        // Outer soft amber/orange halo (#FF8F00, alpha ~ 0.15)
+        gc.setStroke(Color.color(1.0, 0.56, 0.0, 0.16 * lum));
+        gc.setLineWidth(16.0);
+        gc.strokePolyline(xs, ys, pts);
+
+        // Mid-tier compression glow
+        gc.setStroke(Color.color(1.0, 0.72, 0.18, 0.36 * lum));
+        gc.setLineWidth(8.0);
+        gc.strokePolyline(xs, ys, pts);
+
+        // Bright luminous gold shock front (#FFD54F, alpha ~ 0.70)
+        gc.setStroke(Color.color(1.0, 0.84, 0.31, 0.70 * lum));
+        gc.setLineWidth(3.6);
+        gc.strokePolyline(xs, ys, pts);
+
+        // Incandescent shock core
+        gc.setStroke(Color.color(1.0, 0.98, 0.82, 0.92 * lum));
+        gc.setLineWidth(1.4);
+        gc.strokePolyline(xs, ys, pts);
+        gc.restore();
+    }
+
+    private void drawBodies(GraphicsContext gc, NBodyState state, double scale, double originX, double originY) {
+        int n = state.getN();
+        Integer[] order = new Integer[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+
+        // Hierarchical sort: satellites/moons first (tier 0) -> parent planets (tier 1) -> central stars/black holes (tier 2)
+        Arrays.sort(order, (a, b) -> {
+            int tA = getBodyHierarchyTier(state, a);
+            int tB = getBodyHierarchyTier(state, b);
+            if (tA != tB) return Integer.compare(tA, tB);
+            return Double.compare(state.mass[a], state.mass[b]);
+        });
+
+        for (int idx = 0; idx < n; idx++) {
+            int i = order[idx];
+            drawSingleBody(gc, state, i, scale, originX, originY);
+        }
+    }
+
+    private void drawSingleBody(GraphicsContext gc, NBodyState state, int i, double scale, double originX, double originY) {
+        double G = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT;
+        double bx = originX + state.positionX[i] * scale;
+        double by = originY - state.positionY[i] * scale;
+        double r = radiusForBody(state, i);
+        double dScreen = 2.0 * r;
+
+        String bodyName = (state.name != null && i < state.name.length && state.name[i] != null) ? state.name[i] : "";
+        String lower = bodyName.toLowerCase().trim();
+        Color defaultColor = bodyColors[i % bodyColors.length];
+        Color bodyColor = baseColorForBody(lower, defaultColor);
+        double rotPeriod = (state.rotationPeriod != null && i < state.rotationPeriod.length) ? state.rotationPeriod[i] : 0.0;
+
+        // Check if comet (Halley etc.): always render distinct coma and tail across cosmic distances
+        boolean isComet = lower.contains("halley") || lower.contains("comet") || lower.contains("oumuamua");
+        if (isComet) {
+            drawCometModel(gc, state, i, bx, by, r, originX, originY);
+            return;
+        }
+
+        // Check if compact object (Black Hole)
+        boolean isCompact = state.isCompactObject(i, G) || lower.contains("black hole") || lower.contains("singularity");
+        if (isCompact) {
+            drawBlackHoleModel(gc, bx, by, r);
+            return;
+        }
+
+        if (dScreen < 10.0) {
+            // Glow clutter removal: strip generic photometric glow from non-magnetic inactive bodies (Venus, Mars, Moon, Ceres, etc.)
+            if (state.hasMagneticField(i) || state.isStar(i)) {
+                double rGlow = r + 3.0;
+                gc.setFill(bodyColor.deriveColor(0, 1.0, 1.0, 0.25));
+                gc.fillOval(bx - rGlow, by - rGlow, rGlow * 2, rGlow * 2);
+            }
+
+            gc.setFill(bodyColor);
+            gc.fillOval(bx - r, by - r, r * 2, r * 2);
+
+            // For Saturn at LOD 0, draw subtle miniature rings
+            if (lower.contains("saturn")) {
+                gc.setStroke(Color.web("#EAD3A2", 0.6));
+                gc.setLineWidth(1.0);
+                gc.strokeOval(bx - 1.8 * r, by - 0.7 * r, 3.6 * r, 1.4 * r);
+            }
+        } else {
+            // LOD 1: dScreen >= 10 px -> 2D snapshot of the real 3D model for current rotation frame
+            CelestialBody3DModel model = CelestialBody3DRegistry.getModel(bodyName, bodyColor, state.isStar(i), isCompact, isComet);
+
+            if (model.isStar()) {
+                // Coronal flare glow behind the 3D star sphere
+                double rCorona = 1.9 * r;
+                double pulse = reducedMotion ? 1.0 : (1.0 + 0.04 * Math.sin(state.time * 0.05));
+                RadialGradient coronaGrad = new RadialGradient(
+                        0, 0, bx, by, rCorona * pulse, false, CycleMethod.NO_CYCLE,
+                        new Stop(0.0, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#FF5722", 0.85) : Color.web("#FFFBE0", 0.85)),
+                        new Stop(0.45, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#C62828", 0.45) : Color.web("#FFA439", 0.45)),
+                        new Stop(0.75, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#4A0000", 0.15) : Color.web("#EA3F8C", 0.15)),
+                        new Stop(1.0, Color.TRANSPARENT)
+                );
+                gc.setFill(coronaGrad);
+                gc.fillOval(bx - rCorona * pulse, by - rCorona * pulse, 2 * rCorona * pulse, 2 * rCorona * pulse);
+            }
+
+            double phi = (rotPeriod > 0.0) ? ((state.time / rotPeriod) % 1.0) : 0.0;
+            if (phi < 0) phi += 1.0;
+            Image snapshot = model.getSnapshot(phi);
+
+            if (snapshot != null) {
+                double drawR = model.getDrawRadius(r);
+                gc.drawImage(snapshot, bx - drawR, by - drawR, 2 * drawR, 2 * drawR);
+            } else {
+                drawGenericPlanetModel(gc, bx, by, r, bodyColor, state.time, rotPeriod);
+            }
+        }
     }
 
     /**
@@ -289,82 +709,6 @@ final class NBodyRenderer {
             prevY = y;
             havePrev = true;
             idx++;
-        }
-    }
-
-    private void drawBodies(GraphicsContext gc, NBodyState state, double scale, double originX, double originY) {
-        double G = NBodyConfig.DEFAULT_GRAVITATIONAL_CONSTANT;
-        for (int i = 0; i < state.getN(); i++) {
-            double bx = originX + state.positionX[i] * scale;
-            double by = originY - state.positionY[i] * scale;
-            double r = radiusForBody(state, i);
-            double dScreen = 2.0 * r;
-
-            String bodyName = (state.name != null && i < state.name.length && state.name[i] != null) ? state.name[i] : "";
-            String lower = bodyName.toLowerCase().trim();
-            Color defaultColor = bodyColors[i % bodyColors.length];
-            Color bodyColor = baseColorForBody(lower, defaultColor);
-            double rotPeriod = (state.rotationPeriod != null && i < state.rotationPeriod.length) ? state.rotationPeriod[i] : 0.0;
-
-            // Check if comet (Halley etc.): always render distinct coma and tail across cosmic distances
-            boolean isComet = lower.contains("halley") || lower.contains("comet") || lower.contains("oumuamua");
-            if (isComet) {
-                drawCometModel(gc, state, i, bx, by, r, originX, originY);
-                continue;
-            }
-
-            // Check if compact object (Black Hole)
-            boolean isCompact = state.isCompactObject(i, G) || lower.contains("black hole") || lower.contains("singularity");
-            if (isCompact) {
-                drawBlackHoleModel(gc, bx, by, r);
-                continue;
-            }
-
-            if (dScreen < 10.0) {
-                // LOD 0: solid anti-aliased circle with soft photometric glow halo
-                double rGlow = r + 3.0;
-                gc.setFill(bodyColor.deriveColor(0, 1.0, 1.0, 0.25));
-                gc.fillOval(bx - rGlow, by - rGlow, rGlow * 2, rGlow * 2);
-
-                gc.setFill(bodyColor);
-                gc.fillOval(bx - r, by - r, r * 2, r * 2);
-
-                // For Saturn at LOD 0, draw subtle miniature rings
-                if (lower.contains("saturn")) {
-                    gc.setStroke(Color.web("#EAD3A2", 0.6));
-                    gc.setLineWidth(1.0);
-                    gc.strokeOval(bx - 1.8 * r, by - 0.7 * r, 3.6 * r, 1.4 * r);
-                }
-            } else {
-                // LOD 1: dScreen >= 10 px -> 2D snapshot of the real 3D model for current rotation frame
-                CelestialBody3DModel model = CelestialBody3DRegistry.getModel(bodyName, bodyColor, state.isStar(i), isCompact, isComet);
-
-                if (model.isStar()) {
-                    // Coronal flare glow behind the 3D star sphere
-                    double rCorona = 1.9 * r;
-                    double pulse = reducedMotion ? 1.0 : (1.0 + 0.04 * Math.sin(state.time * 0.05));
-                    RadialGradient coronaGrad = new RadialGradient(
-                            0, 0, bx, by, rCorona * pulse, false, CycleMethod.NO_CYCLE,
-                            new Stop(0.0, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#FF5722", 0.85) : Color.web("#FFFBE0", 0.85)),
-                            new Stop(0.45, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#C62828", 0.45) : Color.web("#FFA439", 0.45)),
-                            new Stop(0.75, lower.contains("trappist") || lower.contains("proxima") ? Color.web("#4A0000", 0.15) : Color.web("#EA3F8C", 0.15)),
-                            new Stop(1.0, Color.TRANSPARENT)
-                    );
-                    gc.setFill(coronaGrad);
-                    gc.fillOval(bx - rCorona * pulse, by - rCorona * pulse, 2 * rCorona * pulse, 2 * rCorona * pulse);
-                }
-
-                double phi = (rotPeriod > 0.0) ? ((state.time / rotPeriod) % 1.0) : 0.0;
-                if (phi < 0) phi += 1.0;
-                Image snapshot = model.getSnapshot(phi);
-
-                if (snapshot != null) {
-                    double drawR = model.getDrawRadius(r);
-                    gc.drawImage(snapshot, bx - drawR, by - drawR, 2 * drawR, 2 * drawR);
-                } else {
-                    drawGenericPlanetModel(gc, bx, by, r, bodyColor, state.time, rotPeriod);
-                }
-            }
         }
     }
 
@@ -1607,9 +1951,21 @@ final class NBodyRenderer {
         String line2 = String.format("m=%.3e kg   r=%.3e m", state.mass[body], state.radius[body]);
         String line3 = String.format("x=%+.3e  y=%+.3e m", state.positionX[body], state.positionY[body]);
         String line4 = String.format("vx=%+.3e  vy=%+.3e m/s", state.velocityX[body], state.velocityY[body]);
+        String line5;
+        if (state.hasMagneticField(body)) {
+            double b0 = state.equatorialFieldMicroTesla(body);
+            double tilt = (state.magneticTiltDegrees != null && body < state.magneticTiltDegrees.length)
+                    ? state.magneticTiltDegrees[body] : 0.0;
+            double standoff = MagnetopauseCalculator.computeStandoff(body, state);
+            double rBody = state.radius[body];
+            double standoffRatio = (rBody > 0) ? (standoff / rBody) : 0.0;
+            line5 = String.format("B₀=%.1f µT  tilt=%.1f°  Rmp=%.1f R_body", b0, tilt, standoffRatio);
+        } else {
+            line5 = "B₀=0.0 µT (inactive dynamo)";
+        }
 
-        double boxW = hudBoxWidth(font, line1, line2, line3, line4);
-        double boxH = 76;
+        double boxW = hudBoxWidth(font, line1, line2, line3, line4, line5);
+        double boxH = 94;
         double boxX, boxY;
         if (!anchorTopRight) {
             boxX = Math.min(bx + 14, canvasW - boxW - 4);
@@ -1631,5 +1987,6 @@ final class NBodyRenderer {
         gc.fillText(line2, boxX + HUD_TEXT_PADDING, boxY + 36);
         gc.fillText(line3, boxX + HUD_TEXT_PADDING, boxY + 53);
         gc.fillText(line4, boxX + HUD_TEXT_PADDING, boxY + 70);
+        gc.fillText(line5, boxX + HUD_TEXT_PADDING, boxY + 87);
     }
 }
