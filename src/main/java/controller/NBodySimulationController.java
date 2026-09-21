@@ -135,6 +135,7 @@ public final class NBodySimulationController implements Initializable, Navigable
         nbodyCanvas.setManaged(false);
         nbodyCanvas.widthProperty().bind(canvasHost.widthProperty());
         nbodyCanvas.heightProperty().bind(canvasHost.heightProperty());
+        nbodyCanvas.setSpeedMultiplier(config.getSpeedMultiplier());
         canvasHost.getChildren().add(nbodyCanvas);
 
         dialogFactory = new NBodyDialogFactory(this);
@@ -256,7 +257,8 @@ public final class NBodySimulationController implements Initializable, Navigable
                 controlPanel.getStatusBlock(),
                 new SidebarTabs.Tab("Motion", Icons.Glyph.MOTION, controlPanel.getMotionGroup()),
                 new SidebarTabs.Tab("Bodies", Icons.Glyph.BODIES, controlPanel.getBodiesGroup()),
-                new SidebarTabs.Tab("Display", Icons.Glyph.DISPLAY, controlPanel.getDisplayGroup()));
+                new SidebarTabs.Tab("Display", Icons.Glyph.DISPLAY, controlPanel.getDisplayGroup()),
+                new SidebarTabs.Tab("Magnetism", Icons.Glyph.MAGNETISM, controlPanel.getMagnetismGroup()));
         VBox.setVgrow(sidebarTabs, Priority.ALWAYS);
         controlHost.getChildren().setAll(sidebarTabs);
         controlHost.minHeightProperty().bind(sidebarScroll.heightProperty());
@@ -281,6 +283,7 @@ public final class NBodySimulationController implements Initializable, Navigable
     private void setPaused(boolean paused) {
         simLoop.setPaused(paused);
         controlPanel.setPausedVisual(paused);
+        nbodyCanvas.setPaused(paused);
         if (!paused && nbodyCanvas.getFollowMode() != NBodyCanvas.FollowMode.SELECTED_BODY) {
             nbodyCanvas.setSelectedBody(-1);
         }
@@ -406,6 +409,8 @@ public final class NBodySimulationController implements Initializable, Navigable
                     initialAngularMomentum = liveState.totalAngularMomentum;
                 }
 
+                nbodyCanvas.setPaused(simLoop.isPaused());
+                nbodyCanvas.setSpeedMultiplier(simLoop.getSpeedMultiplier());
                 nbodyCanvas.render(liveState);
 
                 if (frameCount % 4 == 0) {

@@ -55,6 +55,15 @@ public final class NBodyState {
     /** Each body's sidereal rotation period in seconds (0 = unassigned or non-rotating). */
     public final double[] rotationPeriod;
 
+    /** Magnetic dipole moment of each body in A·m². */
+    public final double[] magneticMoment;
+
+    /** Magnetic dipole tilt of each body in degrees relative to rotation axis. */
+    public final double[] magneticTiltDegrees;
+
+    /** Magnetic dipole center offset as fraction of body radius. */
+    public final double[] magneticOffsetRatio;
+
     /** Energy of motion at this instant. */
     public final double kineticEnergy;
 
@@ -76,13 +85,24 @@ public final class NBodyState {
                        double[] mass, double[] radius, String[] name,
                        double kineticEnergy, double potentialEnergy) {
         this(time, positionX, positionY, velocityX, velocityY, mass, radius, name,
-                new double[positionX.length], kineticEnergy, potentialEnergy);
+                null, null, null, null, kineticEnergy, potentialEnergy);
     }
 
     public NBodyState(double time, double[] positionX, double[] positionY,
                        double[] velocityX, double[] velocityY,
                        double[] mass, double[] radius, String[] name,
                        double[] rotationPeriod,
+                       double kineticEnergy, double potentialEnergy) {
+        this(time, positionX, positionY, velocityX, velocityY, mass, radius, name,
+                rotationPeriod, null, null, null, kineticEnergy, potentialEnergy);
+    }
+
+    public NBodyState(double time, double[] positionX, double[] positionY,
+                       double[] velocityX, double[] velocityY,
+                       double[] mass, double[] radius, String[] name,
+                       double[] rotationPeriod,
+                       double[] magneticMoment, double[] magneticTiltDegrees,
+                       double[] magneticOffsetRatio,
                        double kineticEnergy, double potentialEnergy) {
         this.time            = time;
         this.positionX       = positionX.clone();
@@ -92,13 +112,16 @@ public final class NBodyState {
         this.mass            = mass.clone();
         this.radius          = radius.clone();
         this.name            = name.clone();
-        this.rotationPeriod  = rotationPeriod != null ? rotationPeriod.clone() : new double[positionX.length];
+        int n = this.positionX.length;
+        this.rotationPeriod      = rotationPeriod != null ? rotationPeriod.clone() : new double[n];
+        this.magneticMoment      = magneticMoment != null ? magneticMoment.clone() : new double[n];
+        this.magneticTiltDegrees = magneticTiltDegrees != null ? magneticTiltDegrees.clone() : new double[n];
+        this.magneticOffsetRatio = magneticOffsetRatio != null ? magneticOffsetRatio.clone() : new double[n];
         this.kineticEnergy   = kineticEnergy;
         this.potentialEnergy = potentialEnergy;
         this.totalEnergy     = kineticEnergy + potentialEnergy;
 
         double px = 0, py = 0, angularMomentum = 0;
-        int n = this.positionX.length;
         for (int i = 0; i < n; i++) {
             px += this.mass[i] * this.velocityX[i];
             py += this.mass[i] * this.velocityY[i];
@@ -107,6 +130,20 @@ public final class NBodyState {
         this.totalMomentumX = px;
         this.totalMomentumY = py;
         this.totalAngularMomentum = angularMomentum;
+    }
+
+    /** Returns true if body i has an intrinsic magnetic field (dipole moment > 1e15 A·m²). */
+    public boolean hasMagneticField(int i) {
+        return i >= 0 && i < getN() && magneticMoment[i] > 1.0e15;
+    }
+
+    /**
+     * Computes surface equatorial field B_0 in microteslas (µT):
+     * B_0 = (mu_0 * m_i / (4 * pi * R_i^3)) * 1e6 = 0.1 * m_i / R_i^3.
+     */
+    public double equatorialFieldMicroTesla(int i) {
+        if (i < 0 || i >= getN() || radius[i] <= 0.0 || magneticMoment[i] <= 0.0) return 0.0;
+        return (0.1 * magneticMoment[i]) / (radius[i] * radius[i] * radius[i]);
     }
 
     /** Number of bodies in this snapshot. Derived from the array length rather than stored separately, so it can never disagree. */

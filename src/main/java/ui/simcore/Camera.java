@@ -120,8 +120,18 @@ public final class Camera {
      * multiplier meaningful as "how far beyond the viewport-fit baseline."
      */
     public void rescaleForViewport(double oldWidth, double oldHeight, double newWidth, double newHeight) {
-        if (oldWidth <= 0 || oldHeight <= 0) return; // nothing sane to scale from — leave the camera as-is
-        double scaleRatio = Math.min(newWidth, newHeight) / Math.min(oldWidth, oldHeight);
+        if (oldWidth <= 0 || oldHeight <= 0 || newWidth <= 0 || newHeight <= 0) return; // nothing sane to scale from — leave the camera as-is
+        double scaleRatio;
+        if (Math.abs(newHeight - oldHeight) < 1.0) {
+            // Width-only change (sidebar toggle): scales symmetrically on open and close
+            scaleRatio = newWidth / oldWidth;
+        } else if (Math.abs(newWidth - oldWidth) < 1.0) {
+            // Height-only change (graph panel toggle): scales symmetrically on open and close
+            scaleRatio = newHeight / oldHeight;
+        } else {
+            // Simultaneous width and height change (window corner drag)
+            scaleRatio = Math.min(newWidth / oldWidth, newHeight / oldHeight);
+        }
         baseScale *= scaleRatio;
         panX *= newWidth / oldWidth;
         panY *= newHeight / oldHeight;
