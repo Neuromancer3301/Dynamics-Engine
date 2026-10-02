@@ -58,6 +58,9 @@ public final class NBodyConfig {
     private final double[] velocityX, velocityY;
     private final String[] name;
     private final double[] rotationPeriod;
+    private final double[] magneticMoment;     // A·m² (canonical SI)
+    private final double[] magneticTiltDegrees; // degrees relative to rotational axis
+    private final double[] magneticOffsetRatio; // fraction of radius (offset from center)
     private final double softeningLength;
     private volatile double gravitationalConstant;
     private volatile double speedMultiplier;
@@ -68,13 +71,25 @@ public final class NBodyConfig {
                         String[] name, double softeningLength,
                         double gravitationalConstant, double speedMultiplier) {
         this(n, mass, radius, positionX, positionY, velocityX, velocityY, name, null,
-                softeningLength, gravitationalConstant, speedMultiplier);
+                null, null, null, softeningLength, gravitationalConstant, speedMultiplier);
     }
 
     public NBodyConfig(int n, double[] mass, double[] radius,
                         double[] positionX, double[] positionY,
                         double[] velocityX, double[] velocityY,
                         String[] name, double[] rotationPeriod,
+                        double softeningLength, double gravitationalConstant,
+                        double speedMultiplier) {
+        this(n, mass, radius, positionX, positionY, velocityX, velocityY, name, rotationPeriod,
+                null, null, null, softeningLength, gravitationalConstant, speedMultiplier);
+    }
+
+    public NBodyConfig(int n, double[] mass, double[] radius,
+                        double[] positionX, double[] positionY,
+                        double[] velocityX, double[] velocityY,
+                        String[] name, double[] rotationPeriod,
+                        double[] magneticMoment, double[] magneticTiltDegrees,
+                        double[] magneticOffsetRatio,
                         double softeningLength, double gravitationalConstant,
                         double speedMultiplier) {
         if (n < 0) throw new IllegalArgumentException("N must be >= 0");
@@ -85,6 +100,12 @@ public final class NBodyConfig {
             throw new IllegalArgumentException("name array length must equal N");
         if (rotationPeriod != null && rotationPeriod.length != n)
             throw new IllegalArgumentException("rotationPeriod array length must equal N");
+        if (magneticMoment != null && magneticMoment.length != n)
+            throw new IllegalArgumentException("magneticMoment array length must equal N");
+        if (magneticTiltDegrees != null && magneticTiltDegrees.length != n)
+            throw new IllegalArgumentException("magneticTiltDegrees array length must equal N");
+        if (magneticOffsetRatio != null && magneticOffsetRatio.length != n)
+            throw new IllegalArgumentException("magneticOffsetRatio array length must equal N");
 
         // isFinite rejects both NaN and +/-Infinity — neither is caught by a
         // plain "<= 0" check — so without this a malformed dialog field or a
@@ -109,6 +130,24 @@ public final class NBodyConfig {
                     throw new IllegalArgumentException("All non-zero rotation periods must be a positive, finite number");
             }
         }
+        if (magneticMoment != null) {
+            for (double m : magneticMoment) {
+                if (!Double.isFinite(m) || m < 0)
+                    throw new IllegalArgumentException("All magnetic moments must be non-negative and finite");
+            }
+        }
+        if (magneticTiltDegrees != null) {
+            for (double t : magneticTiltDegrees) {
+                if (!Double.isFinite(t))
+                    throw new IllegalArgumentException("All magnetic tilt degrees must be finite");
+            }
+        }
+        if (magneticOffsetRatio != null) {
+            for (double off : magneticOffsetRatio) {
+                if (!Double.isFinite(off) || off < 0.0 || off > 0.9)
+                    throw new IllegalArgumentException("All magnetic offset ratios must be in [0.0, 0.9]");
+            }
+        }
         if (!Double.isFinite(softeningLength) || softeningLength <= 0)
             throw new IllegalArgumentException("Softening length must be a positive, finite number");
         if (!Double.isFinite(gravitationalConstant) || gravitationalConstant <= 0)
@@ -124,6 +163,9 @@ public final class NBodyConfig {
         this.velocityX = velocityX.clone();
         this.velocityY = velocityY.clone();
         this.rotationPeriod = (rotationPeriod != null) ? rotationPeriod.clone() : new double[n];
+        this.magneticMoment = (magneticMoment != null) ? magneticMoment.clone() : new double[n];
+        this.magneticTiltDegrees = (magneticTiltDegrees != null) ? magneticTiltDegrees.clone() : new double[n];
+        this.magneticOffsetRatio = (magneticOffsetRatio != null) ? magneticOffsetRatio.clone() : new double[n];
 
         // Structural, non-null: any missing/blank entry defaults to "Body N"
         // (1-indexed, matching how every other index is shown in this app's UI).
@@ -202,6 +244,24 @@ public final class NBodyConfig {
 
     /** Defensive copy of every body's rotation period, in seconds. */
     public double[] getRotationPeriods() { return rotationPeriod.clone(); }
+
+    /** Magnetic dipole moment of body {@code i}, in A·m². */
+    public double getMagneticMoment(int i) { return magneticMoment[i]; }
+
+    /** Magnetic dipole tilt of body {@code i}, in degrees relative to rotation axis. */
+    public double getMagneticTiltDegrees(int i) { return magneticTiltDegrees[i]; }
+
+    /** Center offset ratio of body {@code i}, in fraction of body radius. */
+    public double getMagneticOffsetRatio(int i) { return magneticOffsetRatio[i]; }
+
+    /** Defensive copy of every body's magnetic moment, in A·m². */
+    public double[] getMagneticMoments() { return magneticMoment.clone(); }
+
+    /** Defensive copy of every body's magnetic tilt, in degrees. */
+    public double[] getMagneticTiltDegrees() { return magneticTiltDegrees.clone(); }
+
+    /** Defensive copy of every body's magnetic offset ratio. */
+    public double[] getMagneticOffsetRatios() { return magneticOffsetRatio.clone(); }
 
     /** Sets G mid-simulation. Clamped to a tiny positive floor (well below any physically meaningful value) so it can never reach zero or negative — see {@code physics.PendulumConfig#setGravity} for the identical reasoning at pendulum-appropriate magnitudes. */
     public void setGravitationalConstant(double g) { this.gravitationalConstant = Math.max(1.0e-15, g); }

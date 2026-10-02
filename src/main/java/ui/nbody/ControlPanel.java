@@ -26,6 +26,7 @@ public final class ControlPanel extends VBox {
     private MotionGroupPanel motionGroup;
     private BodiesGroupPanel bodiesGroup;
     private DisplayGroupPanel displayGroup;
+    private MagnetismGroupPanel magnetismGroup;
 
     // Callbacks, set via setOnXxx before build() and threaded into whichever
     // sub-panel owns them once it's constructed — same pattern as
@@ -41,7 +42,7 @@ public final class ControlPanel extends VBox {
         super(10);
     }
 
-    /** Constructs the four grouped panels and wires every callback set so far into whichever one owns it. Call after setting all callbacks. */
+    /** Constructs the grouped panels and wires every callback set so far into whichever one owns it. Call after setting all callbacks. */
     public void build(SimulationLoop<NBodyEngine, NBodyState> simLoop, NBodyCanvas canvas, NBodyConfig initialConfig) {
         statusPanel = new StatusPanel(initialConfig.getN());
 
@@ -56,14 +57,16 @@ public final class ControlPanel extends VBox {
         bodiesGroup.setOnBodyOpen(onBodyOpen);
 
         displayGroup = new DisplayGroupPanel(canvas, initialConfig);
+        magnetismGroup = new MagnetismGroupPanel(canvas);
     }
 
     // ---- Group/status accessors ----
 
-    public VBox getStatusBlock()  { return statusPanel; }
-    public VBox getMotionGroup()  { return motionGroup; }
-    public VBox getBodiesGroup()  { return bodiesGroup; }
-    public VBox getDisplayGroup() { return displayGroup; }
+    public VBox getStatusBlock()    { return statusPanel; }
+    public VBox getMotionGroup()    { return motionGroup; }
+    public VBox getBodiesGroup()    { return bodiesGroup; }
+    public VBox getDisplayGroup()   { return displayGroup; }
+    public VBox getMagnetismGroup() { return magnetismGroup; }
 
     // ---- Called from controller.NBodySimulationController before build() ----
 

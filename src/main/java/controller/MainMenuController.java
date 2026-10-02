@@ -58,11 +58,12 @@ public final class MainMenuController implements Initializable, Navigable {
     public void initialize(URL location, ResourceBundle resources) {                                                                                                                                                                
         versionLabel.setText("v" + AppConfig.APP_VERSION);                                                                                                                                                                          
 
-        cardPendulumController.configure(                                                                                                                                                                                           
-                "01", Icons.Glyph.PENDULUM, "N-Pendulum Chain",                                                                                                                                                                     
-                "Configure any number of coupled links, watch chaos emerge, and drag it live.",                                                                                                                                     
-                "Demonstrates: RK4/Lagrangian mechanics, live angle & length editing, "                                                                                                                                             
-                        + "butterfly-effect ensembles, and bifurcation/Poincaré analysis.",                                                                                                                                         
+        cardPendulumController.configure(
+                "01", Icons.Glyph.PENDULUM, "N-Pendulum Chain",
+                "Configure any number of coupled links, watch chaos emerge, and drag it live.",
+                "Demonstrates: RK4/Lagrangian mechanics, live angle & length editing, "
+                        + "butterfly-effect ensembles, and bifurcation/Poincaré analysis.",
+                "/reference/n-link-pendulum.png",
                 () -> router.navigate(Route.SIMULATION));                                                                                                                                                                           
 
         cardSlotTwoController.configure(                                                                                                                                                                                            
@@ -70,12 +71,14 @@ public final class MainMenuController implements Initializable, Navigable {
                 "Load the solar system, drag a planet, and watch real gravity do the rest.",                                                                                                                                        
                 "Demonstrates: softened Newtonian gravity, energy/momentum/angular-momentum "                                                                                                                                       
                         + "conservation, and orbital mechanics across 34 real bodies.",                                                                                                                                             
+                "/reference/n-body-gravitational.png",
                 () -> router.navigate(Route.NBODY));                                                                                                                                                                                
 
         cardSlotThreeController.configure(                                                                                                                                                                                          
                 "03", Icons.Glyph.MOTION, "Boids Flocking",                                                                                                                                                                         
                 "Watch complex emergent flocking behavior arise from simple rules.",                                                                                                                                                
                 "Demonstrates: Craig Reynolds' boids algorithm, separation, alignment, and cohesion with interactive predators.",                                                                                                   
+                "/reference/boid-simulation.png",
                 () -> router.navigate(Route.BOIDS));                                                                                                                                                                                
 
         UtilityIconButton manualButton = new UtilityIconButton(Icons.Glyph.MANUAL, "Manual");                                                                                                                                       

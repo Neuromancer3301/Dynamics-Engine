@@ -206,18 +206,21 @@
     -fx-max-width: 240px;
 }
 
-/* Placeholder demo-video slot revealed on card hover-expand — see
-   component/NavCard.fxml and NavCardController#setExpanded. Same "reserved
-   slot, not broken" visual language as .nav-card-coming-soon: a bordered box
-   in -bg-base/-line, dimmed -ink-3 text. */
+/* Demo preview slot revealed on card hover-expand — see
+   component/NavCard.fxml and NavCardController#setExpanded. Displays the
+   simulation preview screenshot in a bordered frame, or a dimmed placeholder
+   label if no demo is available. */
 .nav-card-video-box {
     -fx-background-color: -bg-base;
     -fx-border-color: -line;
-    -fx-border-style: dashed;
+    -fx-border-style: solid;
     -fx-border-width: 1px;
-    -fx-background-radius: 3px;
-    -fx-border-radius: 3px;
+    -fx-background-radius: 4px;
+    -fx-border-radius: 4px;
     -fx-pref-height: 140px;
+    -fx-alignment: center;
+}
+.nav-card-preview-image {
     -fx-alignment: center;
 }
 .nav-card-video-label {

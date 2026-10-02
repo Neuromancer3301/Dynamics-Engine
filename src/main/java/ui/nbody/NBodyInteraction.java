@@ -245,18 +245,32 @@ final class NBodyInteraction {
      */
     private int hitTestBody(double screenX, double screenY) {
         var state = canvas.lastState();
-        if (state == null) return -1;
+        if (state == null || state.getN() == 0) return -1;
         double scale = camera.getScale();
         double originX = camera.originX(canvas.getWidth());
         double originY = camera.originY(canvas.getHeight());
-        for (int i = state.getN() - 1; i >= 0; i--) {
+
+        int bestIdx = -1;
+        int bestTier = -1;
+        double bestDistSq = Double.MAX_VALUE;
+
+        for (int i = 0; i < state.getN(); i++) {
             double bx = originX + state.positionX[i] * scale;
             double by = originY - state.positionY[i] * scale;
             double dx = screenX - bx, dy = screenY - by;
+            double distSq = dx * dx + dy * dy;
             double hitRadius = renderer.radiusForBody(state, i) + HIT_RADIUS_PAD;
-            if (dx * dx + dy * dy <= hitRadius * hitRadius) return i;
+            if (distSq <= hitRadius * hitRadius) {
+                int tier = renderer.getBodyHierarchyTier(state, i);
+                // Precedence: parent planets over orbiting satellites when overlapping at wide zoom
+                if (tier > bestTier || (tier == bestTier && distSq < bestDistSq)) {
+                    bestIdx = i;
+                    bestTier = tier;
+                    bestDistSq = distSq;
+                }
+            }
         }
-        return -1;
+        return bestIdx;
     }
 
     /** Records a SCREEN-space sample ({@code screenX}/{@code screenY} in pixels, not world coordinates) — see {@link #FLING_WORLD_MPS_PER_SCREEN_PXPS}'s javadoc for why. */

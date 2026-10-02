@@ -1,21 +1,27 @@
 package ui.nbody;
 
-import physics.nbody.NBodyConfig;
-import physics.nbody.NBodyState;
-import theme.ThemeManager;
-import ui.simcore.LogSliderField;
+import javafx.collections.FXCollections;
 import javafx.event.ActionEvent;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.stage.Window;
+import physics.nbody.CelestialMagnetismRegistry;
+import physics.nbody.NBodyConfig;
+import physics.nbody.NBodyState;
+import theme.ThemeManager;
+import ui.simcore.LogSliderField;
 
 /**
  * Builds the three structural-edit dialogs the n-body canvas opens: a
@@ -160,6 +166,39 @@ public final class NBodyDialogFactory {
         TextField vxField     = dialogField(String.format("%.6e", liveVx));
         TextField vyField     = dialogField(String.format("%.6e", liveVy));
 
+        CheckBox magCheckbox = new CheckBox("Intrinsic Magnetic Field");
+        double initMoment = currentConfig.getMagneticMoment(body);
+        double initTilt = currentConfig.getMagneticTiltDegrees(body);
+        double initOffset = currentConfig.getMagneticOffsetRatio(body);
+        boolean hasMag = initMoment > 1.0e15;
+        magCheckbox.setSelected(hasMag);
+
+        ComboBox<String> tierBox = new ComboBox<>(FXCollections.observableArrayList("None", "Weak", "Moderate", "Strong", "Extreme"));
+        double b0_uT = CelestialMagnetismRegistry.fieldFromMoment(initMoment, initRadius);
+        String initialTier;
+        if (!hasMag || b0_uT < 0.1) initialTier = "None";
+        else if (b0_uT < 10.0) initialTier = "Weak";
+        else if (b0_uT < 60.0) initialTier = "Moderate";
+        else if (b0_uT < 250.0) initialTier = "Strong";
+        else initialTier = "Extreme";
+        tierBox.setValue(initialTier);
+
+        Slider tiltSlider = new Slider(-180.0, 180.0, initTilt);
+        Label tiltValueLabel = new Label(String.format("%.1f°", initTilt));
+        tiltValueLabel.getStyleClass().add("sidebar-mono-readout");
+        HBox tiltRow = new HBox(8, tiltSlider, tiltValueLabel);
+        tiltSlider.valueProperty().addListener((o, ov, nv) -> tiltValueLabel.setText(String.format("%.1f°", nv.doubleValue())));
+
+        tierBox.setDisable(!hasMag);
+        tiltSlider.setDisable(!hasMag);
+        magCheckbox.selectedProperty().addListener((o, ov, nv) -> {
+            tierBox.setDisable(!nv);
+            tiltSlider.setDisable(!nv);
+            if (nv && "None".equals(tierBox.getValue())) {
+                tierBox.setValue("Moderate");
+            }
+        });
+
         Label error = errorLabel();
 
         GridPane grid = new GridPane();
@@ -174,7 +213,10 @@ public final class NBodyDialogFactory {
         grid.addRow(5, new Label("Y (m)"), yField);
         grid.addRow(6, new Label("Vx (m/s)"), vxField);
         grid.addRow(7, new Label("Vy (m/s)"), vyField);
-        grid.add(error, 0, 8, 2, 1);
+        grid.addRow(8, new Label("Magnetism"), magCheckbox);
+        grid.addRow(9, new Label("Field Tier"), tierBox);
+        grid.addRow(10, new Label("Magnetic Tilt"), tiltRow);
+        grid.add(error, 0, 11, 2, 1);
         ScrollPane scrollPane = new ScrollPane(grid);
         scrollPane.setFitToWidth(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
@@ -216,9 +258,31 @@ public final class NBodyDialogFactory {
             mass_[body] = mass; radius_[body] = radius;
             px[body] = x; py[body] = y; vxs[body] = vx; vys[body] = vy;
 
+            double finalMoment = 0.0;
+            if (magCheckbox.isSelected() && tierBox.getValue() != null && !tierBox.getValue().equals("None")) {
+                double b0 = switch (tierBox.getValue()) {
+                    case "Weak" -> 1.0;
+                    case "Moderate" -> 31.0;
+                    case "Strong" -> 100.0;
+                    case "Extreme" -> 500.0;
+                    default -> 0.0;
+                };
+                finalMoment = CelestialMagnetismRegistry.momentFromField(b0, radius);
+            }
+            double finalTilt = tiltSlider.getValue();
+            double finalOffset = initOffset;
+
+            double[] magMoments = currentConfig.getMagneticMoments();
+            double[] magTilts = currentConfig.getMagneticTiltDegrees();
+            double[] magOffsets = currentConfig.getMagneticOffsetRatios();
+            magMoments[body] = finalMoment;
+            magTilts[body] = finalTilt;
+            magOffsets[body] = finalOffset;
+
             try {
                 NBodyConfig edited = new NBodyConfig(currentConfig.getN(), mass_, radius_, px, py, vxs, vys,
                         currentConfig.getNames(), currentConfig.getRotationPeriods(),
+                        magMoments, magTilts, magOffsets,
                         currentConfig.getSofteningLength(),
                         host.liveGravitationalConstant(), currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
@@ -285,6 +349,28 @@ public final class NBodyDialogFactory {
         TextField vxField     = dialogField("0.0");
         TextField vyField     = dialogField("0.0");
 
+        CheckBox magCheckbox = new CheckBox("Intrinsic Magnetic Field");
+        magCheckbox.setSelected(false);
+
+        ComboBox<String> tierBox = new ComboBox<>(FXCollections.observableArrayList("None", "Weak", "Moderate", "Strong", "Extreme"));
+        tierBox.setValue("None");
+        tierBox.setDisable(true);
+
+        Slider tiltSlider = new Slider(-180.0, 180.0, 0.0);
+        tiltSlider.setDisable(true);
+        Label tiltValueLabel = new Label("0.0°");
+        tiltValueLabel.getStyleClass().add("sidebar-mono-readout");
+        HBox tiltRow = new HBox(8, tiltSlider, tiltValueLabel);
+        tiltSlider.valueProperty().addListener((o, ov, nv) -> tiltValueLabel.setText(String.format("%.1f°", nv.doubleValue())));
+
+        magCheckbox.selectedProperty().addListener((o, ov, nv) -> {
+            tierBox.setDisable(!nv);
+            tiltSlider.setDisable(!nv);
+            if (nv && "None".equals(tierBox.getValue())) {
+                tierBox.setValue("Moderate");
+            }
+        });
+
         Label error = errorLabel();
 
         GridPane grid = new GridPane();
@@ -299,7 +385,10 @@ public final class NBodyDialogFactory {
         grid.addRow(5, new Label("Y (m)"), yField);
         grid.addRow(6, new Label("Vx (m/s)"), vxField);
         grid.addRow(7, new Label("Vy (m/s)"), vyField);
-        grid.add(error, 0, 8, 2, 1);
+        grid.addRow(8, new Label("Magnetism"), magCheckbox);
+        grid.addRow(9, new Label("Field Tier"), tierBox);
+        grid.addRow(10, new Label("Magnetic Tilt"), tiltRow);
+        grid.add(error, 0, 11, 2, 1);
         ScrollPane scrollPane = new ScrollPane(grid);
         scrollPane.setFitToWidth(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
@@ -338,9 +427,28 @@ public final class NBodyDialogFactory {
             System.arraycopy(currentConfig.getNames(), 0, names, 0, n);
             names[n] = null; // NBodyConfig defaults this to "Body " + (n+1)
 
+            double finalMoment = 0.0;
+            if (magCheckbox.isSelected() && tierBox.getValue() != null && !tierBox.getValue().equals("None")) {
+                double b0 = switch (tierBox.getValue()) {
+                    case "Weak" -> 1.0;
+                    case "Moderate" -> 31.0;
+                    case "Strong" -> 100.0;
+                    case "Extreme" -> 500.0;
+                    default -> 0.0;
+                };
+                finalMoment = CelestialMagnetismRegistry.momentFromField(b0, radius);
+            }
+            double finalTilt = tiltSlider.getValue();
+            double finalOffset = 0.0;
+
+            double[] magMoments = appendTo(currentConfig.getMagneticMoments(), finalMoment);
+            double[] magTilts = appendTo(currentConfig.getMagneticTiltDegrees(), finalTilt);
+            double[] magOffsets = appendTo(currentConfig.getMagneticOffsetRatios(), finalOffset);
+
             try {
                 NBodyConfig edited = new NBodyConfig(newN, mass_, radius_, px, py, vxs, vys, names,
-                        periods_, currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
+                        periods_, magMoments, magTilts, magOffsets,
+                        currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
                 host.selectBody(n); // the newly-added body, overriding applyStructuralEdit's default
@@ -376,6 +484,7 @@ public final class NBodyDialogFactory {
                         new double[0], new double[0],
                         new double[0], new double[0],
                         new String[0], new double[0],
+                        new double[0], new double[0], new double[0],
                         currentConfig.getSofteningLength(),
                         host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
@@ -393,10 +502,14 @@ public final class NBodyDialogFactory {
             double[] vys = removeFrom(liveArrayOrConfigAll(live, currentConfig, "vy"), body);
             double[] periods = removeFrom(currentConfig.getRotationPeriods(), body);
             String[] names = removeFrom(currentConfig.getNames(), body);
+            double[] magMoments = removeFrom(currentConfig.getMagneticMoments(), body);
+            double[] magTilts = removeFrom(currentConfig.getMagneticTiltDegrees(), body);
+            double[] magOffsets = removeFrom(currentConfig.getMagneticOffsetRatios(), body);
 
             try {
                 NBodyConfig edited = new NBodyConfig(newN, mass, radius, px, py, vxs, vys, names,
-                        periods, currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
+                        periods, magMoments, magTilts, magOffsets,
+                        currentConfig.getSofteningLength(), host.liveGravitationalConstant(),
                         currentConfig.getSpeedMultiplier());
                 host.applyStructuralEdit(edited);
                 host.selectBody(Math.min(body, newN - 1));

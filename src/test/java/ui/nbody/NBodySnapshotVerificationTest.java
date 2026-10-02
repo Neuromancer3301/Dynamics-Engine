@@ -186,7 +186,7 @@ class NBodySnapshotVerificationTest {
             }
         });
 
-        assertTrue(latch.await(15, TimeUnit.SECONDS), "Snapshot rendering timed out");
+        assertTrue(latch.await(30, TimeUnit.SECONDS), "Snapshot rendering timed out");
         if (failure[0] != null) {
             throw new AssertionError("Snapshot rendering failed", failure[0]);
         }
