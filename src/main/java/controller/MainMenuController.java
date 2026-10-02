@@ -53,7 +53,7 @@ public final class MainMenuController implements Initializable, Navigable {
     private NavCardController cardSlotThreeController;                                                                                                                                                                              
 
     private SceneRouter router;                                                                                                                                                                                                     
-
+    
     @Override                                                                                                                                                                                                                       
     public void initialize(URL location, ResourceBundle resources) {                                                                                                                                                                
         versionLabel.setText("v" + AppConfig.APP_VERSION);                                                                                                                                                                          

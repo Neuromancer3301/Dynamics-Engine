@@ -13,7 +13,7 @@ import java.util.logging.Logger;
  * Owns the physics thread: a fixed-timestep loop decoupled from the render
  * rate, exchanging state with the JavaFX thread lock-free via {@link
  * StateBuffer}.
- *
+ *    
  * <p><b>Round 2 §2 of the physics-layer modularity pass.</b> Generalized
  * over {@code E extends SimulationEngine<S>} — everything below is engine-
  * agnostic scheduling (drain commands, measure wall time, subdivide into
